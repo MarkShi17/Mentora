@@ -15,8 +15,8 @@ export function SourcesDrawer() {
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content className="fixed bottom-0 right-0 m-4 w-96 max-w-[95vw] rounded-xl border border-border bg-slate-950 p-4 shadow-2xl">
+        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <Dialog.Content className="fixed bottom-0 right-0 m-4 w-96 max-w-[95vw] rounded-xl border border-border bg-slate-950 p-4 shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-right-5 data-[state=closed]:slide-out-to-right-5 duration-200">
           <Dialog.Title className="text-lg font-semibold text-slate-100">
             Referenced Sources
           </Dialog.Title>

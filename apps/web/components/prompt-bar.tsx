@@ -186,7 +186,7 @@ export function PromptBar() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="pointer-events-auto absolute bottom-6 left-6 z-20 flex w-full max-w-xl items-center gap-3 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md"
+      className="pointer-events-auto absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex w-full max-w-xl items-center gap-3 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md"
     >
       <input
         type="text"

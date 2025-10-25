@@ -135,10 +135,10 @@ export function ContinuousAI() {
   const isGenerating = streamingQA.isStreaming && !speaking;
 
   return (
-    <div className="pointer-events-none fixed bottom-6 left-6 z-30 flex items-end gap-4 flex-row">
+    <div className="pointer-events-none fixed bottom-6 right-6 z-30 flex items-end gap-4 flex-row">
       {/* Live Transcript Panel */}
       {isActive && (
-        <div className="pointer-events-auto animate-in slide-in-from-left-5 fade-in duration-300 mb-2">
+        <div className="pointer-events-auto animate-in slide-in-from-right-5 fade-in duration-300 mb-2">
           <div className="relative overflow-hidden rounded-2xl border border-cyan-400/30 bg-slate-900/95 backdrop-blur-xl shadow-2xl max-w-md">
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400/5 to-transparent animate-shimmer" />
 

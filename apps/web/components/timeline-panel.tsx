@@ -89,7 +89,7 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 rounded-full border border-slate-700/50 bg-slate-950/80 p-3 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80"
+        className="pointer-events-auto absolute z-20 rounded-full border border-slate-700/50 bg-slate-950/80 p-3 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
         style={{
           right: `${position.right}px`,
           top: `${position.top}px`,
@@ -110,7 +110,7 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-slate-700/50 bg-slate-950/80 px-2 py-8 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80"
+        className="pointer-events-auto absolute z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-slate-700/50 bg-slate-950/80 px-2 py-8 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
         style={{
           right: 0,
           top: `${position.top}px`,
@@ -131,7 +131,7 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 flex items-center gap-2 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80"
+        className="pointer-events-auto absolute z-20 flex items-center gap-2 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
         style={{
           right: `${position.right}px`,
           top: `${position.top}px`,
@@ -149,7 +149,7 @@ export function TimelinePanel() {
   // Expanded state - floating panel
   return (
     <aside
-      className="pointer-events-auto absolute z-20 flex w-96 max-h-[calc(100vh-8rem)] flex-col rounded-2xl border border-slate-700/50 bg-slate-950/80 shadow-xl backdrop-blur-md"
+      className="pointer-events-auto absolute z-20 flex w-96 max-h-[calc(100vh-8rem)] flex-col rounded-2xl border border-slate-700/50 bg-slate-950/80 shadow-xl backdrop-blur-md animate-in fade-in-0 slide-in-from-right-5 duration-300"
       style={{
         right: `${position.right}px`,
         top: `${position.top}px`,

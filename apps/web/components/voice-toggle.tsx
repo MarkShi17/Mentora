@@ -65,23 +65,17 @@ export function VoiceToggle({ onTranscript, onAutoSubmit }: VoiceToggleProps) {
   }, [handleToggle]);
 
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        variant={listening ? "secondary" : "outline"}
-        size="icon"
-        disabled={!supported}
-        onClick={handleToggle}
-        className={listening ? "animate-pulse" : ""}
-      >
-        {listening ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-      </Button>
-      <div className="min-w-[120px] text-right">
-        <p className="text-xs font-medium text-slate-400">
-          {supported ? (listening ? "Listening continuously..." : "Voice idle") : "Voice unavailable"}
-        </p>
-        {error ? <p className="text-[10px] text-red-400">{error}</p> : null}
-      </div>
-    </div>
+    <Button
+      type="button"
+      variant={listening ? "secondary" : "ghost"}
+      size="icon"
+      disabled={!supported}
+      onClick={handleToggle}
+      className={`rounded-full transition-all ${
+        listening ? "bg-cyan-500/20 text-cyan-400 animate-pulse shadow-lg shadow-cyan-500/20 hover:bg-cyan-500/30" : "text-slate-400 hover:text-slate-300 hover:bg-slate-800/50"
+      }`}
+    >
+      {listening ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+    </Button>
   );
 }
