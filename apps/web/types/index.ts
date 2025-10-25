@@ -29,11 +29,12 @@ export type CanvasObject = {
   selected?: boolean;
   zIndex?: number;
   data?: {
-    content?: string;    // For text/note type
+    content?: string;    // For text/note type (supports Markdown with inline math)
     svg?: string;        // For diagram/graph type
     code?: string;       // For code type
     language?: string;   // For code type (programming language)
-    rendered?: string;   // For latex type (image URL)
+    latex?: string;      // For latex type (LaTeX source code)
+    rendered?: string;   // For latex type (image URL - legacy fallback)
   };
   metadata?: Record<string, unknown>;
 };
@@ -63,3 +64,21 @@ export type Pin = {
   y: number;
   createdAt: string;
 };
+
+export type ObjectPlacement = {
+  strategy: string;
+  relativeToId?: string;
+};
+
+export type ObjectReference = {
+  mention: string;
+  objectId: string;
+};
+
+export type StreamEvent =
+  | { type: 'text_chunk'; data: { text: string } }
+  | { type: 'audio_chunk'; data: { audio: string; text: string; sentenceIndex: number } }
+  | { type: 'canvas_object'; data: { object: any; placement: ObjectPlacement } }
+  | { type: 'reference'; data: ObjectReference }
+  | { type: 'complete'; data?: any }
+  | { type: 'error'; data: { message: string } };

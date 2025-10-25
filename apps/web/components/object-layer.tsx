@@ -3,6 +3,11 @@
 import type { CSSProperties } from "react";
 import { CanvasObject } from "@/types";
 import { cn } from "@/lib/cn";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 // Removed getObjectSizeClass - now using backend-calculated sizes directly
 
@@ -12,23 +17,34 @@ function renderObjectContent(object: CanvasObject) {
   switch (object.type) {
     case 'text':
       return (
-        <div className="text-base text-slate-800 leading-relaxed p-2 h-full overflow-auto">
-          {object.data.content?.split('\n').map((line, index) => (
-            <p key={index} className="mb-3 last:mb-0">
-              {line.trim() ? (
-                line.startsWith('•') ? (
-                  <span className="flex items-start">
-                    <span className="text-sky-600 mr-3 mt-1 text-lg">•</span>
-                    <span className="flex-1">{line.substring(1).trim()}</span>
-                  </span>
+        <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed p-4 h-full overflow-auto">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+            components={{
+              // Customize rendering of specific elements
+              p: ({node, ...props}) => <p className="mb-3 last:mb-0" {...props} />,
+              ul: ({node, ...props}) => <ul className="list-disc list-inside mb-3" {...props} />,
+              ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-3" {...props} />,
+              li: ({node, ...props}) => <li className="mb-1" {...props} />,
+              strong: ({node, ...props}) => <strong className="font-bold text-slate-900" {...props} />,
+              em: ({node, ...props}) => <em className="italic" {...props} />,
+              code: ({node, className, children, ...props}: any) => {
+                const inline = !className;
+                return inline ? (
+                  <code className="px-1.5 py-0.5 bg-slate-100 rounded text-sm font-mono" {...props}>
+                    {children}
+                  </code>
                 ) : (
-                  line
-                )
-              ) : (
-                <br />
-              )}
-            </p>
-          ))}
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                );
+              },
+            }}
+          >
+            {object.data.content || ''}
+          </ReactMarkdown>
         </div>
       );
     
@@ -60,11 +76,40 @@ function renderObjectContent(object: CanvasObject) {
       );
     
     case 'latex':
+      // Support both inline and display math from react-markdown
+      let latexContent = object.data.content || object.data.latex || '';
+
+      // Auto-wrap raw LaTeX with delimiters if not already wrapped
+      if (latexContent && !latexContent.includes('$')) {
+        // Wrap with display mode delimiters for centered equations
+        latexContent = `$$${latexContent}$$`;
+      }
+
+      const isDisplayMode = latexContent.startsWith('$$') || object.metadata?.displayMode;
+
+      // If we have LaTeX source, render with KaTeX
+      if (latexContent) {
+        return (
+          <div className={cn(
+            "p-4 text-slate-900",
+            isDisplayMode ? "flex items-center justify-center" : "flex items-start"
+          )}>
+            <ReactMarkdown
+              remarkPlugins={[remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+            >
+              {latexContent}
+            </ReactMarkdown>
+          </div>
+        );
+      }
+
+      // Fallback to image rendering for backwards compatibility
       return (
         <div className="flex items-center justify-center p-4 h-full">
-          <img 
-            src={object.data.rendered} 
-            alt="LaTeX equation" 
+          <img
+            src={object.data.rendered}
+            alt="LaTeX equation"
             className="max-w-full max-h-full object-contain"
           />
         </div>
@@ -133,8 +178,14 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
           const isBeingResized = resizeState?.objectId === object.id;
           const objectX = isBeingResized && resizeState ? resizeState.currentDimensions.x : object.x;
           const objectY = isBeingResized && resizeState ? resizeState.currentDimensions.y : object.y;
-          const objectWidth = isBeingResized && resizeState ? resizeState.currentDimensions.width : (object.width || 'auto');
-          const objectHeight = isBeingResized && resizeState ? resizeState.currentDimensions.height : (object.height || 'auto');
+
+          // For LaTeX objects, use auto dimensions to fit content
+          const objectWidth = isBeingResized && resizeState
+            ? resizeState.currentDimensions.width
+            : (object.type === 'latex' ? 'auto' : (object.width || 'auto'));
+          const objectHeight = isBeingResized && resizeState
+            ? resizeState.currentDimensions.height
+            : (object.type === 'latex' ? 'auto' : (object.height || 'auto'));
 
           // Get text scale from metadata (persisted after resize) or from current resize state
           const textScale = isBeingResized && resizeState
@@ -156,6 +207,7 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               top: objectY,
               width: objectWidth,
               height: objectHeight,
+              maxWidth: object.type === 'latex' ? '800px' : undefined,
               background: `${object.color}20`,
               zIndex: object.zIndex || 0,
               transform: dragTransform
@@ -217,7 +269,7 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
               </div>
               <div
-                className="flex-1 min-h-0"
+                className="flex-1 overflow-auto"
                 style={{
                   fontSize: `${textScale * 100}%`,
                   transformOrigin: 'top left'

@@ -304,7 +304,7 @@ export const useSessionStore = create<SessionState>()(
         state.canvasObjects[sessionId] = list.filter((obj) => !objectIds.includes(obj.id));
 
         // Clear selection method and last selected object
-        state.selectionMethods[sessionId] = undefined;
+        delete state.selectionMethods[sessionId];
         state.lastSelectedObjectIds[sessionId] = null;
       });
     },
