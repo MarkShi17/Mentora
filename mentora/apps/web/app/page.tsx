@@ -2,6 +2,7 @@ import { ActiveSessionHeader } from "@/components/active-session-header";
 import { CanvasStage } from "@/components/canvas-stage";
 import { CaptionsOverlay } from "@/components/captions-overlay";
 import { PromptBar } from "@/components/prompt-bar";
+import { CanvasToolbar } from "@/components/canvas-toolbar";
 import { SidebarHistory } from "@/components/sidebar-history";
 import { SourcesDrawer } from "@/components/sources-drawer";
 import { TimelinePanel } from "@/components/timeline-panel";
@@ -15,6 +16,7 @@ export default function HomePage() {
           <ActiveSessionHeader />
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4">
+          <CanvasToolbar />
           <div className="relative flex-1 overflow-hidden rounded-2xl border border-border bg-slate-950/60 shadow-inner">
             <CanvasStage />
           </div>

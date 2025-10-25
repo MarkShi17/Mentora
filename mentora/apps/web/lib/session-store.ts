@@ -28,17 +28,20 @@ type SessionState = {
   voiceActive: boolean;
   sourcesDrawerOpen: boolean;
   captionsEnabled: boolean;
+  canvasMode: "pan" | "lasso";
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => string;
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   toggleObjectSelection: (sessionId: string, objectId: string) => void;
   clearObjectSelection: (sessionId: string) => void;
+  setSelectedObjects: (sessionId: string, ids: string[]) => void;
   setSources: (sessionId: string, sources: SourceLink[]) => void;
   setVoiceActive: (value: boolean) => void;
   appendTimelineEvent: (sessionId: string, event: Omit<TimelineEvent, "id" | "timestamp">) => void;
   setSourcesDrawerOpen: (open: boolean) => void;
   setCaptionsEnabled: (enabled: boolean) => void;
+  setCanvasMode: (mode: "pan" | "lasso") => void;
 };
 
 const withImmer = immer<SessionState>;
@@ -55,6 +58,7 @@ export const useSessionStore = create<SessionState>()(
     voiceActive: false,
     sourcesDrawerOpen: false,
     captionsEnabled: true,
+    canvasMode: "pan",
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -127,6 +131,19 @@ export const useSessionStore = create<SessionState>()(
         state.canvasObjects[sessionId] = list.map((item) => ({ ...item, selected: false }));
       });
     },
+    setSelectedObjects: (sessionId, ids) => {
+      set((state) => {
+        const list = state.canvasObjects[sessionId];
+        if (!list) {
+          return;
+        }
+        const idSet = new Set(ids);
+        state.canvasObjects[sessionId] = list.map((item) => ({
+          ...item,
+          selected: idSet.has(item.id)
+        }));
+      });
+    },
     setSources: (sessionId, sources) => {
       set((state) => {
         state.sources[sessionId] = sources;
@@ -158,6 +175,11 @@ export const useSessionStore = create<SessionState>()(
     setCaptionsEnabled: (enabled) => {
       set((state) => {
         state.captionsEnabled = enabled;
+      });
+    },
+    setCanvasMode: (mode) => {
+      set((state) => {
+        state.canvasMode = mode;
       });
     }
   }))
