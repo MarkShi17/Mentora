@@ -31,7 +31,7 @@ export function ContinuousAI() {
   const streamingQA = useStreamingQA({
     onCanvasObject: useCallback((object, placement) => {
       if (activeSessionId) {
-        updateCanvasObject(activeSessionId, {
+        const canvasObject = {
           id: object.id,
           type: object.type,
           x: object.position.x,
@@ -42,11 +42,24 @@ export function ContinuousAI() {
           selected: false,
           color: getColorForType(object.type),
           label: object.metadata?.referenceName || object.type,
-          metadata: object.metadata,
+          metadata: {
+            ...object.metadata,
+            // Add animation flag for newly created objects
+            animated: true,
+            createdAt: Date.now()
+          },
           data: object.data
+        };
+
+        updateCanvasObject(activeSessionId, canvasObject);
+
+        // Add timeline event for new object
+        appendTimelineEvent(activeSessionId, {
+          description: `Created ${object.type}: ${object.metadata?.referenceName || object.id}`,
+          type: "canvas_update"
         });
       }
-    }, [activeSessionId, updateCanvasObject]),
+    }, [activeSessionId, updateCanvasObject, appendTimelineEvent]),
     onComplete: useCallback(() => {
       if (activeSessionId) {
         appendTimelineEvent(activeSessionId, {
@@ -105,10 +118,31 @@ export function ContinuousAI() {
       // Add assistant message with the complete text
       if (streamingQA.currentText.trim()) {
         addMessage(sessionId, { role: "assistant", content: streamingQA.currentText });
+        appendTimelineEvent(sessionId, {
+          description: "AI completed streaming response with audio.",
+          type: "response"
+        });
       }
     } catch (error) {
       console.error("Error processing question:", error);
-      addMessage(sessionId, { role: "assistant", content: "I'm experiencing a momentary issue. Please try again in a bit." });
+
+      // Provide user-friendly error messages
+      let errorMessage = "I'm experiencing a momentary issue. Please try again.";
+      if (error instanceof Error) {
+        if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = "Network error. Please check your connection and try again.";
+        } else if (error.message.includes('timeout')) {
+          errorMessage = "Request timed out. Please try asking again.";
+        } else if (error.message.includes('session')) {
+          errorMessage = "Session error. Please refresh and try again.";
+        }
+      }
+
+      addMessage(sessionId, { role: "assistant", content: errorMessage });
+      appendTimelineEvent(sessionId, {
+        description: `Error: ${errorMessage}`,
+        type: "error"
+      });
     }
   }, [activeSessionId, createSession, addMessage, appendTimelineEvent, conversationContext, streamingQA]);
 
@@ -225,6 +259,85 @@ export function ContinuousAI() {
                       </span>
                     ))}
                   </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Response Display (Streaming) */}
+      {(streamingQA.isStreaming || streamingQA.currentText) && (
+        <div className="pointer-events-auto animate-in slide-in-from-left-5 fade-in duration-300 mb-2">
+          <div className="relative overflow-hidden rounded-2xl border border-blue-400/30 bg-slate-900/95 backdrop-blur-xl shadow-2xl max-w-md">
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/5 to-transparent animate-shimmer" />
+
+            <div className="relative p-4 space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-700/50">
+                <div className={cn(
+                  "h-2 w-2 rounded-full",
+                  speaking ? "bg-green-400 animate-pulse" : isGenerating ? "bg-blue-400 animate-pulse" : "bg-slate-600"
+                )} />
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  {speaking ? "Speaking" : isGenerating ? "Generating" : "Complete"}
+                </span>
+              </div>
+
+              {/* Live Transcript */}
+              {streamingQA.currentText && (
+                <div className="rounded-xl p-3 bg-slate-800/50 border border-slate-700/30 max-h-48 overflow-y-auto">
+                  <p className="text-sm text-slate-100 leading-relaxed">
+                    {streamingQA.currentText}
+                  </p>
+                </div>
+              )}
+
+              {/* Current Speaking Text */}
+              {speaking && currentSpeechText && (
+                <div className="flex items-start gap-2 pt-2 border-t border-slate-700/50">
+                  <div className="flex gap-1 mt-1">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="w-1 rounded-full bg-green-400 animate-pulse"
+                        style={{
+                          height: `${Math.random() * 10 + 6}px`,
+                          animationDelay: `${i * 150}ms`
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-green-300 leading-relaxed">
+                    {currentSpeechText}
+                  </p>
+                </div>
+              )}
+
+              {/* Audio Queue Progress */}
+              {streamingQA.audioState.queueLength > 0 && (
+                <div className="pt-2 border-t border-slate-700/50">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-400 to-green-400 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${streamingQA.audioState.queueProgress}%`
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      {streamingQA.audioState.currentIndex + 1}/{streamingQA.audioState.queueLength}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Error Display */}
+              {streamingQA.error && (
+                <div className="rounded-lg p-3 bg-red-500/10 border border-red-500/30">
+                  <p className="text-xs text-red-300">
+                    {streamingQA.error}
+                  </p>
                 </div>
               )}
             </div>

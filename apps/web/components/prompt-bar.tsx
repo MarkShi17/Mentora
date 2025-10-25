@@ -1,13 +1,9 @@
 'use client';
 
 import { useCallback, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { VoiceToggle } from "@/components/voice-toggle";
-import { VoiceControls } from "@/components/voice-controls";
 import { useSessionStore } from "@/lib/session-store";
-import { useOpenAITTS } from "@/hooks/use-openai-tts";
+import { useStreamingQA } from "@/hooks/use-streaming-qa";
 
 // Helper function to get color for object type
 function getColorForType(type: string): string {
@@ -21,48 +17,6 @@ function getColorForType(type: string): string {
   }
 }
 
-type PromptResponse = {
-  reply: string;
-  timelineEvent?: {
-    description: string;
-    type: "prompt" | "response" | "visual" | "source";
-  };
-};
-
-type PromptPayload = {
-  sessionId: string;
-  prompt: string;
-  highlights: string[];
-};
-
-async function submitPrompt(payload: PromptPayload): Promise<PromptResponse> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-  const response = await fetch(`${apiUrl}/api/qa`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      sessionId: payload.sessionId,
-      question: payload.prompt,
-      mode: "guided",
-      highlightedObjectIds: payload.highlights || []
-    })
-  });
-  if (!response.ok) {
-    throw new Error("Failed to contact tutor.");
-  }
-  const data = await response.json();
-  return {
-    reply: data.answer.text,
-    canvasObjects: data.canvasObjects || [],
-    timelineEvent: {
-      description: "Assistant provided guidance.",
-      type: "response"
-    }
-  };
-}
-
 export function PromptBar() {
   const [value, setValue] = useState("");
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -71,16 +25,36 @@ export function PromptBar() {
   const addMessage = useSessionStore((state) => state.addMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
-  const { speak } = useOpenAITTS();
 
-  const { mutateAsync, isPending } = useMutation({
-    mutationFn: submitPrompt,
-    onError: () => {
-      appendTimelineEvent(activeSessionId ?? "", {
-        description: "Unable to reach the tutor service.",
-        type: "response"
-      });
-    }
+  // Streaming QA hook - always enabled
+  const streamingQA = useStreamingQA({
+    onCanvasObject: useCallback((object, placement) => {
+      if (activeSessionId) {
+        const canvasObject = {
+          id: object.id,
+          type: object.type,
+          x: object.position.x,
+          y: object.position.y,
+          width: object.size.width,
+          height: object.size.height,
+          zIndex: object.zIndex || 1,
+          selected: false,
+          color: getColorForType(object.type),
+          label: object.metadata?.referenceName || object.type,
+          metadata: object.metadata,
+          data: object.data
+        };
+        updateCanvasObject(activeSessionId, canvasObject);
+      }
+    }, [activeSessionId, updateCanvasObject]),
+    onComplete: useCallback(() => {
+      if (activeSessionId) {
+        appendTimelineEvent(activeSessionId, {
+          description: "AI completed response.",
+          type: "response"
+        });
+      }
+    }, [activeSessionId, appendTimelineEvent])
   });
 
   const handleTranscript = useCallback((transcript: string) => {
@@ -107,7 +81,7 @@ export function PromptBar() {
         const displayMinutes = minutes.toString().padStart(2, '0');
         const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
         const title = `New Lesson ${timeString}`;
-        
+
         sessionId = await createSession({ title });
       } catch (error) {
         console.error("Failed to create session:", error);
@@ -127,53 +101,41 @@ export function PromptBar() {
     const { canvasObjects } = state;
     const selectedObjects =
       canvasObjects[sessionId]?.filter((object) => object.selected).map((object) => object.id) ?? [];
-        try {
-          const data = await mutateAsync({ sessionId, prompt, highlights: selectedObjects });
-            addMessage(sessionId, {
-              role: "assistant",
-              content: data.reply
-            });
-            if (data.timelineEvent) {
-              appendTimelineEvent(sessionId, data.timelineEvent);
-            }
-            
-            // Automatically read the assistant's response
-            if (data.reply && data.reply.trim()) {
-              speak(data.reply, 'nova');
-            }
-          // Add canvas objects from backend response
-          if (data.canvasObjects) {
-            // Get current max zIndex to ensure new objects are on top
-            const { canvasObjects: existingObjects } = useSessionStore.getState();
-            const currentObjects = existingObjects[sessionId] || [];
-            const maxZIndex = Math.max(...currentObjects.map(o => o.zIndex || 0), 0);
 
-            data.canvasObjects.forEach((obj: any, index: number) => {
-              // Transform backend object structure to frontend structure
-              const transformedObj = {
-                id: obj.id,
-                type: obj.type,
-                x: obj.position.x,
-                y: obj.position.y,
-                width: obj.size.width, // Keep for reference but CSS will override
-                height: obj.size.height, // Keep for reference but CSS will override
-                zIndex: maxZIndex + index + 1, // Ensure new objects are on top
-                selected: false,
-                color: getColorForType(obj.type),
-                label: obj.metadata?.referenceName || obj.type,
-                metadata: obj.metadata,
-                data: obj.data
-              };
-              updateCanvasObject(sessionId, transformedObj);
-            });
-          }
-        } catch (error) {
-          addMessage(sessionId, {
-            role: "assistant",
-            content: "I'm experiencing a momentary issue. Please try again in a bit."
-          });
+    // Always use streaming mode
+    try {
+      await streamingQA.startStreaming(sessionId, prompt, {
+        highlightedObjects: selectedObjects,
+        mode: "guided"
+      });
+
+      // Add assistant message with the complete text after streaming
+      if (streamingQA.currentText.trim()) {
+        addMessage(sessionId, { role: "assistant", content: streamingQA.currentText });
+      }
+    } catch (error) {
+      console.error("Streaming error:", error);
+
+      // User-friendly error messages
+      let errorMessage = "I'm experiencing a momentary issue. Please try again.";
+      if (error instanceof Error) {
+        if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = "Network error. Please check your connection and try again.";
+        } else if (error.message.includes('timeout')) {
+          errorMessage = "Request timed out. Please try asking again.";
         }
-  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, mutateAsync, addMessage, value, updateCanvasObject, speak]);
+      }
+
+      addMessage(sessionId, {
+        role: "assistant",
+        content: errorMessage
+      });
+      appendTimelineEvent(sessionId, {
+        description: `Error: ${errorMessage}`,
+        type: "response"
+      });
+    }
+  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, addMessage, value, updateCanvasObject, streamingQA]);
 
   const handleSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
@@ -193,8 +155,8 @@ export function PromptBar() {
         placeholder="Ask Mentora to guide you through your next concept..."
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        disabled={isPending}
-        className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+        disabled={streamingQA.isStreaming}
+        className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
