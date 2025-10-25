@@ -966,6 +966,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
           transform={transform}
           selectionMethod={selectionMethod}
           lastSelectedObjectId={lastSelectedObjectId}
+          dragState={dragState}
         />
         {canvasMode === "lasso" ? (
           <div

@@ -8,13 +8,23 @@ type SelectionLayerProps = {
   transform: { x: number; y: number; k: number };
   selectionMethod?: "click" | "lasso";
   lastSelectedObjectId?: string | null;
+  dragState?: {
+    objectId: string;
+    selectedObjectIds: string[];
+    startWorld: { x: number; y: number };
+    startScreen: { x: number; y: number };
+    startPositions: Record<string, { x: number; y: number }>;
+    currentDelta: { x: number; y: number };
+    wasSelectedAtStart: boolean;
+  } | null;
 };
 
 export function SelectionLayer({
   objects,
   transform,
   selectionMethod,
-  lastSelectedObjectId
+  lastSelectedObjectId,
+  dragState
 }: SelectionLayerProps) {
   const selectedObjects = objects.filter((object) => object.selected);
   if (selectedObjects.length === 0) {
@@ -22,6 +32,18 @@ export function SelectionLayer({
   }
 
   const padding = 8;
+
+  // Helper to get position accounting for drag state
+  const getPosition = (obj: CanvasObject) => {
+    const isBeingDragged = dragState?.selectedObjectIds?.includes(obj.id) ?? false;
+    if (isBeingDragged && dragState) {
+      return {
+        x: obj.x + dragState.currentDelta.x,
+        y: obj.y + dragState.currentDelta.y
+      };
+    }
+    return { x: obj.x, y: obj.y };
+  };
 
   // Apply the same transform as the object layer
   const stageStyle: CSSProperties = {
@@ -32,6 +54,7 @@ export function SelectionLayer({
   // Single object selection - only show label (object already has border)
   if (selectedObjects.length === 1) {
     const obj = selectedObjects[0];
+    const pos = getPosition(obj);
 
     return (
       <div className="pointer-events-none absolute inset-0">
@@ -40,8 +63,8 @@ export function SelectionLayer({
           <div
             className="absolute"
             style={{
-              left: obj.x,
-              top: obj.y,
+              left: pos.x,
+              top: pos.y,
               transform: "translateY(-100%)"
             }}
           >
@@ -58,13 +81,16 @@ export function SelectionLayer({
 
   // Multiple objects with lasso selection - show bounding box only (objects have their own borders)
   if (selectionMethod === "lasso") {
-    // Use actual width and height from objects
-    const positions = selectedObjects.map(obj => ({
-      x: obj.x,
-      y: obj.y,
-      width: obj.width || obj.size?.width || 300,
-      height: obj.height || obj.size?.height || 150
-    }));
+    // Use actual width and height from objects, with drag-adjusted positions
+    const positions = selectedObjects.map(obj => {
+      const pos = getPosition(obj);
+      return {
+        x: pos.x,
+        y: pos.y,
+        width: obj.width || obj.size?.width || 300,
+        height: obj.height || obj.size?.height || 150
+      };
+    });
 
     const minX = Math.min(...positions.map(p => p.x));
     const minY = Math.min(...positions.map(p => p.y));
@@ -115,6 +141,8 @@ export function SelectionLayer({
     return null;
   }
 
+  const lastPos = getPosition(lastSelectedObject);
+
   return (
     <div className="pointer-events-none absolute inset-0">
       <div className="relative h-full w-full" style={stageStyle}>
@@ -122,8 +150,8 @@ export function SelectionLayer({
         <div
           className="absolute"
           style={{
-            left: lastSelectedObject.x,
-            top: lastSelectedObject.y,
+            left: lastPos.x,
+            top: lastPos.y,
             transform: "translateY(-100%)"
           }}
         >
