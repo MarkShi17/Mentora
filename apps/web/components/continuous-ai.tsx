@@ -216,7 +216,7 @@ export function ContinuousAI() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, streamingQA.currentText]);
 
-  const toggleAI = () => {
+  const toggleAI = useCallback(() => {
     if (isActive) {
       stopListening();
       setIsActive(false);
@@ -224,7 +224,30 @@ export function ContinuousAI() {
       startListening();
       setIsActive(true);
     }
-  };
+  }, [isActive, stopListening, startListening]);
+
+  // Add spacebar keyboard shortcut for toggling Live Tutor
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only trigger if spacebar is pressed and not in an input/textarea/contenteditable
+      if (event.code === 'Space' && event.target instanceof HTMLElement) {
+        const isInInputField =
+          event.target.tagName === 'INPUT' ||
+          event.target.tagName === 'TEXTAREA' ||
+          event.target.isContentEditable;
+
+        if (!isInInputField) {
+          event.preventDefault(); // Prevent page scroll
+          toggleAI();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [toggleAI]);
 
   const isQuestionDetected = currentTranscript &&
     currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor)/);
@@ -235,15 +258,179 @@ export function ContinuousAI() {
   const isGenerating = streamingQA.isStreaming && !speaking;
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-30 flex flex-col items-end gap-4">
-      {/* Live Transcript - Shows what user is currently saying */}
-      {isActive && isListening && currentTranscript && (
-        <div className="pointer-events-auto w-96 rounded-xl border border-cyan-400/30 bg-slate-900/90 backdrop-blur-xl shadow-xl p-4 animate-in slide-in-from-right-3 fade-in duration-200">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wide">You're speaking</span>
+    <div className="pointer-events-none fixed bottom-6 right-6 z-30 flex items-end gap-4 flex-row">
+      {/* Live Transcript Panel */}
+      {isActive && (
+        <div className="pointer-events-auto animate-in slide-in-from-right-5 fade-in duration-300 mb-2">
+          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/30 bg-white/95 backdrop-blur-xl shadow-2xl max-w-md">
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400/5 to-transparent animate-shimmer" />
+
+            <div className="relative p-4 space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                <div className={cn(
+                  "h-2 w-2 rounded-full",
+                  isListening ? "bg-cyan-400 animate-pulse" : "bg-slate-600"
+                )} />
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  {speaking ? "Speaking" : isListening ? "Listening" : "Standby"}
+                </span>
+              </div>
+
+              {currentTranscript ? (
+                <div className="space-y-2">
+                  <div className={cn(
+                    "rounded-xl p-3 transition-all duration-300",
+                    isQuestionDetected
+                      ? "bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30"
+                      : "bg-slate-50 border border-slate-200"
+                  )}>
+                    <p className="text-sm text-slate-900 leading-relaxed">
+                      {currentTranscript}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {isQuestionDetected ? (
+                      <>
+                        <Brain className="h-3 w-3 text-cyan-400 animate-pulse" />
+                        <span className="text-xs font-semibold text-cyan-400">
+                          Question detected • Processing...
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="h-3 w-3 flex items-center justify-center">
+                          <div className="h-1 w-1 rounded-full bg-slate-500" />
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          Listening for questions
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex gap-1">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          "w-1 rounded-full bg-cyan-400 transition-all duration-300",
+                          isListening ? "animate-pulse" : "opacity-30"
+                        )}
+                        style={{
+                          height: isListening ? `${Math.random() * 12 + 8}px` : '6px',
+                          animationDelay: `${i * 150}ms`
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    Start speaking to ask a question...
+                  </span>
+                </div>
+              )}
+
+              {conversationContext.topics.length > 0 && (
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Brain className="h-3 w-3 text-purple-600" />
+                    <span className="text-xs font-semibold text-slate-600">Active Topics</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {conversationContext.topics.slice(-3).map((topic, index) => (
+                      <span
+                        key={index}
+                        className="text-xs px-2 py-1 rounded-full bg-purple-500/10 text-purple-700 border border-purple-500/20"
+                      >
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          <p className="text-sm text-slate-200 leading-relaxed">{currentTranscript}</p>
+        </div>
+      )}
+
+      {/* AI Response Display (Streaming) */}
+      {(streamingQA.isStreaming || streamingQA.currentText) && (
+        <div className="pointer-events-auto animate-in slide-in-from-left-5 fade-in duration-300 mb-2">
+          <div className="relative overflow-hidden rounded-2xl border border-blue-400/30 bg-white/95 backdrop-blur-xl shadow-2xl max-w-md">
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/5 to-transparent animate-shimmer" />
+
+            <div className="relative p-4 space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                <div className={cn(
+                  "h-2 w-2 rounded-full",
+                  speaking ? "bg-green-400 animate-pulse" : isGenerating ? "bg-blue-400 animate-pulse" : "bg-slate-600"
+                )} />
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  {speaking ? "Speaking" : isGenerating ? "Generating" : "Complete"}
+                </span>
+              </div>
+
+              {/* Live Transcript */}
+              {streamingQA.currentText && (
+                <div className="rounded-xl p-3 bg-slate-50 border border-slate-200 max-h-48 overflow-y-auto">
+                  <p className="text-sm text-slate-900 leading-relaxed">
+                    {streamingQA.currentText}
+                  </p>
+                </div>
+              )}
+
+              {/* Current Speaking Text */}
+              {speaking && currentSpeechText && (
+                <div className="flex items-start gap-2 pt-2 border-t border-slate-200">
+                  <div className="flex gap-1 mt-1">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="w-1 rounded-full bg-green-400 animate-pulse"
+                        style={{
+                          height: `${Math.random() * 10 + 6}px`,
+                          animationDelay: `${i * 150}ms`
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-green-300 leading-relaxed">
+                    {currentSpeechText}
+                  </p>
+                </div>
+              )}
+
+              {/* Audio Queue Progress */}
+              {streamingQA.audioState.queueLength > 0 && (
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-400 to-green-400 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${streamingQA.audioState.queueProgress}%`
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      {streamingQA.audioState.currentIndex + 1}/{streamingQA.audioState.queueLength}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Error Display */}
+              {streamingQA.error && (
+                <div className="rounded-lg p-3 bg-red-500/10 border border-red-500/30">
+                  <p className="text-xs text-red-300">
+                    {streamingQA.error}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -263,14 +450,14 @@ export function ContinuousAI() {
             "hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg",
             isActive
               ? "bg-gradient-to-br from-cyan-400 to-blue-500"
-              : "bg-slate-800 hover:bg-slate-700"
+              : "bg-white hover:bg-slate-50 border border-slate-200"
           )}
         >
           <svg
             viewBox="0 0 24 24"
             className={cn(
               "h-7 w-7 transition-all duration-300",
-              isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+              isActive ? "text-white" : "text-slate-600 group-hover:text-slate-900"
             )}
             fill="none"
             stroke="currentColor"

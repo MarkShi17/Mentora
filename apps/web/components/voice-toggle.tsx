@@ -41,29 +41,6 @@ export function VoiceToggle({ onTranscript, onAutoSubmit }: VoiceToggleProps) {
     }
   }, [onAutoSubmit, setAutoSubmitCallback]);
 
-  // Add spacebar keyboard shortcut for toggling voice
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Only trigger if spacebar is pressed and not in an input/textarea/contenteditable
-      if (event.code === 'Space' && event.target instanceof HTMLElement) {
-        const isInInputField =
-          event.target.tagName === 'INPUT' ||
-          event.target.tagName === 'TEXTAREA' ||
-          event.target.isContentEditable;
-
-        if (!isInInputField) {
-          event.preventDefault(); // Prevent page scroll
-          handleToggle();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [handleToggle]);
-
   return (
     <Button
       type="button"

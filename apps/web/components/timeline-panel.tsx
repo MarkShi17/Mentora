@@ -89,13 +89,13 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 rounded-full border border-slate-700/50 bg-slate-950/80 p-3 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
+        className="pointer-events-auto absolute z-20 rounded-full border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:scale-110 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: `${position.right}px`,
           top: `${position.top}px`,
         }}
       >
-        <MessageSquare className="h-5 w-5 text-slate-300" />
+        <MessageSquare className="h-5 w-5 text-slate-600 transition-transform group-hover:rotate-12" />
         {dialogue.length > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[10px] font-semibold text-white">
             {dialogue.length}
@@ -110,15 +110,15 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-slate-700/50 bg-slate-950/80 px-2 py-8 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
+        className="pointer-events-auto absolute z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-slate-200 bg-white/95 px-2 py-8 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:px-3 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: 0,
           top: `${position.top}px`,
         }}
       >
         <div className="flex flex-col items-center gap-2">
-          <ChevronLeft className="h-4 w-4 text-slate-300" />
-          <p className="whitespace-nowrap text-xs font-semibold text-slate-300" style={{ writingMode: "vertical-rl" }}>
+          <ChevronLeft className="h-4 w-4 text-slate-600 transition-transform group-hover:-translate-x-0.5" />
+          <p className="whitespace-nowrap text-xs font-semibold text-slate-600" style={{ writingMode: "vertical-rl" }}>
             Dialogue ({dialogue.length})
           </p>
         </div>
@@ -131,17 +131,17 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 flex items-center gap-2 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
+        className="pointer-events-auto absolute z-20 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:scale-105 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: `${position.right}px`,
           top: `${position.top}px`,
         }}
       >
-        <MessageSquare className="h-4 w-4 text-slate-300" />
-        <span className="text-sm font-medium text-slate-200">
+        <MessageSquare className="h-4 w-4 text-slate-600 transition-transform group-hover:rotate-12" />
+        <span className="text-sm font-medium text-slate-700">
           Dialogue {dialogue.length > 0 && `(${dialogue.length})`}
         </span>
-        <ChevronLeft className="h-4 w-4 text-slate-400" />
+        <ChevronLeft className="h-4 w-4 text-slate-600 transition-transform group-hover:-translate-x-0.5" />
       </button>
     );
   }
@@ -149,7 +149,7 @@ export function TimelinePanel() {
   // Expanded state - floating panel
   return (
     <aside
-      className="pointer-events-auto absolute z-20 flex w-96 max-h-[calc(100vh-8rem)] flex-col rounded-2xl border border-slate-700/50 bg-slate-950/80 shadow-xl backdrop-blur-md animate-in fade-in-0 slide-in-from-right-5 duration-300"
+      className="pointer-events-auto absolute z-20 flex w-96 max-h-[calc(100vh-8rem)] flex-col rounded-2xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur-md animate-in fade-in-0 slide-in-from-right-5 duration-300"
       style={{
         right: `${position.right}px`,
         top: `${position.top}px`,
@@ -157,7 +157,7 @@ export function TimelinePanel() {
     >
       <div
         className={cn(
-          "flex items-center justify-between border-b border-slate-700/50 px-4 py-3 shrink-0",
+          "flex items-center justify-between border-b border-slate-200 px-4 py-3 shrink-0",
           dragState?.isDragging ? "cursor-grabbing" : "cursor-grab"
         )}
         onPointerDown={handleDragStart}
@@ -166,23 +166,34 @@ export function TimelinePanel() {
         onPointerCancel={handleDragEnd}
       >
         <div className="flex items-center gap-2 select-none">
-          <MessageSquare className="h-4 w-4 text-slate-400" />
+          <MessageSquare className="h-4 w-4 text-slate-600" />
           <div>
-            <p className="text-sm font-semibold text-slate-200">Chat History</p>
-            <p className="text-xs text-slate-500">{dialogue.length} messages</p>
+            <p className="text-sm font-semibold text-slate-900">Dialogue</p>
+            <p className="text-xs text-slate-600">{dialogue.length} messages</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
           <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setCaptionsEnabled(!captionsEnabled)}
+            className={cn(
+              "h-7 text-xs",
+              !captionsEnabled && "bg-slate-200 text-slate-700 hover:bg-slate-300"
+            )}
+          >
+            {captionsEnabled ? "Captions On" : "Captions Off"}
+          </Button>
+          <Button
             variant="ghost"
             size="icon"
             onClick={() => setIsExpanded(false)}
-            className="h-7 w-7"
+            className="h-7 w-7 transition-all hover:scale-105 active:scale-95 hover:bg-slate-100 group text-slate-600 hover:text-slate-900"
           >
             {COLLAPSE_STYLE === "tab" ? (
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             ) : (
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4 transition-transform group-hover:rotate-90" />
             )}
           </Button>
         </div>
@@ -190,13 +201,13 @@ export function TimelinePanel() {
       <div className="space-y-3 overflow-y-auto px-4 py-4 scrollbar-thin">
         {dialogue.map((message) => (
           <Fragment key={message.id}>
-            <div className="rounded-lg border border-slate-700/50 bg-slate-900/60 px-3 py-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <p
                 className={cn(
                   "text-sm font-semibold",
                   message.role === "assistant"
-                    ? "text-sky-300"
-                    : "text-slate-300"
+                    ? "text-sky-600"
+                    : "text-slate-700"
                 )}
               >
                 <span className="capitalize">{message.role}</span>
@@ -204,7 +215,7 @@ export function TimelinePanel() {
                   {formatTime(message.timestamp)}
                 </span>
               </p>
-              <p className="mt-1 text-sm text-slate-200 leading-relaxed">{message.content}</p>
+              <p className="mt-1 text-sm text-slate-700 leading-relaxed">{message.content}</p>
               {message.role === "assistant" && (
                 <VoiceControls
                   text={message.content}
@@ -215,7 +226,7 @@ export function TimelinePanel() {
           </Fragment>
         ))}
         {dialogue.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-600">
             No dialogue yet. Start with a question in the prompt bar.
           </p>
         ) : null}

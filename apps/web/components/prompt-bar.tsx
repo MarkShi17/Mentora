@@ -148,7 +148,7 @@ export function PromptBar() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="pointer-events-auto absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex w-full max-w-xl items-center gap-3 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md"
+      className="pointer-events-auto absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex w-full max-w-xl items-center gap-3 rounded-full border border-slate-200 bg-white/95 px-4 py-2 shadow-lg backdrop-blur-md"
     >
       <input
         type="text"
@@ -156,7 +156,7 @@ export function PromptBar() {
         value={value}
         onChange={(event) => setValue(event.target.value)}
         disabled={streamingQA.isStreaming}
-        className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
+        className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
