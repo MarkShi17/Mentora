@@ -58,25 +58,24 @@ export function SelectionLayer({
 
   // Multiple objects with lasso selection - show bounding box only (objects have their own borders)
   if (selectionMethod === "lasso") {
-    // Get the actual positions, but add generous estimates for sizes since stored width/height don't match CSS
+    // Use actual width and height from objects
     const positions = selectedObjects.map(obj => ({
       x: obj.x,
       y: obj.y,
-      // Add generous size estimates based on object type
-      estimatedWidth: obj.type === 'text' ? 350 : obj.type === 'code' ? 500 : obj.type === 'diagram' || obj.type === 'graph' ? 400 : 300,
-      estimatedHeight: obj.type === 'text' ? 150 : obj.type === 'code' ? 250 : obj.type === 'diagram' || obj.type === 'graph' ? 300 : 150
+      width: obj.width || obj.size?.width || 300,
+      height: obj.height || obj.size?.height || 150
     }));
 
     const minX = Math.min(...positions.map(p => p.x));
     const minY = Math.min(...positions.map(p => p.y));
-    const maxX = Math.max(...positions.map(p => p.x + p.estimatedWidth));
-    const maxY = Math.max(...positions.map(p => p.y + p.estimatedHeight));
+    const maxX = Math.max(...positions.map(p => p.x + p.width));
+    const maxY = Math.max(...positions.map(p => p.y + p.height));
 
     const boundingWidth = maxX - minX;
     const boundingHeight = maxY - minY;
 
-    // Extra generous padding for the bounding box
-    const boundingPadding = 24;
+    // Padding for the bounding box to account for object borders and spacing
+    const boundingPadding = 12;
 
     return (
       <div className="pointer-events-none absolute inset-0">
