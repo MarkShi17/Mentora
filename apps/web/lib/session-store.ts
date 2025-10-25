@@ -46,6 +46,7 @@ type SessionState = {
   focusTarget: FocusTarget;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
+  // initializeDefaultSession: () => Promise<void>; // Removed - no longer auto-creating sessions
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   updateCanvasObjects: (sessionId: string, objects: CanvasObject[]) => void;
@@ -72,64 +73,16 @@ const withImmer = immer<SessionState>;
 
 export const useSessionStore = create<SessionState>()(
   withImmer((set, get) => {
-    // Create a default session on initialization
-    const defaultSessionId = `session-${nanoid(6)}`;
-    const now = new Date().toISOString();
-    const defaultSession: Session = {
-      id: defaultSessionId,
-      title: "Getting Started",
-      createdAt: now
-    };
-
-    // Test object at (0,0) to verify centering
-    const testObject1: CanvasObject = {
-      id: "test-obj-1",
-      type: "text",
-      label: "Test Object 1",
-      x: 0,
-      y: 0,
-      width: 200,
-      height: 100,
-      color: "#3b82f6",
-      selected: false,
-      zIndex: 1,
-      data: {
-        content: "This object is at (0,0)\nIt should appear in the visual center of the canvas."
-      },
-      metadata: {
-        description: "Test object for canvas centering"
-      }
-    };
-
-    // Second test object for multi-selection testing
-    const testObject2: CanvasObject = {
-      id: "test-obj-2",
-      type: "diagram",
-      label: "Test Object 2",
-      x: 400,
-      y: 0,
-      width: 250,
-      height: 150,
-      color: "#10b981",
-      selected: false,
-      zIndex: 2,
-      data: {
-        svg: '<svg viewBox="0 0 200 100"><rect x="10" y="10" width="180" height="80" fill="#10b981" opacity="0.3" rx="8"/><text x="100" y="55" text-anchor="middle" fill="#059669" font-size="16">Diagram</text></svg>'
-      },
-      metadata: {
-        description: "Test object for multi-selection"
-      }
-    };
-
+    // Initialize with empty state - we'll create a session when the app loads
     return {
-      sessions: [defaultSession],
-      activeSessionId: defaultSessionId,
-      messages: { [defaultSessionId]: [] },
-      canvasObjects: { [defaultSessionId]: [testObject1, testObject2] },
-      sources: { [defaultSessionId]: [] },
-      timeline: { [defaultSessionId]: [] },
-      transcripts: { [defaultSessionId]: "" },
-      pins: { [defaultSessionId]: [] },
+      sessions: [],
+      activeSessionId: null,
+      messages: {},
+      canvasObjects: {},
+      sources: {},
+      timeline: {},
+      transcripts: {},
+      pins: {},
       voiceActive: false,
       sourcesDrawerOpen: false,
       captionsEnabled: true,
@@ -146,9 +99,30 @@ export const useSessionStore = create<SessionState>()(
         state.activeSessionId = sessionId;
       });
     },
+    // initializeDefaultSession: async () => {
+    //   const state = get();
+    //   // Only create a default session if we don't have any sessions
+    //   if (state.sessions.length === 0) {
+    //     const now = new Date();
+    //     const hours = now.getHours();
+    //     const minutes = now.getMinutes();
+    //     const ampm = hours >= 12 ? 'PM' : 'AM';
+    //     const displayHours = hours % 12 || 12;
+    //     const displayMinutes = minutes.toString().padStart(2, '0');
+    //     const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+    //     const title = `New Lesson ${timeString}`;
+        
+    //     try {
+    //       await get().createSession({ title });
+    //     } catch (error) {
+    //       console.error("Failed to create default session:", error);
+    //     }
+    //   }
+    // },
     createSession: async ({ title }) => {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        
         const response = await fetch(`${apiUrl}/api/sessions`, {
           method: "POST",
           headers: {
@@ -161,6 +135,8 @@ export const useSessionStore = create<SessionState>()(
         });
         
         if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Session creation failed:", errorText);
           throw new Error("Failed to create session");
         }
         

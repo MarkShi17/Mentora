@@ -37,12 +37,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<QARespons
       mode: body.mode || 'guided',
     });
 
-    // Get session
-    const session = sessionManager.getSession(body.sessionId);
+    // Get session, create if it doesn't exist (fallback for in-memory storage issues)
+    let session;
+    let actualSessionId = body.sessionId;
+    try {
+      session = sessionManager.getSession(body.sessionId);
+    } catch (error) {
+      // Session not found, create a new one as fallback
+      logger.warn(`Session ${body.sessionId} not found, creating fallback session`);
+      session = sessionManager.createSession('general', `Session ${body.sessionId}`);
+      actualSessionId = session.id; // Use the new session ID
+    }
 
     // Add user turn
     const userTurnId = generateTurnId();
-    sessionManager.addTurn(body.sessionId, {
+    sessionManager.addTurn(actualSessionId, {
       role: 'user',
       content: body.question,
       timestamp: Date.now(),
@@ -76,10 +85,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<QARespons
     }
 
     // Add canvas objects to session
-    sessionManager.addCanvasObjects(body.sessionId, agentResponse.canvasObjects);
+    sessionManager.addCanvasObjects(actualSessionId, agentResponse.canvasObjects);
 
     // Add assistant turn
-    sessionManager.addTurn(body.sessionId, {
+    sessionManager.addTurn(actualSessionId, {
       role: 'assistant',
       content: agentResponse.text,
       timestamp: Date.now(),
@@ -89,6 +98,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<QARespons
     });
 
     // Build response
+    logger.info('Agent response structure', {
+      hasText: !!agentResponse.text,
+      hasNarration: !!agentResponse.narration,
+      hasCanvasObjects: !!agentResponse.canvasObjects,
+      hasObjectPlacements: !!agentResponse.objectPlacements,
+      hasReferences: !!agentResponse.references,
+    });
+    
     const response: QAResponse = {
       turnId: assistantTurnId,
       answer: {

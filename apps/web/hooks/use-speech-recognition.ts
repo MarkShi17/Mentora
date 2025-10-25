@@ -21,6 +21,14 @@ export function useSpeechRecognition() {
   const [error, setError] = useState<string | null>(null);
   const [supported, setSupported] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const onAutoSubmitRef = useRef<((transcript: string) => void) | null>(null);
+  const hasProcessedRef = useRef<boolean>(false);
+  const lastTranscriptRef = useRef<string>("");
+
+  const setAutoSubmitCallback = useCallback((callback: (transcript: string) => void) => {
+    console.log('Setting auto-submit callback');
+    onAutoSubmitRef.current = callback;
+  }, []);
 
   const createRecognition = useCallback(() => {
     const SpeechRecognition = getSpeechRecognition();
@@ -32,8 +40,8 @@ export function useSpeechRecognition() {
     
     try {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true; // Keep listening continuously
-      recognition.interimResults = false;
+      recognition.continuous = false; // Single recognition session
+      recognition.interimResults = false; // Only final results to avoid duplicates
       recognition.lang = "en-US";
       recognition.maxAlternatives = 1;
       
@@ -49,6 +57,10 @@ export function useSpeechRecognition() {
 
   const start = useCallback(async () => {
     if (listening) return;
+    
+    // Reset state for new recognition session
+    hasProcessedRef.current = false;
+    lastTranscriptRef.current = "";
     
     // Request microphone permission first
     try {
@@ -69,8 +81,43 @@ export function useSpeechRecognition() {
     setSupported(true);
 
     const handleResult = (event: SpeechRecognitionEvent) => {
-      const result = event.results[event.results.length - 1][0].transcript;
-      setTranscript(result.trim());
+      // Prevent duplicate processing
+      if (hasProcessedRef.current) {
+        console.log('Ignoring duplicate result');
+        return;
+      }
+      
+      const result = event.results[event.results.length - 1];
+      const transcript = result[0].transcript.trim();
+      
+      console.log('Speech result received:', transcript);
+      
+      if (transcript && transcript !== lastTranscriptRef.current) {
+        hasProcessedRef.current = true;
+        lastTranscriptRef.current = transcript;
+        
+        setTranscript(transcript);
+        console.log('Processing final transcript:', transcript);
+        
+        // Auto-submit after a longer delay to give user time to review
+        setTimeout(() => {
+          if (onAutoSubmitRef.current && transcript) {
+            console.log('Auto-submitting transcript:', transcript);
+            onAutoSubmitRef.current(transcript);
+            setTranscript(""); // Clear transcript after auto-submit
+          }
+          // Stop listening after auto-submit
+          setListening(false);
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.stop();
+            } catch (error) {
+              console.error("Failed to stop recognition:", error);
+            }
+          }
+          recognitionRef.current = null;
+        }, 3000); // 3 second delay to give user more time to review the result
+      }
     };
 
     const handleError = (event: SpeechRecognitionErrorEvent) => {
@@ -91,12 +138,9 @@ export function useSpeechRecognition() {
     };
 
     const handleEnd = () => {
-      // Don't stop listening - continuous mode should restart automatically
-      // Only set listening to false if we explicitly stopped it
-      if (recognitionRef.current) {
-        // Recognition ended naturally, keep the reference for potential restart
-        console.log("Speech recognition ended, but staying in listening mode");
-      }
+      console.log("Speech recognition ended");
+      setListening(false);
+      recognitionRef.current = null;
     };
 
     recognition.addEventListener("result", handleResult);
@@ -115,6 +159,10 @@ export function useSpeechRecognition() {
 
   const stop = useCallback(() => {
     if (!listening || !recognitionRef.current) return;
+    
+    // Reset processing state
+    hasProcessedRef.current = false;
+    lastTranscriptRef.current = "";
     
     try {
       recognitionRef.current.stop();
@@ -155,6 +203,7 @@ export function useSpeechRecognition() {
     error,
     start,
     stop,
-    supported
+    supported,
+    setAutoSubmitCallback
   };
 }

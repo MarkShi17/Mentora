@@ -8,12 +8,13 @@ import { useSessionStore } from "@/lib/session-store";
 
 type VoiceToggleProps = {
   onTranscript?: (transcript: string) => void;
+  onAutoSubmit?: (transcript: string) => void;
 };
 
-export function VoiceToggle({ onTranscript }: VoiceToggleProps) {
+export function VoiceToggle({ onTranscript, onAutoSubmit }: VoiceToggleProps) {
   const setVoiceActive = useSessionStore((state) => state.setVoiceActive);
   const voiceActive = useSessionStore((state) => state.voiceActive);
-  const { transcript, listening, supported, start, stop, error } = useSpeechRecognition();
+  const { transcript, listening, supported, start, stop, error, setAutoSubmitCallback } = useSpeechRecognition();
 
   const handleToggle = () => {
     if (!supported) {
@@ -33,6 +34,12 @@ export function VoiceToggle({ onTranscript }: VoiceToggleProps) {
       onTranscript(transcript);
     }
   }, [transcript, onTranscript]);
+
+  useEffect(() => {
+    if (onAutoSubmit) {
+      setAutoSubmitCallback(onAutoSubmit);
+    }
+  }, [onAutoSubmit, setAutoSubmitCallback]);
 
   return (
     <div className="flex items-center gap-2">

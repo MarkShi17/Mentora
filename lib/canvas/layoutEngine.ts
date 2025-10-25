@@ -2,8 +2,9 @@ import { Position, Size } from '@/types/canvas';
 import { PlacementContext } from './types';
 
 export class LayoutEngine {
-  private readonly VERTICAL_SPACING = 20; // Minimal spacing between objects
-  private readonly HORIZONTAL_SPACING = 20; // Minimal spacing between objects
+  private readonly VERTICAL_SPACING = 10; // Minimal spacing between objects (puzzle piece connection)
+  private readonly HORIZONTAL_SPACING = 10; // Minimal spacing between objects (puzzle piece connection)
+  private readonly CLUSTER_SPACING = 100; // Spacing between conversation clusters
   private readonly DEFAULT_POSITION: Position = { x: 50, y: 50 };
 
   calculatePosition(context: PlacementContext, objectSize: Size): Position {
@@ -103,22 +104,31 @@ export class LayoutEngine {
       return this.DEFAULT_POSITION;
     }
 
-    const canvasWidth = 1200; // Assume canvas width
-    const canvasHeight = 800; // Assume canvas height
+    const canvasWidth = 2000; // Larger canvas for better layout
+    const canvasHeight = 1500; // Larger canvas for better layout
     
-    // Try to place to the right of the last object first
+    // Check if this is the first object of a new conversation turn
+    const isNewConversationTurn = this.isNewConversationTurn(existingObjects);
+    
+    if (isNewConversationTurn) {
+      // Start a new cluster to the right of the existing clusters
+      return this.getNewClusterPosition(existingObjects, objectSize, canvasWidth, canvasHeight);
+    }
+    
+    // Continue with existing cluster - try multiple connection strategies for puzzle-piece layout
     const lastObject = existingObjects[existingObjects.length - 1];
+    
+    // Strategy 1: Connect to the right (most common)
     const rightPosition = {
       x: lastObject.position.x + lastObject.size.width + this.HORIZONTAL_SPACING,
       y: lastObject.position.y,
     };
     
-    // Check if this position fits within canvas and doesn't overlap
     if (this.isValidPosition(rightPosition, objectSize, existingObjects, canvasWidth, canvasHeight)) {
       return rightPosition;
     }
     
-    // Try to place below the last object
+    // Strategy 2: Connect below
     const belowPosition = {
       x: lastObject.position.x,
       y: lastObject.position.y + lastObject.size.height + this.VERTICAL_SPACING,
@@ -128,7 +138,52 @@ export class LayoutEngine {
       return belowPosition;
     }
     
-    // Try to find the best position by scanning from top-left
+    // Strategy 3: Connect to the left of the last object
+    const leftPosition = {
+      x: lastObject.position.x - objectSize.width - this.HORIZONTAL_SPACING,
+      y: lastObject.position.y,
+    };
+    
+    if (this.isValidPosition(leftPosition, objectSize, existingObjects, canvasWidth, canvasHeight)) {
+      return leftPosition;
+    }
+    
+    // Strategy 4: Connect above the last object
+    const abovePosition = {
+      x: lastObject.position.x,
+      y: lastObject.position.y - objectSize.height - this.VERTICAL_SPACING,
+    };
+    
+    if (this.isValidPosition(abovePosition, objectSize, existingObjects, canvasWidth, canvasHeight)) {
+      return abovePosition;
+    }
+    
+    // Strategy 5: Try connecting to other existing objects in the same cluster
+    for (let i = existingObjects.length - 2; i >= 0; i--) {
+      const obj = existingObjects[i];
+      
+      // Try right of this object
+      const rightOfObj = {
+        x: obj.position.x + obj.size.width + this.HORIZONTAL_SPACING,
+        y: obj.position.y,
+      };
+      
+      if (this.isValidPosition(rightOfObj, objectSize, existingObjects, canvasWidth, canvasHeight)) {
+        return rightOfObj;
+      }
+      
+      // Try below this object
+      const belowObj = {
+        x: obj.position.x,
+        y: obj.position.y + obj.size.height + this.VERTICAL_SPACING,
+      };
+      
+      if (this.isValidPosition(belowObj, objectSize, existingObjects, canvasWidth, canvasHeight)) {
+        return belowObj;
+      }
+    }
+    
+    // Fallback: find the best position by scanning
     return this.findBestPosition(objectSize, existingObjects, canvasWidth, canvasHeight);
   }
 
@@ -220,6 +275,47 @@ export class LayoutEngine {
     }
 
     return positions;
+  }
+
+  private isNewConversationTurn(existingObjects: PlacementContext['existingObjects']): boolean {
+    // Heuristic: if we have more than 4 objects, assume we're starting a new conversation turn
+    // This creates clusters of roughly 3-5 objects per conversation turn
+    return existingObjects.length >= 4;
+  }
+
+  private getNewClusterPosition(
+    existingObjects: PlacementContext['existingObjects'],
+    objectSize: Size,
+    canvasWidth: number,
+    canvasHeight: number
+  ): Position {
+    // Find the rightmost edge of all existing objects
+    const rightmostX = Math.max(...existingObjects.map(obj => obj.position.x + obj.size.width));
+    
+    // Find the topmost Y position to align with the top of existing clusters
+    const topmostY = Math.min(...existingObjects.map(obj => obj.position.y));
+    
+    // Position new cluster to the right with cluster spacing
+    const newClusterX = rightmostX + this.CLUSTER_SPACING;
+    const newClusterY = topmostY;
+    
+    const newPosition = { x: newClusterX, y: newClusterY };
+    
+    // Check if this position is valid
+    if (this.isValidPosition(newPosition, objectSize, existingObjects, canvasWidth, canvasHeight)) {
+      return newPosition;
+    }
+    
+    // If not valid, try below the existing clusters
+    const bottommostY = Math.max(...existingObjects.map(obj => obj.position.y + obj.size.height));
+    const belowPosition = { x: 50, y: bottommostY + this.CLUSTER_SPACING };
+    
+    if (this.isValidPosition(belowPosition, objectSize, existingObjects, canvasWidth, canvasHeight)) {
+      return belowPosition;
+    }
+    
+    // Fallback: scan for best position
+    return this.findBestPosition(objectSize, existingObjects, canvasWidth, canvasHeight);
   }
 
   getObjectsInViewport(
