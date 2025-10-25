@@ -1,7 +1,7 @@
 'use client';
 
 import type { ComponentType } from "react";
-import { LocateFixed, MapPin, MousePointer2, Trash2 } from "lucide-react";
+import { ExternalLink, LocateFixed, MapPin, MousePointer2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
@@ -44,23 +44,24 @@ export function FloatingHeader() {
   return (
     <div className="pointer-events-none absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-3">
       {/* Sources Button */}
-      <div className="pointer-events-auto rounded-2xl border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md">
+      <div className="pointer-events-auto rounded-full border border-sky-500/30 bg-slate-900/60 px-4 py-2 shadow-lg backdrop-blur-md hover:border-sky-400/50 hover:bg-slate-900/80 transition-all">
         <button
           type="button"
           disabled={!activeSessionId}
           onClick={() => useSessionStore.getState().setSourcesDrawerOpen(true)}
           className={cn(
-            "text-sm font-semibold transition-colors",
-            activeSessionId ? "text-slate-100 hover:text-sky-300" : "text-slate-500 cursor-not-allowed"
+            "flex items-center gap-2 text-sm font-medium transition-colors",
+            activeSessionId ? "text-sky-300 hover:text-sky-200" : "text-slate-500 cursor-not-allowed"
           )}
         >
+          <ExternalLink className="h-3.5 w-3.5" />
           Sources
         </button>
       </div>
 
       {/* Session Title */}
-      <div className="pointer-events-auto rounded-2xl border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md">
-        <h1 className="text-sm font-semibold text-slate-100">
+      <div className="pointer-events-auto rounded-2xl border border-slate-700/50 bg-slate-950/80 px-5 py-2.5 shadow-lg backdrop-blur-md">
+        <h1 className="text-base font-bold text-slate-100 tracking-tight">
           {activeSession?.title ?? "Create a new lesson"}
         </h1>
       </div>

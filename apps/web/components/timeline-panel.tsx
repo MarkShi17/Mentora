@@ -89,13 +89,13 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 rounded-full border border-slate-700/50 bg-slate-950/80 p-3 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
+        className="pointer-events-auto absolute z-20 rounded-full border border-slate-700/50 bg-slate-950/80 p-3 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 hover:scale-110 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: `${position.right}px`,
           top: `${position.top}px`,
         }}
       >
-        <MessageSquare className="h-5 w-5 text-slate-300" />
+        <MessageSquare className="h-5 w-5 text-slate-300 transition-transform group-hover:rotate-12" />
         {dialogue.length > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[10px] font-semibold text-white">
             {dialogue.length}
@@ -110,14 +110,14 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-slate-700/50 bg-slate-950/80 px-2 py-8 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
+        className="pointer-events-auto absolute z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-slate-700/50 bg-slate-950/80 px-2 py-8 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 hover:px-3 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: 0,
           top: `${position.top}px`,
         }}
       >
         <div className="flex flex-col items-center gap-2">
-          <ChevronLeft className="h-4 w-4 text-slate-300" />
+          <ChevronLeft className="h-4 w-4 text-slate-300 transition-transform group-hover:-translate-x-0.5" />
           <p className="whitespace-nowrap text-xs font-semibold text-slate-300" style={{ writingMode: "vertical-rl" }}>
             Dialogue ({dialogue.length})
           </p>
@@ -131,17 +131,17 @@ export function TimelinePanel() {
     return (
       <button
         onClick={() => setIsExpanded(true)}
-        className="pointer-events-auto absolute z-20 flex items-center gap-2 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 animate-in fade-in-0 slide-in-from-right-2 duration-200"
+        className="pointer-events-auto absolute z-20 flex items-center gap-2 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md transition-all hover:bg-slate-900/80 hover:scale-105 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: `${position.right}px`,
           top: `${position.top}px`,
         }}
       >
-        <MessageSquare className="h-4 w-4 text-slate-300" />
+        <MessageSquare className="h-4 w-4 text-slate-300 transition-transform group-hover:rotate-12" />
         <span className="text-sm font-medium text-slate-200">
           Dialogue {dialogue.length > 0 && `(${dialogue.length})`}
         </span>
-        <ChevronLeft className="h-4 w-4 text-slate-400" />
+        <ChevronLeft className="h-4 w-4 text-slate-400 transition-transform group-hover:-translate-x-0.5" />
       </button>
     );
   }
@@ -185,12 +185,12 @@ export function TimelinePanel() {
             variant="ghost"
             size="icon"
             onClick={() => setIsExpanded(false)}
-            className="h-7 w-7"
+            className="h-7 w-7 transition-all hover:scale-105 active:scale-95 hover:bg-slate-800/60 group"
           >
             {COLLAPSE_STYLE === "tab" ? (
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             ) : (
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4 transition-transform group-hover:rotate-90" />
             )}
           </Button>
         </div>
