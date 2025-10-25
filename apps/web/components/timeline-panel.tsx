@@ -168,22 +168,11 @@ export function TimelinePanel() {
         <div className="flex items-center gap-2 select-none">
           <MessageSquare className="h-4 w-4 text-slate-600" />
           <div>
-            <p className="text-sm font-semibold text-slate-900">Dialogue</p>
+            <p className="text-sm font-semibold text-slate-900">Chat History</p>
             <p className="text-xs text-slate-600">{dialogue.length} messages</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setCaptionsEnabled(!captionsEnabled)}
-            className={cn(
-              "h-7 text-xs",
-              !captionsEnabled && "bg-slate-200 text-slate-700 hover:bg-slate-300"
-            )}
-          >
-            {captionsEnabled ? "Captions On" : "Captions Off"}
-          </Button>
           <Button
             variant="ghost"
             size="icon"

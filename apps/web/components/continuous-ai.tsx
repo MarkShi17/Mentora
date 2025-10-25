@@ -37,6 +37,10 @@ export function ContinuousAI() {
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const messages = activeSession?.messages || [];
 
+  // Track session ID and complete text for adding to chat history when streaming finishes
+  const currentSessionRef = useRef<string | null>(null);
+  const completeTextRef = useRef<string>('');
+
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
     onCanvasObject: useCallback((object, placement) => {
@@ -79,13 +83,23 @@ export function ContinuousAI() {
       }
     }, [activeSessionId, updateCanvasObject, appendTimelineEvent]),
     onComplete: useCallback(() => {
-      if (activeSessionId) {
-        appendTimelineEvent(activeSessionId, {
-          description: "AI provided contextual response.",
+      const sessionId = currentSessionRef.current;
+      const finalText = completeTextRef.current;
+
+      if (sessionId && finalText.trim()) {
+        // Add assistant message to chat history
+        addMessage(sessionId, { role: "assistant", content: finalText });
+        appendTimelineEvent(sessionId, {
+          description: "AI completed streaming response with audio.",
           type: "response"
         });
+        console.log('💬 Assistant message added to chat history from onComplete');
       }
-    }, [activeSessionId, appendTimelineEvent])
+
+      // Reset refs
+      currentSessionRef.current = null;
+      completeTextRef.current = '';
+    }, [addMessage, appendTimelineEvent])
   });
 
   const getColorForType = (type: string): string => {
@@ -144,6 +158,10 @@ export function ContinuousAI() {
     console.log('💬 User message added to chat history');
     console.log('🚀 Starting streaming response...');
 
+    // Store session ID for onComplete callback
+    currentSessionRef.current = sessionId;
+    completeTextRef.current = '';
+
     try {
       // Use streaming QA for real-time response with audio
       await streamingQA.startStreaming(sessionId, question, {
@@ -156,17 +174,7 @@ export function ContinuousAI() {
         }
       });
 
-      // Add assistant message with the complete text after streaming completes
-      if (streamingQA.currentText.trim()) {
-        addMessage(sessionId, { role: "assistant", content: streamingQA.currentText });
-        appendTimelineEvent(sessionId, {
-          description: "AI completed streaming response with audio.",
-          type: "response"
-        });
-        console.log('💬 Assistant message added to chat history');
-      } else {
-        console.warn('⚠️ No streaming text to add to chat history');
-      }
+      // Note: Assistant message is added in onComplete callback
     } catch (error) {
       console.error("Error processing question:", error);
 
@@ -193,6 +201,13 @@ export function ContinuousAI() {
   useEffect(() => {
     setQuestionCallback(handleQuestionDetected);
   }, [setQuestionCallback, activeSessionId, createSession, addMessage, appendTimelineEvent, updateCanvasObject, conversationContext]);
+
+  // Track streaming text in ref so onComplete can access it
+  useEffect(() => {
+    if (streamingQA.currentText) {
+      completeTextRef.current = streamingQA.currentText;
+    }
+  }, [streamingQA.currentText]);
 
   // Pause microphone when AI is speaking to prevent feedback loop
   useEffect(() => {
@@ -348,85 +363,6 @@ export function ContinuousAI() {
                       </span>
                     ))}
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI Response Display (Streaming) */}
-      {(streamingQA.isStreaming || streamingQA.currentText) && (
-        <div className="pointer-events-auto animate-in slide-in-from-left-5 fade-in duration-300 mb-2">
-          <div className="relative overflow-hidden rounded-2xl border border-blue-400/30 bg-white/95 backdrop-blur-xl shadow-2xl max-w-md">
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/5 to-transparent animate-shimmer" />
-
-            <div className="relative p-4 space-y-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
-                <div className={cn(
-                  "h-2 w-2 rounded-full",
-                  speaking ? "bg-green-400 animate-pulse" : isGenerating ? "bg-blue-400 animate-pulse" : "bg-slate-600"
-                )} />
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  {speaking ? "Speaking" : isGenerating ? "Generating" : "Complete"}
-                </span>
-              </div>
-
-              {/* Live Transcript */}
-              {streamingQA.currentText && (
-                <div className="rounded-xl p-3 bg-slate-50 border border-slate-200 max-h-48 overflow-y-auto">
-                  <p className="text-sm text-slate-900 leading-relaxed">
-                    {streamingQA.currentText}
-                  </p>
-                </div>
-              )}
-
-              {/* Current Speaking Text */}
-              {speaking && currentSpeechText && (
-                <div className="flex items-start gap-2 pt-2 border-t border-slate-200">
-                  <div className="flex gap-1 mt-1">
-                    {[0, 1, 2].map((i) => (
-                      <div
-                        key={i}
-                        className="w-1 rounded-full bg-green-400 animate-pulse"
-                        style={{
-                          height: `${Math.random() * 10 + 6}px`,
-                          animationDelay: `${i * 150}ms`
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <p className="text-xs text-green-300 leading-relaxed">
-                    {currentSpeechText}
-                  </p>
-                </div>
-              )}
-
-              {/* Audio Queue Progress */}
-              {streamingQA.audioState.queueLength > 0 && (
-                <div className="pt-2 border-t border-slate-200">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-400 to-green-400 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${streamingQA.audioState.queueProgress}%`
-                        }}
-                      />
-                    </div>
-                    <span className="text-xs text-slate-500">
-                      {streamingQA.audioState.currentIndex + 1}/{streamingQA.audioState.queueLength}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Error Display */}
-              {streamingQA.error && (
-                <div className="rounded-lg p-3 bg-red-500/10 border border-red-500/30">
-                  <p className="text-xs text-red-300">
-                    {streamingQA.error}
-                  </p>
                 </div>
               )}
             </div>
