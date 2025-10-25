@@ -10,6 +10,9 @@ import { ExternalServiceError } from '@/lib/utils/errors';
 import { mcpManager } from '@/lib/mcp';
 import { initializeMCP } from '@/lib/mcp/init';
 import { MCP_TOOLS_FOR_CLAUDE, TOOL_TO_SERVER_MAP, isVisualizationTool } from './mcpTools';
+import { brainSelector } from './brainSelector';
+import { multimodalRAG } from '@/lib/memory/multimodalRAG';
+import { getBrain } from './brainRegistry';
 
 interface AgentResponse {
   explanation: string;
@@ -58,14 +61,41 @@ export class MentorAgent {
     try {
       logger.info('Generating teaching response with MCP tools', { question, mode, sessionId: session.id });
 
-      // Ensure MCP is initialized
+      // Ensure MCP and RAG are initialized
       await initializeMCP();
+      await multimodalRAG.initialize();
+
+      // Select appropriate brain for this question
+      const brainResult = await brainSelector.selectBrain(question, {
+        recentTopics: context?.topics,
+        canvasObjects: session.canvasObjects,
+      });
+
+      logger.info('Brain selected for question', {
+        brain: brainResult.selectedBrain.type,
+        confidence: brainResult.confidence,
+        reasoning: brainResult.reasoning,
+      });
+
+      // Retrieve relevant memories from RAG
+      const memoryContext = await multimodalRAG.buildMemoryContext(
+        question,
+        session.id,
+        brainResult.selectedBrain.type
+      );
 
       // Build context from session history and canvas
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
-      // Generate system prompt
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context);
+      // Generate system prompt with brain-specific enhancements
+      const systemPrompt = this.buildSystemPrompt(
+        session,
+        sessionContext,
+        mode,
+        context,
+        brainResult.selectedBrain,
+        memoryContext
+      );
 
       // Generate user prompt
       const userPrompt = this.buildUserPrompt(question, sessionContext);
@@ -255,6 +285,34 @@ export class MentorAgent {
         references: references.length,
       });
 
+      // Store memories in RAG for future reference
+      try {
+        // Store question and answer
+        await multimodalRAG.addMemory(question, 'question', {
+          sessionId: session.id,
+          timestamp: Date.now(),
+          brainType: brainResult.selectedBrain.type,
+        });
+        
+        await multimodalRAG.addMemory(agentResponse.explanation, 'answer', {
+          sessionId: session.id,
+          timestamp: Date.now(),
+          brainType: brainResult.selectedBrain.type,
+        });
+
+        // Store canvas objects for later retrieval
+        if (allCanvasObjects.length > 0) {
+          await multimodalRAG.storeCanvasObjects(
+            session.id,
+            allCanvasObjects,
+            brainResult.selectedBrain.type
+          );
+        }
+      } catch (error) {
+        logger.warn('Failed to store memories in RAG', error);
+        // Don't fail the request if memory storage fails
+      }
+
       return {
         text: agentResponse.explanation,
         narration: agentResponse.narration,
@@ -279,7 +337,9 @@ export class MentorAgent {
       recentConversation?: string[];
       topics?: string[];
       conversationHistory?: string[];
-    }
+    },
+    selectedBrain?: { type: string; name: string; description: string; promptEnhancement: string },
+    memoryContext?: string
   ): string {
     const teachingStyle =
       mode === 'guided'
@@ -307,12 +367,23 @@ export class MentorAgent {
       }
     }
 
-    return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.
+    // Add brain-specific enhancement if a brain was selected
+    const brainInfo = selectedBrain 
+      ? `\n\nSPECIALIZED BRAIN: ${selectedBrain.name}
+${selectedBrain.promptEnhancement}\n`
+      : '';
+
+    // Add memory context from RAG if available
+    const memorySection = memoryContext 
+      ? `\n${memoryContext}\n`
+      : '';
+
+    return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.${brainInfo}
 
 CANVAS STATE:
 ${context.canvasState}
 
-${context.highlightedObjects ? `STUDENT HIGHLIGHTED:\n${context.highlightedObjects}\n` : ''}${contextualInfo}
+${context.highlightedObjects ? `STUDENT HIGHLIGHTED:\n${context.highlightedObjects}\n` : ''}${contextualInfo}${memorySection}
 
 CONTEXTUAL AWARENESS:
 - You have been listening to the user's ongoing conversation and building context
@@ -325,7 +396,11 @@ TEACHING STYLE (${mode} mode):
 ${teachingStyle}
 
 VISUAL CREATION:
-- Create visual objects to explain concepts (LaTeX equations, graphs, code blocks, diagrams, text notes)
+- IMPORTANT: Use the render_animation or execute_python tools for creating visualizations, plots, and graphs
+- For mathematical concepts, functions, and animated visualizations: ALWAYS use the render_animation tool
+- For static plots, data visualizations, and scientific diagrams: Use the execute_python tool
+- Only use built-in canvas objects (LaTeX, graph, code, diagram, text) when tools are not appropriate
+- The tools will generate actual images/videos that are much better than basic canvas objects
 - Reference existing canvas objects naturally in your explanation
 - Position new objects spatially relative to existing ones
 - Use directional language: "as shown in the equation above", "let's place this below"
