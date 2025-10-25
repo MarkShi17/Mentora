@@ -7,9 +7,11 @@ import { ObjectLayer } from "@/components/object-layer";
 import { PinLayer } from "@/components/pin-layer";
 import { SelectionLayer } from "@/components/selection-layer";
 import { ObjectContextMenu } from "@/components/object-context-menu";
+import { ConnectionLayer } from "@/components/connection-layer";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
-import type { CanvasObject, Pin } from "@/types";
+import type { CanvasObject, Pin, ConnectionAnchor } from "@/types";
+import { getHoveredAnchor } from "@/lib/connection-utils";
 
 const GRID_SIZE = 40;
 const MIN_SCALE = 0.25;
@@ -52,6 +54,12 @@ type ResizeState = {
   startDimensions: { x: number; y: number; width: number; height: number };
   currentDimensions: { x: number; y: number; width: number; height: number };
   textScale?: number; // Scale factor for text (0.7 to 1.0)
+};
+
+type ConnectionDragState = {
+  sourceObjectId: string;
+  sourceAnchor: ConnectionAnchor;
+  currentWorld: { x: number; y: number };
 };
 
 const IDENTITY: TransformState = { x: 0, y: 0, k: 1 };
@@ -109,6 +117,11 @@ const bringToFront = useSessionStore((state) => state.bringToFront);
 const stageSize = useSessionStore((state) =>
   state.activeSessionId ? state.canvasViews[state.activeSessionId]?.stageSize : null
 );
+const connections = useSessionStore((state) =>
+  state.activeSessionId ? state.connections[state.activeSessionId] ?? [] : []
+);
+const createConnection = useSessionStore((state) => state.createConnection);
+const deleteConnection = useSessionStore((state) => state.deleteConnection);
 
   const canvasModeRef = useRef(canvasMode);
   useEffect(() => {
@@ -158,6 +171,16 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
   useEffect(() => {
     resizeStateRef.current = resizeState;
   }, [resizeState]);
+
+  // Connection dragging state
+  const [connectionDragState, setConnectionDragState] = useState<ConnectionDragState | null>(null);
+  const connectionDragStateRef = useRef<ConnectionDragState | null>(null);
+  useEffect(() => {
+    connectionDragStateRef.current = connectionDragState;
+  }, [connectionDragState]);
+
+  // Hovered anchor state
+  const [hoveredAnchor, setHoveredAnchor] = useState<{ objectId: string; anchor: ConnectionAnchor } | null>(null);
 
   useEffect(() => {
     if (pinDraft && pinInputRef.current) {
@@ -1092,10 +1115,128 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     [activeSessionId, updateCanvasObject]
   );
 
+  // Connection handlers
+  const handleConnectionStart = useCallback(
+    (objectId: string, anchor: ConnectionAnchor, event: React.PointerEvent) => {
+      if (!activeSessionId) return;
+
+      event.stopPropagation();
+      event.preventDefault();
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+      const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+
+      setConnectionDragState({
+        sourceObjectId: objectId,
+        sourceAnchor: anchor,
+        currentWorld: { x: worldX, y: worldY }
+      });
+
+      // Capture pointer for smooth dragging
+      if (containerRef.current) {
+        containerRef.current.setPointerCapture(event.pointerId);
+      }
+    },
+    [activeSessionId]
+  );
+
+  const handleConnectionMove = useCallback(
+    (event: React.PointerEvent) => {
+      const connDrag = connectionDragStateRef.current;
+      if (!connDrag || !activeSessionId) return;
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+      const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+
+      // Update current position
+      setConnectionDragState({
+        ...connDrag,
+        currentWorld: { x: worldX, y: worldY }
+      });
+
+      // Check if hovering over an anchor
+      const hoveredObject = canvasObjects.find(obj => {
+        if (obj.id === connDrag.sourceObjectId) return false; // Can't connect to self
+        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, 10);
+        return anchor !== null;
+      });
+
+      if (hoveredObject) {
+        const anchor = getHoveredAnchor(hoveredObject, { x: worldX, y: worldY }, 10);
+        if (anchor) {
+          setHoveredAnchor({ objectId: hoveredObject.id, anchor });
+        } else {
+          setHoveredAnchor(null);
+        }
+      } else {
+        setHoveredAnchor(null);
+      }
+    },
+    [activeSessionId, canvasObjects]
+  );
+
+  const handleConnectionEnd = useCallback(
+    (event: React.PointerEvent) => {
+      const connDrag = connectionDragStateRef.current;
+      if (!connDrag || !activeSessionId) return;
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+      const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+
+      // Check if we're over a valid target anchor
+      const targetObject = canvasObjects.find(obj => {
+        if (obj.id === connDrag.sourceObjectId) return false;
+        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, 10);
+        return anchor !== null;
+      });
+
+      if (targetObject) {
+        const targetAnchor = getHoveredAnchor(targetObject, { x: worldX, y: worldY }, 10);
+        if (targetAnchor) {
+          // Check if connection already exists between these two objects (in either direction)
+          const connectionExists = connections.some(conn =>
+            (conn.sourceObjectId === connDrag.sourceObjectId && conn.targetObjectId === targetObject.id) ||
+            (conn.sourceObjectId === targetObject.id && conn.targetObjectId === connDrag.sourceObjectId)
+          );
+
+          if (!connectionExists) {
+            // Create the connection
+            createConnection(
+              activeSessionId,
+              connDrag.sourceObjectId,
+              targetObject.id,
+              connDrag.sourceAnchor,
+              targetAnchor
+            );
+          }
+        }
+      }
+
+      // Release pointer capture
+      if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
+        containerRef.current.releasePointerCapture(event.pointerId);
+      }
+
+      // Clear connection drag state
+      setConnectionDragState(null);
+      setHoveredAnchor(null);
+    },
+    [activeSessionId, canvasObjects, createConnection, connections]
+  );
+
   const startPinPlacement = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      // Don't handle if we're resizing
-      if (resizeStateRef.current) {
+      // Don't handle if we're resizing or connecting
+      if (resizeStateRef.current || connectionDragStateRef.current) {
         return;
       }
 
@@ -1307,11 +1448,15 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         onPointerMove={(e) => {
           if (resizeState) {
             handleResizeMove(e);
+          } else if (connectionDragState) {
+            handleConnectionMove(e);
           }
         }}
         onPointerUp={(e) => {
           if (resizeState) {
             handleResizeEnd(e);
+          } else if (connectionDragState) {
+            handleConnectionEnd(e);
           }
         }}
         style={{ cursor: canvasCursor }}
@@ -1336,6 +1481,18 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
               transform={transform}
               interactive={canvasMode !== "pin"}
               onFocus={handlePinFocus}
+            />
+            <ConnectionLayer
+              connections={connections}
+              objects={canvasObjects}
+              transform={transform}
+              connectionDragState={connectionDragState}
+              hoveredAnchor={hoveredAnchor}
+              dragState={dragState}
+              onConnectionClick={(connectionId) => {
+                // Handle connection click (e.g., for deletion)
+                console.log('Connection clicked:', connectionId);
+              }}
             />
           </>
         )}
@@ -1391,6 +1548,9 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
           dragState={dragState}
           onResizeStart={handleResizeStart}
           resizeState={resizeState}
+          onConnectionStart={handleConnectionStart}
+          connectionDragState={connectionDragState}
+          hoveredAnchor={hoveredAnchor}
         />
         {canvasMode === "lasso" ? (
           <div

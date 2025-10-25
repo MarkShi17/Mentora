@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import type { CanvasObject } from "@/types";
+import type { CanvasObject, ConnectionAnchor as AnchorType } from "@/types";
 import { ObjectContextMenu, ObjectMenuButton } from "@/components/object-context-menu";
+import { ConnectionAnchor } from "@/components/connection-anchor";
+import { getAnchorPosition } from "@/lib/connection-utils";
 
 type SelectionLayerProps = {
   objects: CanvasObject[];
@@ -29,6 +31,12 @@ type SelectionLayerProps = {
     currentDimensions: { x: number; y: number; width: number; height: number };
     textScale?: number;
   } | null;
+  onConnectionStart?: (objectId: string, anchor: AnchorType, event: React.PointerEvent) => void;
+  connectionDragState?: {
+    sourceObjectId: string;
+    sourceAnchor: AnchorType;
+  } | null;
+  hoveredAnchor?: { objectId: string; anchor: AnchorType } | null;
 };
 
 export function SelectionLayer({
@@ -39,7 +47,10 @@ export function SelectionLayer({
   onDelete,
   dragState,
   onResizeStart,
-  resizeState
+  resizeState,
+  onConnectionStart,
+  connectionDragState,
+  hoveredAnchor
 }: SelectionLayerProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -139,11 +150,90 @@ export function SelectionLayer({
     ));
   };
 
+  // Render connection anchors on N/E/S/W sides of object
+  const renderConnectionAnchors = (obj: CanvasObject) => {
+    if (!onConnectionStart) return null;
+
+    const dims = getDimensions(obj);
+    const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];
+
+    return anchors.map(anchor => {
+      const pos = getAnchorPosition(
+        { ...obj, x: dims.x, y: dims.y, width: dims.width, height: dims.height },
+        anchor
+      );
+
+      const isActive = connectionDragState?.sourceObjectId === obj.id && connectionDragState?.sourceAnchor === anchor;
+      const isHovered = hoveredAnchor?.objectId === obj.id && hoveredAnchor?.anchor === anchor;
+
+      return (
+        <ConnectionAnchor
+          key={anchor}
+          anchor={anchor}
+          x={pos.x}
+          y={pos.y}
+          scale={transform.k}
+          isActive={isActive}
+          isHovered={isHovered}
+          onPointerDown={(e) => onConnectionStart(obj.id, anchor, e)}
+        />
+      );
+    });
+  };
+
   // Apply the same transform as the object layer
   const stageStyle: CSSProperties = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
     transformOrigin: "0 0"
   };
+
+  // When dragging a connection, show anchors on ALL objects
+  if (connectionDragState && onConnectionStart) {
+    return (
+      <div className="pointer-events-none absolute inset-0">
+        <div className="relative h-full w-full" style={stageStyle}>
+          {objects.map(obj => {
+            const dims = getDimensions(obj);
+            const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];
+
+            return anchors.map(anchor => {
+              const pos = getAnchorPosition(
+                { ...obj, x: dims.x, y: dims.y, width: dims.width, height: dims.height },
+                anchor
+              );
+
+              const isSourceAnchor = connectionDragState.sourceObjectId === obj.id && connectionDragState.sourceAnchor === anchor;
+              const isHovered = hoveredAnchor?.objectId === obj.id && hoveredAnchor?.anchor === anchor;
+              const isSourceObject = connectionDragState.sourceObjectId === obj.id;
+
+              // Don't show other anchors on the source object
+              if (isSourceObject && !isSourceAnchor) {
+                return null;
+              }
+
+              return (
+                <ConnectionAnchor
+                  key={`${obj.id}-${anchor}`}
+                  anchor={anchor}
+                  x={pos.x}
+                  y={pos.y}
+                  scale={transform.k}
+                  isActive={isSourceAnchor}
+                  isHovered={isHovered}
+                  onPointerDown={(e) => {
+                    if (!isSourceAnchor) {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }
+                  }}
+                />
+              );
+            });
+          })}
+        </div>
+      </div>
+    );
+  }
 
   // Single object selection - only show label (object already has border)
   if (selectedObjects.length === 1) {
@@ -172,6 +262,8 @@ export function SelectionLayer({
             </div>
             {/* Resize handles */}
             {renderResizeHandles(obj)}
+            {/* Connection anchors */}
+            {renderConnectionAnchors(obj)}
           </div>
         </div>
         {menuPosition && (
