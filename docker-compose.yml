@@ -13,6 +13,12 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - FIGMA_TOKEN=${FIGMA_TOKEN}
+      - ENABLE_MANIM=${ENABLE_MANIM:-false}
+      - ENABLE_PYTHON=${ENABLE_PYTHON:-false}
+      - MANIM_MCP_URL=${MANIM_MCP_URL:-http://manim-mcp:8000}
+      - PYTHON_MCP_URL=${PYTHON_MCP_URL:-http://python-mcp:8000}
       - NODE_ENV=development
       - LOG_LEVEL=info
       - PORT=3000
@@ -53,6 +59,62 @@ services:
       - backend
     restart: unless-stopped
 
+  # Python MCP Service (optional, controlled by ENABLE_PYTHON)
+  python-mcp:
+    build:
+      context: ./docker/python-mcp
+      dockerfile: Dockerfile
+    container_name: mentora-python-mcp
+    ports:
+      - "8001:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - MCP_MODE=http
+    volumes:
+      - python-mcp-media:/app/media
+    networks:
+      - mentora-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    profiles:
+      - mcp
+      - python-mcp
+
+  # Manim MCP Service (optional, controlled by ENABLE_MANIM)
+  manim-mcp:
+    build:
+      context: ./docker/manim-mcp
+      dockerfile: Dockerfile
+    container_name: mentora-manim-mcp
+    ports:
+      - "8002:8000"
+    environment:
+      - MANIM_QUALITY=medium
+      - MCP_MODE=http
+    volumes:
+      - manim-mcp-media:/app/media
+    networks:
+      - mentora-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    profiles:
+      - mcp
+      - manim-mcp
+
 networks:
   mentora-network:
     driver: bridge
+
+volumes:
+  python-mcp-media:
+  manim-mcp-media:

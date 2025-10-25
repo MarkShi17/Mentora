@@ -99,9 +99,96 @@ export class MCPClient {
    * Connect via HTTP transport
    */
   private async connectHttp(): Promise<void> {
-    // HTTP transport implementation - placeholder for now
-    // Will implement when HTTP MCP servers are set up
-    throw new Error('HTTP transport not yet implemented');
+    if (!this.config.url) {
+      throw new Error('URL is required for HTTP transport');
+    }
+
+    // For HTTP transport, we don't need to establish a persistent connection
+    // Just validate the server is reachable
+    try {
+      const response = await fetch(`${this.config.url}/health`);
+      if (!response.ok) {
+        throw new Error(`HTTP server returned status ${response.status}`);
+      }
+      logger.info(`HTTP MCP server ${this.config.name} is reachable`);
+    } catch (error) {
+      throw new Error(`Failed to reach HTTP MCP server: ${error}`);
+    }
+
+    // Create a mock client for HTTP
+    this.client = {
+      listTools: async () => {
+        const response = await fetch(`${this.config.url}/mcp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: Date.now(),
+            method: 'tools/list',
+            params: {}
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.result || { tools: [] };
+      },
+      callTool: async (params: any) => {
+        const requestBody = {
+          jsonrpc: '2.0',
+          id: Date.now(),
+          method: 'tools/call',
+          params
+        };
+
+        logger.info('Making HTTP MCP request', {
+          url: `${this.config.url}/mcp`,
+          method: 'tools/call',
+          toolName: params.name,
+          serverName: this.config.name
+        });
+
+        const response = await fetch(`${this.config.url}/mcp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        logger.info('HTTP MCP response received', {
+          status: response.status,
+          statusText: response.statusText,
+          serverName: this.config.name
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          logger.error('HTTP MCP request failed', {
+            status: response.status,
+            statusText: response.statusText,
+            errorText,
+            serverName: this.config.name
+          });
+          throw new Error(`HTTP request failed: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        logger.info('HTTP MCP response parsed', {
+          hasResult: !!data.result,
+          resultKeys: data.result ? Object.keys(data.result) : [],
+          isError: data.result?.isError,
+          contentLength: data.result?.content?.length || 0,
+          serverName: this.config.name
+        });
+
+        return data.result || { content: [], isError: true };
+      },
+      close: async () => {
+        // No persistent connection to close
+      }
+    } as any;
   }
 
   /**

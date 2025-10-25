@@ -1,4 +1,4 @@
-export type CanvasObjectType = 'latex' | 'graph' | 'code' | 'text' | 'diagram' | 'image';
+export type CanvasObjectType = 'latex' | 'graph' | 'code' | 'text' | 'diagram' | 'image' | 'video';
 
 export type Subject = 'math' | 'bio' | 'code' | 'design';
 
@@ -17,6 +17,8 @@ export interface CanvasObjectMetadata {
   turnId: string;
   referenceName?: string;
   tags: string[];
+  // Allow additional metadata from MCP tools
+  [key: string]: any;
 }
 
 export interface BaseCanvasObject {
@@ -84,13 +86,23 @@ export interface ImageObject extends BaseCanvasObject {
   };
 }
 
+export interface VideoObject extends BaseCanvasObject {
+  type: 'video';
+  data: {
+    type: 'video';
+    url: string;
+    alt?: string;
+  };
+}
+
 export type CanvasObject =
   | LatexObject
   | GraphObject
   | CodeObject
   | TextObject
   | DiagramObject
-  | ImageObject;
+  | ImageObject
+  | VideoObject;
 
 export type AnimationType = 'fade' | 'slide' | 'draw';
 

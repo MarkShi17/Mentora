@@ -115,6 +115,17 @@ function renderObjectContent(object: CanvasObject) {
         </div>
       );
     
+    case 'image':
+      return (
+        <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto flex items-center justify-center">
+          <img 
+            src={object.data.url || object.data.content} 
+            alt={object.data.alt || 'Generated image'} 
+            className="max-w-full max-h-full object-contain rounded"
+          />
+        </div>
+      );
+    
     default:
       return (
         <p className="text-sm text-slate-800">

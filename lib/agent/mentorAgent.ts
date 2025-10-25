@@ -7,6 +7,9 @@ import { objectGenerator } from '@/lib/canvas/objectGenerator';
 import { layoutEngine } from '@/lib/canvas/layoutEngine';
 import { logger } from '@/lib/utils/logger';
 import { ExternalServiceError } from '@/lib/utils/errors';
+import { mcpManager } from '@/lib/mcp';
+import { initializeMCP } from '@/lib/mcp/init';
+import { MCP_TOOLS_FOR_CLAUDE, TOOL_TO_SERVER_MAP, isVisualizationTool } from './mcpTools';
 
 interface AgentResponse {
   explanation: string;
@@ -53,7 +56,10 @@ export class MentorAgent {
     references: ObjectReference[];
   }> {
     try {
-      logger.info('Generating teaching response', { question, mode, sessionId: session.id });
+      logger.info('Generating teaching response with MCP tools', { question, mode, sessionId: session.id });
+
+      // Ensure MCP is initialized
+      await initializeMCP();
 
       // Build context from session history and canvas
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
@@ -64,50 +70,195 @@ export class MentorAgent {
       // Generate user prompt
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
-      // Call Claude API
-      const response = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: userPrompt,
-          },
-        ],
-      });
+      // Call Claude API with MCP tools
+      let messages: Anthropic.MessageParam[] = [
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ];
 
-      // Parse response
-      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+      let finalResponse: any = null;
+      let toolResults: CanvasObject[] = [];
+      const maxIterations = 5; // Prevent infinite loops
+      let iteration = 0;
+
+      while (iteration < maxIterations) {
+        iteration++;
+
+        const response = await this.anthropic.messages.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 4096,
+          system: systemPrompt,
+          tools: MCP_TOOLS_FOR_CLAUDE,
+          messages,
+        });
+
+        logger.info('Claude response', {
+          stopReason: response.stop_reason,
+          iteration,
+          contentBlocks: response.content.length
+        });
+
+        // If Claude wants to use tools
+        if (response.stop_reason === 'tool_use') {
+          const toolUses = response.content.filter(block => block.type === 'tool_use');
+          const textBlocks = response.content.filter(block => block.type === 'text');
+
+          // Store any text explanation
+          if (textBlocks.length > 0 && !finalResponse) {
+            finalResponse = textBlocks;
+          }
+
+          // Add assistant's message with tool use to conversation
+          messages.push({
+            role: 'assistant',
+            content: response.content,
+          });
+
+          // Execute all tool calls
+          const toolResultsContent: Anthropic.ToolResultBlockParam[] = [];
+
+          for (const toolUse of toolUses) {
+            if (toolUse.type !== 'tool_use') continue;
+
+            logger.info('Executing MCP tool', {
+              toolName: toolUse.name,
+              toolId: toolUse.id
+            });
+
+            try {
+              const serverId = TOOL_TO_SERVER_MAP[toolUse.name];
+              if (!serverId) {
+                throw new Error(`Unknown tool: ${toolUse.name}`);
+              }
+
+              // Call MCP server
+              const mcpResult = await mcpManager.callTool({
+                serverId,
+                toolName: toolUse.name,
+                arguments: toolUse.input as Record<string, any>,
+              });
+
+              logger.info('MCP tool result received', {
+                toolName: toolUse.name,
+                serverId,
+                success: mcpResult.success,
+                contentLength: mcpResult.content?.length || 0,
+                content: mcpResult.content,
+                error: mcpResult.error,
+                isError: mcpResult.isError
+              });
+
+              if (!mcpResult.success) {
+                throw new Error(mcpResult.error || 'MCP tool call failed');
+              }
+
+              // Convert MCP result to canvas objects if it's a visualization tool
+              let generatedObjectsCount = 0;
+              if (isVisualizationTool(toolUse.name)) {
+                const mcpObjects = this.convertMCPResultToCanvasObjects(
+                  mcpResult,
+                  toolUse.name,
+                  session.canvasObjects,
+                  toolResults,
+                  turnId
+                );
+                toolResults.push(...mcpObjects);
+                generatedObjectsCount = mcpObjects.length;
+              }
+
+              // Format result for Claude
+              const resultText = mcpResult.content
+                .map((c: any) => {
+                  if (c.type === 'text') return c.text;
+                  if (c.type === 'image') return `[Image generated: ${c.mimeType}]`;
+                  if (c.type === 'resource') return `[Resource: ${c.resource?.mimeType || 'unknown'}]`;
+                  return `[${c.type}]`;
+                })
+                .join('\n');
+
+              toolResultsContent.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: resultText || 'Tool executed successfully',
+              });
+
+              logger.info('MCP tool executed successfully', {
+                toolName: toolUse.name,
+                objectsCreated: generatedObjectsCount
+              });
+
+            } catch (error) {
+              logger.error('MCP tool execution failed', {
+                toolName: toolUse.name,
+                error
+              });
+
+              toolResultsContent.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+                is_error: true,
+              });
+            }
+          }
+
+          // Add tool results to conversation
+          messages.push({
+            role: 'user',
+            content: toolResultsContent,
+          });
+
+          // Continue conversation loop to get final response
+          continue;
+        }
+
+        // If Claude finished without using tools or after using tools
+        finalResponse = response.content;
+        break;
+      }
+
+      // Parse final response
+      const responseText = finalResponse
+        .filter((block: any) => block.type === 'text')
+        .map((block: any) => block.text)
+        .join('\n');
+
       const agentResponse = this.parseResponse(responseText);
 
-      // Generate canvas objects
-      const canvasObjects = this.generateCanvasObjects(
+      // Generate canvas objects from Claude's response
+      const claudeObjects = this.generateCanvasObjects(
         agentResponse.objects,
         session.canvasObjects,
         turnId,
         question
       );
 
+      // Combine MCP-generated objects with Claude-generated objects
+      const allCanvasObjects = [...toolResults, ...claudeObjects];
+
       // Generate object placements
-      const objectPlacements = this.generateObjectPlacements(canvasObjects);
+      const objectPlacements = this.generateObjectPlacements(allCanvasObjects);
 
       // Generate references with timestamps
       const references = this.generateReferences(
         agentResponse.references,
         session.canvasObjects,
-        canvasObjects
+        allCanvasObjects
       );
 
-      logger.info('Teaching response generated successfully', {
-        objectsCreated: canvasObjects.length,
+      logger.info('Teaching response generated successfully with MCPs', {
+        objectsFromMCP: toolResults.length,
+        objectsFromClaude: claudeObjects.length,
+        totalObjects: allCanvasObjects.length,
         references: references.length,
       });
 
       return {
         text: agentResponse.explanation,
         narration: agentResponse.narration,
-        canvasObjects,
+        canvasObjects: allCanvasObjects,
         objectPlacements,
         references,
       };
@@ -344,6 +495,146 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         };
       })
       .filter((ref): ref is ObjectReference => ref !== null);
+  }
+
+  /**
+   * Convert MCP tool results into canvas objects
+   */
+  private convertMCPResultToCanvasObjects(
+    mcpResult: any,
+    toolName: string,
+    existingObjects: CanvasObject[],
+    currentToolResults: CanvasObject[],
+    turnId: string
+  ): CanvasObject[] {
+    const objects: CanvasObject[] = [];
+
+    if (!mcpResult.content || !Array.isArray(mcpResult.content)) {
+      logger.warn('MCP result has no content array', { toolName });
+      return objects;
+    }
+
+    // Process each content item from MCP result
+    for (const content of mcpResult.content) {
+      // Skip text-only content for visualization tools
+      if (content.type === 'text') {
+        continue;
+      }
+
+      // Handle image content (from Python MCP matplotlib)
+      if (content.type === 'image' && content.data && content.mimeType) {
+        const position = layoutEngine.calculatePosition(
+          {
+            existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
+              id: obj.id,
+              position: obj.position,
+              size: obj.size,
+            })),
+          },
+          { width: 600, height: 400 }
+        );
+
+        const imageObject: CanvasObject = {
+          id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+          type: 'image',
+          data: {
+            type: 'image',
+            url: `data:${content.mimeType};base64,${content.data}`,
+            alt: `Visualization from ${toolName}`,
+          },
+          position,
+          size: { width: 600, height: 400 },
+          zIndex: 1,
+          metadata: {
+            createdAt: Date.now(),
+            turnId,
+            tags: ['mcp', toolName],
+            source: 'mcp',
+            toolName,
+            mimeType: content.mimeType,
+          },
+        };
+
+        objects.push(imageObject);
+      }
+
+      // Handle resource content (from Manim MCP)
+      if (content.type === 'resource' && content.resource) {
+        const resource = content.resource;
+        const isVideo = resource.mimeType?.startsWith('video/');
+        const isImage = resource.mimeType?.startsWith('image/');
+
+        if (isVideo || isImage) {
+          const position = layoutEngine.calculatePosition(
+            {
+              existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
+                id: obj.id,
+                position: obj.position,
+                size: obj.size,
+              })),
+            },
+            { width: 600, height: 400 }
+          );
+
+          const url = resource.text ? `data:${resource.mimeType};base64,${resource.text}` : resource.uri;
+
+          if (isVideo) {
+            const videoObject: CanvasObject = {
+              id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+              type: 'video',
+              data: {
+                type: 'video',
+                url,
+                alt: `Animation from ${toolName}`,
+              },
+              position,
+              size: { width: 600, height: 400 },
+              zIndex: 1,
+              metadata: {
+                createdAt: Date.now(),
+                turnId,
+                tags: ['mcp', toolName, 'animation'],
+                source: 'mcp',
+                toolName,
+                mimeType: resource.mimeType,
+                uri: resource.uri,
+              },
+            };
+            objects.push(videoObject);
+          } else {
+            const imageObject: CanvasObject = {
+              id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+              type: 'image',
+              data: {
+                type: 'image',
+                url,
+                alt: `Visualization from ${toolName}`,
+              },
+              position,
+              size: { width: 600, height: 400 },
+              zIndex: 1,
+              metadata: {
+                createdAt: Date.now(),
+                turnId,
+                tags: ['mcp', toolName],
+                source: 'mcp',
+                toolName,
+                mimeType: resource.mimeType,
+                uri: resource.uri,
+              },
+            };
+            objects.push(imageObject);
+          }
+        }
+      }
+    }
+
+    logger.info('Converted MCP results to canvas objects', {
+      toolName,
+      objectsCreated: objects.length,
+    });
+
+    return objects;
   }
 }
 
