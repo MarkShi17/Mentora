@@ -11,7 +11,7 @@ type VoiceControlsProps = {
 };
 
 export function VoiceControls({ text, voice = 'nova', className = '' }: VoiceControlsProps) {
-  const { speak, stop, pause, resume, speaking, loading, error } = useOpenAITTS();
+  const { speak, stop, pause, resume, speaking, paused, loading, error } = useOpenAITTS();
 
   const handlePlay = () => {
     if (speaking) {
@@ -21,8 +21,12 @@ export function VoiceControls({ text, voice = 'nova', className = '' }: VoiceCon
     }
   };
 
-  const handlePause = () => {
-    pause();
+  const handlePauseResume = () => {
+    if (paused) {
+      resume();
+    } else {
+      pause();
+    }
   };
 
   const handleStop = () => {
@@ -41,7 +45,7 @@ export function VoiceControls({ text, voice = 'nova', className = '' }: VoiceCon
         size="sm"
         onClick={handlePlay}
         disabled={loading}
-        className="flex items-center gap-1"
+        className="flex items-center gap-1 bg-slate-900 text-white border-slate-900 hover:bg-slate-700 hover:border-slate-700"
       >
         {loading ? (
           <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -59,11 +63,20 @@ export function VoiceControls({ text, voice = 'nova', className = '' }: VoiceCon
             type="button"
             variant="outline"
             size="sm"
-            onClick={handlePause}
-            className="flex items-center gap-1"
+            onClick={handlePauseResume}
+            className="flex items-center gap-1 bg-slate-900 text-white border-slate-900 hover:bg-slate-700 hover:border-slate-700"
           >
-            <Pause className="h-4 w-4" />
-            Pause
+            {paused ? (
+              <>
+                <Play className="h-4 w-4" />
+                Resume
+              </>
+            ) : (
+              <>
+                <Pause className="h-4 w-4" />
+                Pause
+              </>
+            )}
           </Button>
 
           <Button
@@ -71,7 +84,7 @@ export function VoiceControls({ text, voice = 'nova', className = '' }: VoiceCon
             variant="outline"
             size="sm"
             onClick={handleStop}
-            className="flex items-center gap-1"
+            className="flex items-center gap-1 bg-slate-900 text-white border-slate-900 hover:bg-slate-700 hover:border-slate-700"
           >
             <Square className="h-4 w-4" />
             Stop

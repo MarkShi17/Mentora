@@ -37,6 +37,10 @@ export function ContinuousAI() {
   // Get messages for active session
   const messages = activeSessionId ? (allMessages[activeSessionId] || []) : [];
 
+  // Track session ID and complete text for adding to chat history when streaming finishes
+  const currentSessionRef = useRef<string | null>(null);
+  const completeTextRef = useRef<string>('');
+
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
     onCanvasObject: useCallback((object: any, placement: any) => {
@@ -79,13 +83,23 @@ export function ContinuousAI() {
       }
     }, [activeSessionId, updateCanvasObject, appendTimelineEvent]),
     onComplete: useCallback(() => {
-      if (activeSessionId) {
-        appendTimelineEvent(activeSessionId, {
-          description: "AI provided contextual response.",
+      const sessionId = currentSessionRef.current;
+      const finalText = completeTextRef.current;
+
+      if (sessionId && finalText.trim()) {
+        // Add assistant message to chat history
+        addMessage(sessionId, { role: "assistant", content: finalText });
+        appendTimelineEvent(sessionId, {
+          description: "AI completed streaming response with audio.",
           type: "response"
         });
+        console.log('💬 Assistant message added to chat history from onComplete');
       }
-    }, [activeSessionId, appendTimelineEvent])
+
+      // Reset refs
+      currentSessionRef.current = null;
+      completeTextRef.current = '';
+    }, [addMessage, appendTimelineEvent])
   });
 
   const getColorForType = (type: string): string => {
@@ -144,6 +158,10 @@ export function ContinuousAI() {
     console.log('💬 User message added to chat history');
     console.log('🚀 Starting streaming response...');
 
+    // Store session ID for onComplete callback
+    currentSessionRef.current = sessionId;
+    completeTextRef.current = '';
+
     try {
       // Use streaming QA for real-time response with audio
       await streamingQA.startStreaming(sessionId, question, {
@@ -156,17 +174,7 @@ export function ContinuousAI() {
         }
       });
 
-      // Add assistant message with the complete text after streaming completes
-      if (streamingQA.currentText.trim()) {
-        addMessage(sessionId, { role: "assistant", content: streamingQA.currentText });
-        appendTimelineEvent(sessionId, {
-          description: "AI completed streaming response with audio.",
-          type: "response"
-        });
-        console.log('💬 Assistant message added to chat history');
-      } else {
-        console.warn('⚠️ No streaming text to add to chat history');
-      }
+      // Note: Assistant message is added in onComplete callback
     } catch (error) {
       console.error("Error processing question:", error);
 
@@ -193,6 +201,13 @@ export function ContinuousAI() {
   useEffect(() => {
     setQuestionCallback(handleQuestionDetected);
   }, [setQuestionCallback, activeSessionId, createSession, addMessage, appendTimelineEvent, updateCanvasObject, conversationContext]);
+
+  // Track streaming text in ref so onComplete can access it
+  useEffect(() => {
+    if (streamingQA.currentText) {
+      completeTextRef.current = streamingQA.currentText;
+    }
+  }, [streamingQA.currentText]);
 
   // Pause microphone when AI is speaking to prevent feedback loop
   useEffect(() => {

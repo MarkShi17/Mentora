@@ -28,7 +28,7 @@ export function PromptBar() {
 
   // Streaming QA hook - always enabled
   const streamingQA = useStreamingQA({
-    onCanvasObject: useCallback((object, placement) => {
+    onCanvasObject: useCallback((object: any, placement: any) => {
       if (activeSessionId) {
         const canvasObject = {
           id: object.id,

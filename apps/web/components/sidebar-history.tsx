@@ -10,10 +10,13 @@ import { SettingsDialog } from "@/components/settings-dialog";
 export function SidebarHistory() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
   const createSession = useSessionStore((state) => state.createSession);
+  const updateSessionTitle = useSessionStore((state) => state.updateSessionTitle);
 
   const handleCreateSession = async () => {
     const now = new Date();
@@ -25,6 +28,25 @@ export function SidebarHistory() {
     const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
     const title = `New Lesson ${timeString}`;
     await createSession({ title });
+  };
+
+  const handleStartEditing = (sessionId: string, currentTitle: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setEditingSessionId(sessionId);
+    setEditingTitle(currentTitle);
+  };
+
+  const handleSaveTitle = (sessionId: string) => {
+    if (editingTitle.trim()) {
+      updateSessionTitle(sessionId, editingTitle.trim());
+    }
+    setEditingSessionId(null);
+    setEditingTitle("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingSessionId(null);
+    setEditingTitle("");
   };
 
   return (
@@ -79,7 +101,31 @@ export function SidebarHistory() {
                     : "text-slate-700 hover:bg-slate-100"
                 )}
               >
-                <p className="font-medium">{session.title}</p>
+                {editingSessionId === session.id ? (
+                  <input
+                    type="text"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onBlur={() => handleSaveTitle(session.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleSaveTitle(session.id);
+                      } else if (e.key === "Escape") {
+                        handleCancelEdit();
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    autoFocus
+                    className="w-full bg-white border border-sky-500 rounded px-2 py-1 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                ) : (
+                  <p
+                    className="font-medium"
+                    onClick={(e) => handleStartEditing(session.id, session.title, e)}
+                  >
+                    {session.title}
+                  </p>
+                )}
                 <p className="text-xs text-slate-600" suppressHydrationWarning>
                   {new Date(session.createdAt).toLocaleDateString(undefined, {
                     month: "short",
