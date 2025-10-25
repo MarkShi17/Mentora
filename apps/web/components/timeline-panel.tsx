@@ -17,6 +17,7 @@ type DragState = {
   startY: number;
   startLeft: number;
   startTop: number;
+  currentDelta: { x: number; y: number };
 };
 
 export function TimelinePanel() {
@@ -75,6 +76,7 @@ export function TimelinePanel() {
       startY: event.clientY,
       startLeft: position.right,
       startTop: position.top,
+      currentDelta: { x: 0, y: 0 },
     };
 
     dragStateRef.current = state;
@@ -92,11 +94,13 @@ export function TimelinePanel() {
     const deltaX = event.clientX - state.startX;
     const deltaY = event.clientY - state.startY;
 
-    // Update position - subtract deltaX because we're positioning from the right
-    setPosition({
-      right: Math.max(0, state.startLeft - deltaX),
-      top: Math.max(0, state.startTop + deltaY),
-    });
+    // Update drag state with current delta (same pattern as canvas objects)
+    const nextDragState: DragState = {
+      ...state,
+      currentDelta: { x: deltaX, y: deltaY }
+    };
+    dragStateRef.current = nextDragState;
+    setDragState(nextDragState);
   };
 
   const handleDragEnd = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -107,6 +111,12 @@ export function TimelinePanel() {
 
     event.preventDefault();
     event.currentTarget.releasePointerCapture(event.pointerId);
+
+    // Commit the final position to state using the current delta (no clamping for smooth movement)
+    setPosition({
+      right: state.startLeft - state.currentDelta.x,
+      top: state.startTop + state.currentDelta.y,
+    });
 
     dragStateRef.current = null;
     setDragState(null);
@@ -175,12 +185,17 @@ export function TimelinePanel() {
   }
 
   // Expanded state - floating panel
+  const dragTransform = dragState
+    ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
+    : undefined;
+
   return (
     <aside
-      className="pointer-events-auto absolute z-20 flex w-96 max-h-[calc(100vh-8rem)] flex-col rounded-2xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur-md animate-in fade-in-0 slide-in-from-right-5 duration-300"
+      className="pointer-events-auto absolute z-20 flex w-96 max-h-[calc(100vh-8rem)] flex-col rounded-2xl border border-slate-200 bg-white/95 shadow-xl backdrop-blur-md"
       style={{
         right: `${position.right}px`,
         top: `${position.top}px`,
+        transform: dragTransform,
       }}
     >
       <div
@@ -227,7 +242,7 @@ export function TimelinePanel() {
                     : "text-slate-700"
                 )}
               >
-                <span className="capitalize">{message.role}</span>
+                <span className="capitalize">{message.role === "assistant" ? "Mentora" : message.role}</span>
                 <span className="ml-2 text-xs font-normal text-slate-500">
                   {formatTime(message.timestamp)}
                 </span>

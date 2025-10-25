@@ -6,9 +6,11 @@ import { useState, useRef, useEffect } from "react";
 type ObjectContextMenuProps = {
   position: { x: number; y: number };
   onClose: () => void;
+  selectedObjectIds: string[];
+  onDelete: (objectIds: string[]) => void;
 };
 
-export function ObjectContextMenu({ position, onClose }: ObjectContextMenuProps) {
+export function ObjectContextMenu({ position, onClose, selectedObjectIds, onDelete }: ObjectContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,7 +38,12 @@ export function ObjectContextMenu({ position, onClose }: ObjectContextMenuProps)
   const menuItems = [
     { icon: Maximize2, label: "Expand", action: () => console.log("Expand") },
     { icon: Plus, label: "Add to Context", action: () => console.log("Add to Context") },
-    { icon: Trash2, label: "Delete", action: () => console.log("Delete"), danger: true },
+    {
+      icon: Trash2,
+      label: "Delete",
+      action: () => onDelete(selectedObjectIds),
+      danger: true
+    },
   ];
 
   return (
