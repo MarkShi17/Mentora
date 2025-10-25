@@ -14,7 +14,7 @@ export type Message = {
   highlightIds?: string[];
 };
 
-export type CanvasObjectType = "diagram" | "note" | "formula" | "image";
+export type CanvasObjectType = "diagram" | "note" | "formula" | "image" | "text" | "code" | "graph" | "latex";
 
 export type CanvasObject = {
   id: string;
@@ -26,6 +26,13 @@ export type CanvasObject = {
   height: number;
   color: string;
   selected?: boolean;
+  zIndex?: number;
+  data?: {
+    content?: string;    // For text/note type
+    svg?: string;        // For diagram/graph type
+    code?: string;       // For code type
+    rendered?: string;   // For latex type (image URL)
+  };
   metadata?: Record<string, unknown>;
 };
 

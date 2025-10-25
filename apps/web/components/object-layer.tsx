@@ -158,6 +158,9 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                 onDragEnd(object.id, event);
               }
             }}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
           >
             <div className="flex flex-col bg-slate-900/80 p-4 backdrop-blur rounded-lg border border-slate-700/50 shadow-xl h-full">
               <div className="mb-3 flex items-center justify-between flex-shrink-0">

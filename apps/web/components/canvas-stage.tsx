@@ -473,20 +473,50 @@ const initialPinCenteredRef = useRef<string | null>(null);
         return;
       }
 
-      console.log('[DragStart]', objectId, 'selected:', object.selected);
+      // Check if multi-select is active
+      const isMultiSelect = event.ctrlKey || event.metaKey;
+
+      // Get max zIndex once
+      const maxZIndex = Math.max(...objects.map(obj => obj.zIndex || 0), 0);
+
+      // ALWAYS handle selection properly based on single vs multi-select mode
+      if (isMultiSelect) {
+        // Multi-select mode: just ensure this object is selected, keep others as-is
+        const freshState = useSessionStore.getState();
+        const freshObject = freshState.canvasObjects[activeSessionId]?.find(obj => obj.id === objectId);
+
+        if (freshObject) {
+          updateCanvasObject(activeSessionId, {
+            ...freshObject,
+            selected: true,
+            zIndex: maxZIndex + 1
+          });
+        }
+      } else {
+        // Single-select mode: clear ALL other selections, select only this one
+        const freshState = useSessionStore.getState();
+        const freshObjects = freshState.canvasObjects[activeSessionId] || [];
+
+        const updatedObjects = freshObjects.map(obj =>
+          obj.id === objectId
+            ? { ...obj, selected: true, zIndex: maxZIndex + 1 }
+            : { ...obj, selected: false }
+        );
+        updateCanvasObjects(activeSessionId, updatedObjects);
+      }
 
       // Get screen point and convert to world coordinates
       const screenPoint = getScreenPoint(event);
       const worldPoint = screenToWorld(screenPoint);
 
-      // Set drag state - track if object was selected at start
+      // Set drag state - track that object is now selected
       const nextDragState: DragState = {
         objectId,
         startWorld: worldPoint,
         startScreen: screenPoint,
         startObject: { x: object.x, y: object.y },
         currentDelta: { x: 0, y: 0 },
-        wasSelectedAtStart: object.selected
+        wasSelectedAtStart: true // Always true now since we just selected it
       };
       dragStateRef.current = nextDragState;
       setDragState(nextDragState);
@@ -494,7 +524,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
       // Capture pointer
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeSessionId, canvasMode, getScreenPoint, screenToWorld]
+    [activeSessionId, canvasMode, getScreenPoint, screenToWorld, updateCanvasObject, updateCanvasObjects]
   );
 
   const handleObjectDragMove = useCallback(
@@ -547,17 +577,6 @@ const initialPinCenteredRef = useRef<string | null>(null);
       const CLICK_THRESHOLD = 5; // screen pixels
       const wasClick = totalScreenMovement < CLICK_THRESHOLD;
 
-      console.log(
-        '[DragEnd]',
-        objectId,
-        'wasClick:',
-        wasClick,
-        'wasSelectedAtStart:',
-        drag.wasSelectedAtStart,
-        'totalScreenMovement:',
-        totalScreenMovement
-      );
-
       // Get fresh state from store
       const state = useSessionStore.getState();
       const objects = state.canvasObjects[activeSessionId] || [];
@@ -570,62 +589,71 @@ const initialPinCenteredRef = useRef<string | null>(null);
       // Get the highest zIndex to bring this object to front
       const maxZIndex = Math.max(...objects.map(obj => obj.zIndex || 0), 0);
 
-      // Handle selection based on whether it was a click or drag
+      // Always read FRESH state right before final update to avoid stale data
+      const finalState = useSessionStore.getState();
+      const finalObjects = finalState.canvasObjects[activeSessionId] || [];
+      const finalObject = finalObjects.find(obj => obj.id === objectId);
+
+      if (!finalObject) {
+        console.error('[DragEnd] Object not found in store:', objectId);
+        return;
+      }
+
+      // Check if multi-select at drag end (should match drag start)
+      const isMultiSelectEnd = event.ctrlKey || event.metaKey;
+
+      // Handle based on whether it was a click or drag
       if (wasClick) {
-        // It was a click - bring to front and ensure object is selected
-        const isMultiSelect = event.ctrlKey || event.metaKey;
-
-        console.log('[Click]', objectId, 'multiSelect:', isMultiSelect);
-
-        if (isMultiSelect) {
-          // Multi-select mode - toggle this object, bring to front
-          const newSelected = !object.selected;
+        // It was a click - selection already handled at drag start
+        // Just ensure zIndex is updated and selection is preserved
+        if (isMultiSelectEnd) {
+          // Multi-select: just update this object
           updateCanvasObject(activeSessionId, {
-            ...object,
+            ...finalObject,
             zIndex: maxZIndex + 1,
-            selected: newSelected
+            selected: true
           });
         } else {
-          // Single select mode - clear all others, select this one, bring to front
-          // Update all objects in a single batch to avoid race conditions
-          const updatedObjects = objects.map(obj =>
+          // Single-select: ensure ONLY this object is selected (in case other objects were selected)
+          const updatedObjects = finalObjects.map(obj =>
             obj.id === objectId
-              ? { ...obj, selected: true, zIndex: maxZIndex + 1 }
+              ? { ...obj, zIndex: maxZIndex + 1, selected: true }
               : { ...obj, selected: false }
           );
-          console.log('[Click-Update]', objectId, 'setting selected: true');
           updateCanvasObjects(activeSessionId, updatedObjects);
-
-          // Verify immediately
-          const verifyState = useSessionStore.getState();
-          const verifyObj = verifyState.canvasObjects[activeSessionId]?.find(o => o.id === objectId);
-          console.log('[Click-Verify]', objectId, 'selected after update:', verifyObj?.selected);
         }
 
         setSelectionMethod(activeSessionId, "click");
         setLastSelectedObject(activeSessionId, objectId);
       } else {
-        // It was a drag - update position, bring to front, and preserve selection state
-        console.log('[Drag]', objectId, 'wasSelectedAtStart:', drag.wasSelectedAtStart);
-
-        // Get FRESH state right before update to avoid overwriting other changes
-        const freshState = useSessionStore.getState();
-        const freshObjects = freshState.canvasObjects[activeSessionId] || [];
-        const freshObject = freshObjects.find(obj => obj.id === objectId);
-
-        if (freshObject) {
-          const shouldRemainSelected = drag.wasSelectedAtStart || freshObject.selected === true;
-          // Only update THIS object's position and zIndex, preserve everything else including selection
+        // It was a drag - update position and preserve selection
+        if (isMultiSelectEnd) {
+          // Multi-select: just update this object with new position
           updateCanvasObject(activeSessionId, {
-            ...freshObject, // Use fresh object to preserve any changes that happened during drag
+            ...finalObject,
             x: drag.startObject.x + worldDeltaX,
             y: drag.startObject.y + worldDeltaY,
             zIndex: maxZIndex + 1,
-            selected: shouldRemainSelected
+            selected: true
           });
-
-          console.log('[Drag-Update]', objectId, 'updated with selected:', shouldRemainSelected);
+        } else {
+          // Single-select: update position and ensure ONLY this object is selected
+          const updatedObjects = finalObjects.map(obj =>
+            obj.id === objectId
+              ? {
+                  ...obj,
+                  x: drag.startObject.x + worldDeltaX,
+                  y: drag.startObject.y + worldDeltaY,
+                  zIndex: maxZIndex + 1,
+                  selected: true
+                }
+              : { ...obj, selected: false }
+          );
+          updateCanvasObjects(activeSessionId, updatedObjects);
         }
+
+        setSelectionMethod(activeSessionId, "click");
+        setLastSelectedObject(activeSessionId, objectId);
       }
 
       // Release pointer capture
