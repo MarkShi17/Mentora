@@ -505,6 +505,131 @@ docker-compose up
 
 ---
 
+## 📁 Directory Restructuring (2025-10-25)
+
+### Changes Made
+
+**Flattened Project Structure:**
+
+Removed the nested `mentora/` folder and moved all contents to the root `Mentora/` directory for a cleaner, more standard project structure.
+
+**What Was Moved:**
+1. `mentora/apps/` → `apps/` (Frontend web application)
+2. `mentora/.gitattributes` → `.gitattributes` (Git LFS configuration)
+
+**What Was Removed:**
+- `mentora/.gitignore` (kept root version which was more comprehensive)
+- `mentora/package-lock.json` (empty file, not needed)
+- Empty `mentora/` directory
+
+**Files Updated (Path References):**
+1. `docker-compose.yml` - Updated frontend build context from `./mentora/apps/web` to `./apps/web`
+2. `docker-compose.prod.yml` - Updated frontend build context
+3. `FRONTEND_DOCKER_DEV.md` - Updated all file path examples
+4. `DOCKER_GUIDE.md` - Updated build context and volume mount paths
+5. `QUICKSTART.md` - Updated cd commands
+6. `README.md` - Updated frontend path references
+7. `BUILD_FIX_SUMMARY.md` - Updated verification paths
+8. `verify-setup.sh` - Updated package-lock.json check paths
+
+### New Project Structure
+
+**Before:**
+```
+Mentora/
+├── mentora/
+│   ├── apps/
+│   │   └── web/          # Frontend
+│   ├── .gitignore
+│   └── .gitattributes
+├── app/                  # Backend API routes
+├── lib/                  # Backend modules
+└── ...
+```
+
+**After:**
+```
+Mentora/
+├── apps/
+│   └── web/              # Frontend
+├── app/                  # Backend API routes
+├── lib/                  # Backend modules
+├── .gitattributes        # Git LFS config
+└── ...
+```
+
+### Why This Change
+
+**Problem**: Nested `mentora/mentora` structure was confusing and non-standard
+**Solution**: Flatten to a cleaner monorepo structure
+**Benefits**:
+- Simpler file paths (`apps/web` instead of `mentora/apps/web`)
+- More standard monorepo organization
+- Easier to navigate and understand
+- Shorter Docker build contexts
+- Clearer separation between backend (root) and frontend (apps/web)
+
+### Docker Impact
+
+**Updated Build Contexts:**
+```yaml
+# Development (docker-compose.yml)
+frontend:
+  build:
+    context: ./apps/web  # Was: ./mentora/apps/web
+  volumes:
+    - ./apps/web:/app    # Was: ./mentora/apps/web:/app
+
+# Production (docker-compose.prod.yml)
+frontend:
+  build:
+    context: ./apps/web  # Was: ./mentora/apps/web
+```
+
+### Developer Commands Updated
+
+**Before:**
+```bash
+cd mentora/apps/web
+npm install
+npm run dev
+```
+
+**After:**
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+### Verification
+
+All Docker builds still work correctly:
+```bash
+docker-compose build    # ✅ Success
+docker-compose up       # ✅ Services start normally
+```
+
+All file references updated:
+- ✅ 2 files in docker-compose configurations
+- ✅ 6 documentation files
+- ✅ 1 shell script
+
+### Migration Notes
+
+**If you have local changes:**
+1. The `apps/` folder has moved from `mentora/apps/` to root `apps/`
+2. All imports and references should work the same
+3. Docker volumes automatically point to new location
+4. No code changes needed - only paths changed
+
+**Git considerations:**
+- Git will track the move as a rename
+- History is preserved
+- `.gitattributes` now in root for LFS configuration
+
+---
+
 ## 📋 TODO / Future Enhancements
 
 ### High Priority

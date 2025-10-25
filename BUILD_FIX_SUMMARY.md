@@ -14,7 +14,7 @@ npm error The `npm ci` command can only install with an existing package-lock.js
 npm install
 ```
 - Created `package-lock.json` (33KB) in backend root
-- Verified `mentora/apps/web/package-lock.json` (245KB) exists
+- Verified `apps/web/package-lock.json` (245KB) exists
 
 ### 2. Verified Docker Builds
 Both services now build successfully:
@@ -100,7 +100,7 @@ If you encounter issues:
 2. **Verify lock files exist:**
    ```bash
    ls -lh package-lock.json
-   ls -lh mentora/apps/web/package-lock.json
+   ls -lh apps/web/package-lock.json
    ```
 
 3. **Clean Docker and rebuild:**
@@ -116,7 +116,7 @@ If you encounter issues:
 All Docker builds are now working correctly. You can proceed with development using:
 - `docker-compose up` for full stack
 - `npm run dev` for backend only
-- `cd mentora/apps/web && npm run dev` for frontend only
+- `cd apps/web && npm run dev` for frontend only
 
 ---
 

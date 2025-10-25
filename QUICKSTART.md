@@ -9,7 +9,7 @@
 npm install
 
 # Frontend dependencies (if running separately)
-cd mentora/apps/web
+cd apps/web
 npm install
 cd ../..
 ```
@@ -44,7 +44,7 @@ Backend runs at: `http://localhost:3000`
 
 **Option C: Frontend Only**
 ```bash
-cd mentora/apps/web
+cd apps/web
 npm run dev
 ```
 Frontend runs at: `http://localhost:3001`

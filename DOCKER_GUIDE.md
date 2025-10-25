@@ -49,8 +49,8 @@ Mentora uses a multi-service Docker architecture with frontend and backend servi
 
 **Container Name:** `mentora-frontend`
 **Port:** 3001 (host) → 3001 (container)
-**Build Context:** `./mentora/apps/web`
-**Dockerfile:** `mentora/apps/web/Dockerfile`
+**Build Context:** `./apps/web`
+**Dockerfile:** `apps/web/Dockerfile`
 
 **Environment Variables:**
 ```env
@@ -152,7 +152,7 @@ docker build --target runner -t mentora-backend:prod .
 **Build Targets:**
 ```bash
 # Development
-cd mentora/apps/web
+cd apps/web
 docker build --target dev -t mentora-frontend:dev .
 
 # Production
@@ -293,7 +293,7 @@ volumes:
 
 ```yaml
 volumes:
-  - ./mentora/apps/web:/app   # Mount frontend directory
+  - ./apps/web:/app           # Mount frontend directory
   - /app/node_modules         # Prevent overwriting node_modules
   - /app/.next                # Prevent overwriting .next build
 ```

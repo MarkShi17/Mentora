@@ -33,7 +33,7 @@ services:
   # Frontend Web Application
   frontend:
     build:
-      context: ./mentora/apps/web
+      context: ./apps/web
       dockerfile: Dockerfile
       target: dev
     container_name: mentora-frontend
@@ -44,7 +44,7 @@ services:
       - NODE_ENV=development
       - PORT=3001
     volumes:
-      - ./mentora/apps/web:/app
+      - ./apps/web:/app
       - /app/node_modules
       - /app/.next
     networks:

@@ -29,7 +29,7 @@ services:
   # Frontend Web Application (Production)
   frontend:
     build:
-      context: ./mentora/apps/web
+      context: ./apps/web
       dockerfile: Dockerfile
       target: runner
     container_name: mentora-frontend-prod

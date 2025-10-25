@@ -77,7 +77,7 @@ Backend API runs at http://localhost:3000
 
 **Option C: Frontend Separately (for UI development)**
 ```bash
-cd mentora/apps/web
+cd apps/web
 npm install
 npm run dev
 ```
@@ -487,7 +487,7 @@ Mentora/
 │   ├── api.ts                   # API request/response types
 │   └── index.ts                 # Re-exports
 │
-├── mentora/apps/web/             # FRONTEND: React Application
+├── apps/web/                     # FRONTEND: React Application
 │   ├── app/                     # Next.js App Router
 │   ├── components/              # React components
 │   │   ├── canvas-stage.tsx    # Infinite canvas

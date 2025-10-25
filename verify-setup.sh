@@ -27,11 +27,11 @@ else
 fi
 
 # Check frontend package-lock.json
-if [ -f "mentora/apps/web/package-lock.json" ]; then
+if [ -f "apps/web/package-lock.json" ]; then
     echo "✅ Frontend package-lock.json exists"
 else
     echo "❌ Frontend package-lock.json missing"
-    echo "   Run: cd mentora/apps/web && npm install"
+    echo "   Run: cd apps/web && npm install"
     exit 1
 fi
 
@@ -82,7 +82,7 @@ echo "Ready to start:"
 echo ""
 echo "  Full Stack (Docker):    docker-compose up"
 echo "  Backend Only:           npm run dev"
-echo "  Frontend Only:          cd mentora/apps/web && npm run dev"
+echo "  Frontend Only:          cd apps/web && npm run dev"
 echo ""
 echo "Access:"
 echo "  Frontend UI:            http://localhost:3001"
