@@ -28,18 +28,18 @@ export function ContinuousAI() {
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
+  const allMessages = useSessionStore((state) => state.messages);
   const createSession = useSessionStore((state) => state.createSession);
   const addMessage = useSessionStore((state) => state.addMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
 
   // Get messages for active session
-  const activeSession = sessions.find(s => s.id === activeSessionId);
-  const messages = activeSession?.messages || [];
+  const messages = activeSessionId ? (allMessages[activeSessionId] || []) : [];
 
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
-    onCanvasObject: useCallback((object, placement) => {
+    onCanvasObject: useCallback((object: any, placement: any) => {
       if (activeSessionId) {
         const canvasObject = {
           id: object.id,
@@ -71,7 +71,7 @@ export function ContinuousAI() {
           // Add timeline event for new object
           appendTimelineEvent(activeSessionId, {
             description: `Created ${object.type}: ${object.metadata?.referenceName || object.id}`,
-            type: "canvas_update"
+            type: "visual"
           });
 
           console.log(`✅ Canvas object "${canvasObject.label}" now visible`);
@@ -185,7 +185,7 @@ export function ContinuousAI() {
       addMessage(sessionId, { role: "assistant", content: errorMessage });
       appendTimelineEvent(sessionId, {
         description: `Error: ${errorMessage}`,
-        type: "error"
+        type: "response"
       });
     }
   }, [activeSessionId, createSession, addMessage, appendTimelineEvent, conversationContext, streamingQA]);
@@ -410,12 +410,12 @@ export function ContinuousAI() {
                       <div
                         className="h-full bg-gradient-to-r from-blue-400 to-green-400 rounded-full transition-all duration-300"
                         style={{
-                          width: `${streamingQA.audioState.queueProgress}%`
+                          width: `${streamingQA.audioState.currentSentenceIndex !== null ? ((streamingQA.audioState.currentSentenceIndex + 1) / streamingQA.audioState.queueLength) * 100 : 0}%`
                         }}
                       />
                     </div>
                     <span className="text-xs text-slate-500">
-                      {streamingQA.audioState.currentIndex + 1}/{streamingQA.audioState.queueLength}
+                      {streamingQA.audioState.currentSentenceIndex !== null ? streamingQA.audioState.currentSentenceIndex + 1 : 0}/{streamingQA.audioState.queueLength}
                     </span>
                   </div>
                 </div>

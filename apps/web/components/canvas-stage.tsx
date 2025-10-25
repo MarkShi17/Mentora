@@ -250,7 +250,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       return;
     }
     if (canvasMode === "pan") {
-      zoomBehavior.on("zoom", zoomHandlerRef.current);
+      zoomBehavior.on("zoom", zoomHandlerRef.current as any);
     } else {
       zoomBehavior.on("zoom", null);
     }
@@ -547,7 +547,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       }
 
       // Get screen point and convert to world coordinates
-      const screenPoint = getScreenPoint(event);
+      const screenPoint = getScreenPoint(event as any);
       const worldPoint = screenToWorld(screenPoint);
 
       // Get ALL currently selected objects after selection updates
@@ -591,7 +591,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       event.stopPropagation();
 
       // Get current world position
-      const screenPoint = getScreenPoint(event);
+      const screenPoint = getScreenPoint(event as any);
       const worldPoint = screenToWorld(screenPoint);
 
       // Calculate delta in world coordinates
@@ -618,7 +618,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
 
       event.stopPropagation();
 
-      const screenPoint = getScreenPoint(event);
+      const screenPoint = getScreenPoint(event as any);
       const worldPoint = screenToWorld(screenPoint);
 
       const screenDeltaX = screenPoint.x - drag.startScreen.x;
@@ -750,7 +750,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         setCanvasMode("pan");
         return;
       }
-      const screenPoint = getScreenPoint(event);
+      const screenPoint = getScreenPoint(event as any);
       const worldPoint = screenToWorld(screenPoint);
       setPinDraft({
         screen: screenPoint,
@@ -770,7 +770,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         return;
       }
       event.preventDefault();
-      const screenPoint = getScreenPoint(event);
+      const screenPoint = getScreenPoint(event as any);
       const worldPoint = screenToWorld(screenPoint);
       const pointerId = event.pointerId;
       event.currentTarget.setPointerCapture(pointerId);
@@ -800,7 +800,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         return;
       }
       event.preventDefault();
-      const screenPoint = getScreenPoint(event);
+      const screenPoint = getScreenPoint(event as any);
       const worldPoint = screenToWorld(screenPoint);
       const nextState: LassoState = {
         ...current,

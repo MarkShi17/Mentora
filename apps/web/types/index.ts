@@ -31,6 +31,7 @@ export type CanvasObject = {
     content?: string;    // For text/note type
     svg?: string;        // For diagram/graph type
     code?: string;       // For code type
+    language?: string;   // For code type (programming language)
     rendered?: string;   // For latex type (image URL)
   };
   metadata?: Record<string, unknown>;
