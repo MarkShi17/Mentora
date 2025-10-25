@@ -118,20 +118,29 @@ type IconButtonProps = {
 
 function IconButton({ icon: Icon, active, onClick, disabled, tooltip }: IconButtonProps) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={tooltip}
-      className={cn(
-        "rounded-full p-2 transition-all",
-        active
-          ? "bg-slate-700/80 text-sky-300 shadow-inner"
-          : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100",
-        disabled && "cursor-not-allowed opacity-40"
+    <div className="group relative">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          "rounded-full p-2 transition-all",
+          active
+            ? "bg-slate-700/80 text-sky-300 shadow-inner"
+            : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100",
+          disabled && "cursor-not-allowed opacity-40"
+        )}
+      >
+        <Icon className="h-4 w-4" />
+      </button>
+      {tooltip && !disabled && (
+        <div className="pointer-events-none absolute left-1/2 top-full mt-2 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs text-slate-200 shadow-lg ring-1 ring-slate-700">
+            {tooltip}
+            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rotate-45 h-2 w-2 bg-slate-900 ring-1 ring-slate-700"></div>
+          </div>
+        </div>
       )}
-    >
-      <Icon className="h-4 w-4" />
-    </button>
+    </div>
   );
 }

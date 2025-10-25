@@ -71,8 +71,8 @@ export function TimelinePanel() {
 
   // Expanded state - floating panel
   return (
-    <aside className="pointer-events-auto absolute right-4 top-4 z-20 flex h-[calc(100vh-8rem)] w-80 flex-col rounded-2xl border border-slate-700/50 bg-slate-950/80 shadow-xl backdrop-blur-md">
-      <div className="flex items-center justify-between border-b border-slate-700/50 px-4 py-3">
+    <aside className="pointer-events-auto absolute right-4 top-4 z-20 flex w-80 max-h-[calc(100vh-8rem)] flex-col rounded-2xl border border-slate-700/50 bg-slate-950/80 shadow-xl backdrop-blur-md">
+      <div className="flex items-center justify-between border-b border-slate-700/50 px-4 py-3 shrink-0">
         <div className="flex items-center gap-2">
           <Clock className="h-4 w-4 text-slate-400" />
           <div>
@@ -103,7 +103,7 @@ export function TimelinePanel() {
           </Button>
         </div>
       </div>
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4 scrollbar-thin">
+      <div className="space-y-2 overflow-y-auto px-4 py-4 scrollbar-thin">
         {timeline.map((event) => (
           <div
             key={event.id}

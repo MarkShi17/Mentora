@@ -1,12 +1,14 @@
 'use client';
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTime } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
 
 export function SidebarHistory() {
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
@@ -26,7 +28,31 @@ export function SidebarHistory() {
   };
 
   return (
-    <aside className="flex h-full w-80 flex-col border-r border-border bg-slate-950/70">
+    <div className="relative h-full">
+      {/* Toggle button */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className={cn(
+          "absolute left-0 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-r-lg border border-l-0 border-border bg-slate-950/90 text-slate-300 shadow-lg transition-all hover:bg-slate-900 hover:text-slate-100",
+          isCollapsed ? "translate-x-0" : "translate-x-80"
+        )}
+      >
+        {isCollapsed ? (
+          <ChevronRight className="h-4 w-4" />
+        ) : (
+          <ChevronLeft className="h-4 w-4" />
+        )}
+      </button>
+
+      <aside className={cn(
+        "flex h-full flex-col overflow-hidden border-r border-border bg-slate-950/70 transition-all duration-300",
+        isCollapsed ? "w-0 border-r-0" : "w-80"
+      )}>
+        {/* Sidebar content */}
+        <div className={cn(
+          "flex h-full w-80 flex-col transition-opacity duration-300",
+          isCollapsed ? "pointer-events-none opacity-0" : "opacity-100"
+        )}>
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
           <p className="text-lg font-semibold">Mentora</p>
@@ -101,6 +127,8 @@ export function SidebarHistory() {
           </div>
         </div>
       </div>
-    </aside>
+      </div>
+      </aside>
+    </div>
   );
 }

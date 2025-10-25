@@ -204,18 +204,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
     zoomBehaviorRef.current = zoomBehavior;
     selection.call(zoomBehavior);
 
-    const resetTransform = () => {
-      applyTransform(IDENTITY);
-      selection
-        .transition()
-        .duration(220)
-        .call(zoomBehavior.transform, asZoomTransform(IDENTITY));
-    };
-
-    element.addEventListener("dblclick", resetTransform);
-
     return () => {
-      element.removeEventListener("dblclick", resetTransform);
       selection.on(".zoom", null);
     };
   }, [applyTransform]);

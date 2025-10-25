@@ -27,10 +27,7 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
         {objects.map((object) => (
           <div
             key={object.id}
-            className={cn(
-              "pointer-events-auto absolute overflow-hidden rounded-lg border-2 border-transparent shadow-lg transition-colors",
-              object.selected ? "border-sky-400" : "border-transparent"
-            )}
+            className="pointer-events-auto absolute overflow-hidden rounded-lg border-2 border-transparent shadow-lg transition-colors"
             style={{
               left: object.x,
               top: object.y,
@@ -43,7 +40,10 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
               onSelect(object.id);
             }}
           >
-            <div className="flex h-full w-full flex-col justify-between bg-slate-900/60 p-3 backdrop-blur">
+            <div className={cn(
+              "flex h-full w-full flex-col justify-between p-3 backdrop-blur transition-colors",
+              object.selected ? "bg-slate-900/40" : "bg-slate-900/60"
+            )}>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-400">
                   {object.type}
