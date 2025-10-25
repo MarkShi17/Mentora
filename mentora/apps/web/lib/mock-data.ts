@@ -1,4 +1,4 @@
-import { CanvasObject, Message, Session, SourceLink, TimelineEvent } from "@/types";
+import { CanvasObject, Message, Pin, Session, SourceLink, TimelineEvent } from "@/types";
 
 const BASE_TIMESTAMP = Date.parse("2024-01-15T15:30:00.000Z");
 const isoPlus = (minutes: number) => new Date(BASE_TIMESTAMP + minutes * 60_000).toISOString();
@@ -136,6 +136,19 @@ export const mockTimeline: Record<string, TimelineEvent[]> = {
 };
 
 export const mockTranscripts: Record<string, string> = {
-  // "session-1": "Assistant: Welcome! User: How do pointers move through the list?",
-  // "session-2": "Assistant: Let's explore the limit together."
+  "session-1": "Assistant: Welcome! User: How do pointers move through the list?",
+  "session-2": "Assistant: Let's explore the limit together."
+};
+
+export const mockPins: Record<string, Pin[]> = {
+  "session-1": [
+    {
+      id: "pin-1",
+      label: "Entry Node",
+      x: 190,
+      y: 180,
+      createdAt: isoPlus(5)
+    }
+  ],
+  "session-2": []
 };

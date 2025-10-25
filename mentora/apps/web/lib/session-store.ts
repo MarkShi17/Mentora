@@ -4,6 +4,7 @@ import { nanoid } from "@/lib/utils";
 import {
   mockCanvasObjects,
   mockMessages,
+  mockPins,
   mockSessions,
   mockSources,
   mockTimeline,
@@ -12,10 +13,28 @@ import {
 import {
   CanvasObject,
   Message,
+  Pin,
   Session,
   SourceLink,
   TimelineEvent
 } from "@/types";
+
+type TransformState = {
+  x: number;
+  y: number;
+  k: number;
+};
+
+type CanvasView = {
+  transform: TransformState;
+  stageSize: { width: number; height: number } | null;
+};
+
+type FocusTarget = {
+  x: number;
+  y: number;
+  id?: string;
+} | null;
 
 type SessionState = {
   sessions: Session[];
@@ -25,10 +44,13 @@ type SessionState = {
   sources: Record<string, SourceLink[]>;
   timeline: Record<string, TimelineEvent[]>;
   transcripts: Record<string, string>;
+  pins: Record<string, Pin[]>;
   voiceActive: boolean;
   sourcesDrawerOpen: boolean;
   captionsEnabled: boolean;
-  canvasMode: "pan" | "lasso";
+  canvasMode: "pan" | "lasso" | "pin";
+  canvasView: CanvasView;
+  focusTarget: FocusTarget;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
@@ -41,7 +63,12 @@ type SessionState = {
   appendTimelineEvent: (sessionId: string, event: Omit<TimelineEvent, "id" | "timestamp">) => void;
   setSourcesDrawerOpen: (open: boolean) => void;
   setCaptionsEnabled: (enabled: boolean) => void;
-  setCanvasMode: (mode: "pan" | "lasso") => void;
+  setCanvasMode: (mode: "pan" | "lasso" | "pin") => void;
+  addPin: (sessionId: string, payload: { x: number; y: number; label?: string }) => Pin | null;
+  removePin: (sessionId: string, pinId: string) => void;
+  setCanvasView: (view: CanvasView) => void;
+  requestFocus: (target: { x: number; y: number; id?: string }) => void;
+  clearFocus: () => void;
 };
 
 const withImmer = immer<SessionState>;
@@ -55,10 +82,17 @@ export const useSessionStore = create<SessionState>()(
     sources: mockSources,
     timeline: mockTimeline,
     transcripts: mockTranscripts,
+    pins: mockSessions.reduce<Record<string, Pin[]>>((acc, session) => {
+      const source = mockPins[session.id] ?? [];
+      acc[session.id] = source.map((pin) => ({ ...pin }));
+      return acc;
+    }, {}),
     voiceActive: false,
     sourcesDrawerOpen: false,
     captionsEnabled: true,
     canvasMode: "pan",
+    canvasView: { transform: { x: 0, y: 0, k: 1 }, stageSize: null },
+    focusTarget: null,
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -96,6 +130,7 @@ export const useSessionStore = create<SessionState>()(
           state.sources[newSession.id] = [];
           state.timeline[newSession.id] = [];
           state.transcripts[newSession.id] = "";
+          state.pins[newSession.id] = [];
         });
         
         return newSession.id;
@@ -116,6 +151,7 @@ export const useSessionStore = create<SessionState>()(
           state.sources[id] = [];
           state.timeline[id] = [];
           state.transcripts[id] = "";
+          state.pins[id] = [];
         });
         return id;
       }
@@ -214,6 +250,55 @@ export const useSessionStore = create<SessionState>()(
     setCanvasMode: (mode) => {
       set((state) => {
         state.canvasMode = mode;
+      });
+    },
+    addPin: (sessionId, payload) => {
+      const { x, y, label } = payload;
+      const state = get();
+      if (!state.sessions.some((session) => session.id === sessionId)) {
+        return null;
+      }
+      const existingPins = state.pins[sessionId] ?? [];
+      const pin: Pin = {
+        id: `pin-${nanoid(6)}`,
+        label: label?.trim() || `Pin ${existingPins.length + 1}`,
+        x,
+        y,
+        createdAt: new Date().toISOString()
+      };
+      set((state) => {
+        if (!state.pins[sessionId]) {
+          state.pins[sessionId] = [];
+        }
+        state.pins[sessionId].push(pin);
+      });
+      return pin;
+    },
+    removePin: (sessionId, pinId) => {
+      set((state) => {
+        const list = state.pins[sessionId];
+        if (!list) {
+          return;
+        }
+        state.pins[sessionId] = list.filter((pin) => pin.id !== pinId);
+      });
+    },
+    setCanvasView: (view) => {
+      set((state) => {
+        state.canvasView = {
+          transform: { ...view.transform },
+          stageSize: view.stageSize ? { ...view.stageSize } : null
+        };
+      });
+    },
+    requestFocus: (target) => {
+      set((state) => {
+        state.focusTarget = target;
+      });
+    },
+    clearFocus: () => {
+      set((state) => {
+        state.focusTarget = null;
       });
     }
   }))
