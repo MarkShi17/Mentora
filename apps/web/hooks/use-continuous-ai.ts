@@ -502,13 +502,13 @@ export function useContinuousAI() {
 
   const stopListening = useCallback(() => {
     if (!isListening || !recognitionRef.current) return;
-    
+
     // Clear any pending timeouts
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
     }
-    
+
     try {
       recognitionRef.current.stop();
     } catch (error) {
@@ -518,6 +518,31 @@ export function useContinuousAI() {
     recognitionRef.current = null;
     isProcessingRef.current = false;
   }, [isListening]);
+
+  const pauseListening = useCallback(() => {
+    if (!isListening || !recognitionRef.current) return;
+
+    try {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      // Keep recognitionRef so we can resume
+    } catch (error) {
+      console.error("Failed to pause speech recognition:", error);
+    }
+  }, [isListening]);
+
+  const resumeListening = useCallback(() => {
+    if (isListening || !recognitionRef.current) return;
+
+    try {
+      recognitionRef.current.start();
+      setIsListening(true);
+    } catch (error) {
+      console.error("Failed to resume speech recognition:", error);
+      // If resume fails, restart completely
+      startListening();
+    }
+  }, [isListening, startListening]);
 
   // Initialize support check
   useEffect(() => {
@@ -554,6 +579,8 @@ export function useContinuousAI() {
     error,
     startListening,
     stopListening,
+    pauseListening,
+    resumeListening,
     setQuestionCallback
   };
 }

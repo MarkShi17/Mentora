@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { cn } from "@/lib/cn";
 import { useContinuousAI } from "@/hooks/use-continuous-ai";
 import { useSessionStore } from "@/lib/session-store";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
-import { Brain } from "lucide-react";
+import { Brain, StopCircle } from "lucide-react";
 
 export function ContinuousAI() {
   const [isActive, setIsActive] = useState(false);
+  const [wasListeningBeforeSpeech, setWasListeningBeforeSpeech] = useState(false);
+  const [interrupted, setInterrupted] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
     isListening,
@@ -18,14 +21,21 @@ export function ContinuousAI() {
     error,
     startListening,
     stopListening,
+    pauseListening,
+    resumeListening,
     setQuestionCallback
   } = useContinuousAI();
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const sessions = useSessionStore((state) => state.sessions);
   const createSession = useSessionStore((state) => state.createSession);
   const addMessage = useSessionStore((state) => state.addMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+
+  // Get messages for active session
+  const activeSession = sessions.find(s => s.id === activeSessionId);
+  const messages = activeSession?.messages || [];
 
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
@@ -51,13 +61,21 @@ export function ContinuousAI() {
           data: object.data
         };
 
-        updateCanvasObject(activeSessionId, canvasObject);
+        // Respect placement timing - delay object appearance based on timing value
+        const delay = placement.timing || 0;
+        console.log(`🎨 Scheduling canvas object "${canvasObject.label}" to appear in ${delay}ms`);
 
-        // Add timeline event for new object
-        appendTimelineEvent(activeSessionId, {
-          description: `Created ${object.type}: ${object.metadata?.referenceName || object.id}`,
-          type: "canvas_update"
-        });
+        setTimeout(() => {
+          updateCanvasObject(activeSessionId, canvasObject);
+
+          // Add timeline event for new object
+          appendTimelineEvent(activeSessionId, {
+            description: `Created ${object.type}: ${object.metadata?.referenceName || object.id}`,
+            type: "canvas_update"
+          });
+
+          console.log(`✅ Canvas object "${canvasObject.label}" now visible`);
+        }, delay);
       }
     }, [activeSessionId, updateCanvasObject, appendTimelineEvent]),
     onComplete: useCallback(() => {
@@ -82,8 +100,26 @@ export function ContinuousAI() {
   };
 
   const handleQuestionDetected = useCallback(async (question: string, context: string[]) => {
+    console.log('🎯 Question detected:', question);
+    console.log('📚 Context:', context);
+
+    // Check if AI is currently active (streaming or speaking)
+    const isAIActive = streamingQA.isStreaming || streamingQA.audioState.isPlaying;
+
+    if (isAIActive) {
+      console.log('🛑 User interrupted AI - stopping current response');
+
+      // Stop streaming immediately
+      streamingQA.stopStreaming();
+
+      // Show interrupt feedback briefly
+      setInterrupted(true);
+      setTimeout(() => setInterrupted(false), 1500);
+    }
+
     let sessionId = activeSessionId;
     if (!sessionId) {
+      console.log('🆕 Creating new session...');
       try {
         const now = new Date();
         const hours = now.getHours();
@@ -94,14 +130,19 @@ export function ContinuousAI() {
         const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
         const title = `AI Session ${timeString}`;
         sessionId = await createSession({ title });
+        console.log('✅ Session created:', sessionId);
       } catch (error) {
-        console.error("Failed to create session:", error);
+        console.error("❌ Failed to create session:", error);
         return;
       }
     }
 
+    // Add user message to chat history immediately
     addMessage(sessionId, { role: "user", content: question });
     appendTimelineEvent(sessionId, { description: "AI detected and processed question.", type: "prompt" });
+
+    console.log('💬 User message added to chat history');
+    console.log('🚀 Starting streaming response...');
 
     try {
       // Use streaming QA for real-time response with audio
@@ -115,13 +156,16 @@ export function ContinuousAI() {
         }
       });
 
-      // Add assistant message with the complete text
+      // Add assistant message with the complete text after streaming completes
       if (streamingQA.currentText.trim()) {
         addMessage(sessionId, { role: "assistant", content: streamingQA.currentText });
         appendTimelineEvent(sessionId, {
           description: "AI completed streaming response with audio.",
           type: "response"
         });
+        console.log('💬 Assistant message added to chat history');
+      } else {
+        console.warn('⚠️ No streaming text to add to chat history');
       }
     } catch (error) {
       console.error("Error processing question:", error);
@@ -150,6 +194,28 @@ export function ContinuousAI() {
     setQuestionCallback(handleQuestionDetected);
   }, [setQuestionCallback, activeSessionId, createSession, addMessage, appendTimelineEvent, updateCanvasObject, conversationContext]);
 
+  // Pause microphone when AI is speaking to prevent feedback loop
+  useEffect(() => {
+    const isAISpeaking = streamingQA.audioState.isPlaying;
+
+    if (isAISpeaking && isListening && isActive) {
+      // AI started speaking - pause the microphone
+      console.log('🔇 Pausing microphone (AI speaking)');
+      pauseListening();
+      setWasListeningBeforeSpeech(true);
+    } else if (!isAISpeaking && wasListeningBeforeSpeech && isActive) {
+      // AI stopped speaking - resume the microphone
+      console.log('🎤 Resuming microphone (AI finished)');
+      resumeListening();
+      setWasListeningBeforeSpeech(false);
+    }
+  }, [streamingQA.audioState.isPlaying, isListening, isActive, wasListeningBeforeSpeech, pauseListening, resumeListening]);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length, streamingQA.currentText]);
+
   const toggleAI = () => {
     if (isActive) {
       stopListening();
@@ -169,179 +235,15 @@ export function ContinuousAI() {
   const isGenerating = streamingQA.isStreaming && !speaking;
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-30 flex items-end gap-4 flex-row">
-      {/* Live Transcript Panel */}
-      {isActive && (
-        <div className="pointer-events-auto animate-in slide-in-from-right-5 fade-in duration-300 mb-2">
-          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/30 bg-slate-900/95 backdrop-blur-xl shadow-2xl max-w-md">
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400/5 to-transparent animate-shimmer" />
-
-            <div className="relative p-4 space-y-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-700/50">
-                <div className={cn(
-                  "h-2 w-2 rounded-full",
-                  isListening ? "bg-cyan-400 animate-pulse" : "bg-slate-600"
-                )} />
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  {speaking ? "Speaking" : isListening ? "Listening" : "Standby"}
-                </span>
-              </div>
-
-              {currentTranscript ? (
-                <div className="space-y-2">
-                  <div className={cn(
-                    "rounded-xl p-3 transition-all duration-300",
-                    isQuestionDetected
-                      ? "bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30"
-                      : "bg-slate-800/50 border border-slate-700/30"
-                  )}>
-                    <p className="text-sm text-slate-100 leading-relaxed">
-                      {currentTranscript}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {isQuestionDetected ? (
-                      <>
-                        <Brain className="h-3 w-3 text-cyan-400 animate-pulse" />
-                        <span className="text-xs font-semibold text-cyan-400">
-                          Question detected • Processing...
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="h-3 w-3 flex items-center justify-center">
-                          <div className="h-1 w-1 rounded-full bg-slate-500" />
-                        </div>
-                        <span className="text-xs text-slate-500">
-                          Listening for questions
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="flex gap-1">
-                    {[0, 1, 2].map((i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "w-1 rounded-full bg-cyan-400 transition-all duration-300",
-                          isListening ? "animate-pulse" : "opacity-30"
-                        )}
-                        style={{
-                          height: isListening ? `${Math.random() * 12 + 8}px` : '6px',
-                          animationDelay: `${i * 150}ms`
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-xs text-slate-500">
-                    Start speaking to ask a question...
-                  </span>
-                </div>
-              )}
-
-              {conversationContext.topics.length > 0 && (
-                <div className="pt-2 border-t border-slate-700/50">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Brain className="h-3 w-3 text-purple-400" />
-                    <span className="text-xs font-semibold text-slate-400">Active Topics</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {conversationContext.topics.slice(-3).map((topic, index) => (
-                      <span
-                        key={index}
-                        className="text-xs px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20"
-                      >
-                        {topic}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+    <div className="pointer-events-none fixed bottom-6 right-6 z-30 flex flex-col items-end gap-4">
+      {/* Live Transcript - Shows what user is currently saying */}
+      {isActive && isListening && currentTranscript && (
+        <div className="pointer-events-auto w-96 rounded-xl border border-cyan-400/30 bg-slate-900/90 backdrop-blur-xl shadow-xl p-4 animate-in slide-in-from-right-3 fade-in duration-200">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wide">You're speaking</span>
           </div>
-        </div>
-      )}
-
-      {/* AI Response Display (Streaming) */}
-      {(streamingQA.isStreaming || streamingQA.currentText) && (
-        <div className="pointer-events-auto animate-in slide-in-from-left-5 fade-in duration-300 mb-2">
-          <div className="relative overflow-hidden rounded-2xl border border-blue-400/30 bg-slate-900/95 backdrop-blur-xl shadow-2xl max-w-md">
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/5 to-transparent animate-shimmer" />
-
-            <div className="relative p-4 space-y-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-700/50">
-                <div className={cn(
-                  "h-2 w-2 rounded-full",
-                  speaking ? "bg-green-400 animate-pulse" : isGenerating ? "bg-blue-400 animate-pulse" : "bg-slate-600"
-                )} />
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                  {speaking ? "Speaking" : isGenerating ? "Generating" : "Complete"}
-                </span>
-              </div>
-
-              {/* Live Transcript */}
-              {streamingQA.currentText && (
-                <div className="rounded-xl p-3 bg-slate-800/50 border border-slate-700/30 max-h-48 overflow-y-auto">
-                  <p className="text-sm text-slate-100 leading-relaxed">
-                    {streamingQA.currentText}
-                  </p>
-                </div>
-              )}
-
-              {/* Current Speaking Text */}
-              {speaking && currentSpeechText && (
-                <div className="flex items-start gap-2 pt-2 border-t border-slate-700/50">
-                  <div className="flex gap-1 mt-1">
-                    {[0, 1, 2].map((i) => (
-                      <div
-                        key={i}
-                        className="w-1 rounded-full bg-green-400 animate-pulse"
-                        style={{
-                          height: `${Math.random() * 10 + 6}px`,
-                          animationDelay: `${i * 150}ms`
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <p className="text-xs text-green-300 leading-relaxed">
-                    {currentSpeechText}
-                  </p>
-                </div>
-              )}
-
-              {/* Audio Queue Progress */}
-              {streamingQA.audioState.queueLength > 0 && (
-                <div className="pt-2 border-t border-slate-700/50">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-400 to-green-400 rounded-full transition-all duration-300"
-                        style={{
-                          width: `${streamingQA.audioState.queueProgress}%`
-                        }}
-                      />
-                    </div>
-                    <span className="text-xs text-slate-500">
-                      {streamingQA.audioState.currentIndex + 1}/{streamingQA.audioState.queueLength}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Error Display */}
-              {streamingQA.error && (
-                <div className="rounded-lg p-3 bg-red-500/10 border border-red-500/30">
-                  <p className="text-xs text-red-300">
-                    {streamingQA.error}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
+          <p className="text-sm text-slate-200 leading-relaxed">{currentTranscript}</p>
         </div>
       )}
 

@@ -65,6 +65,11 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
       abortControllerRef.current = new AbortController();
 
+      // Log user input
+      console.log('🎤 User Question:', question);
+      console.log('📡 Streaming to:', `${apiUrl}/api/qa-stream`);
+      console.log('📋 Session ID:', sessionId);
+
       // Make POST request to start stream
       const response = await fetch(`${apiUrl}/api/qa-stream`, {
         method: 'POST',
@@ -81,6 +86,8 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
         }),
         signal: abortControllerRef.current.signal,
       });
+
+      console.log('✅ Response status:', response.status, response.statusText);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -122,6 +129,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
             // Handle different event types
             switch (event.type) {
               case 'text_chunk':
+                console.log('📝 Text chunk:', event.data.text);
                 setState(prev => ({
                   ...prev,
                   currentText: prev.currentText + event.data.text + ' ',
@@ -129,6 +137,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
                 break;
 
               case 'audio_chunk':
+                console.log('🔊 Audio chunk:', event.data.sentenceIndex, '-', event.data.text.substring(0, 50) + '...');
                 audioQueue.enqueue({
                   audio: event.data.audio,
                   text: event.data.text,
@@ -137,18 +146,21 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
                 break;
 
               case 'canvas_object':
+                console.log('🎨 Canvas object:', event.data.object.type, event.data.object.metadata?.referenceName);
                 if (callbacks?.onCanvasObject) {
                   callbacks.onCanvasObject(event.data.object, event.data.placement);
                 }
                 break;
 
               case 'reference':
+                console.log('🔗 Reference:', event.data.mention);
                 if (callbacks?.onReference) {
                   callbacks.onReference(event.data);
                 }
                 break;
 
               case 'complete':
+                console.log('✅ Stream complete!');
                 setState(prev => ({
                   ...prev,
                   isStreaming: false,
@@ -160,6 +172,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
 
               case 'error':
                 const errorMessage = event.data.message;
+                console.error('❌ Stream error:', errorMessage);
                 setState(prev => ({
                   ...prev,
                   isStreaming: false,

@@ -117,60 +117,201 @@ export class StreamingOrchestrator {
       let totalObjects = 0;
       let totalReferences = 0;
 
-      // Process Claude's streaming response
+      // Track parsing state for incremental JSON extraction
+      let lastNarrationLength = 0;
+      let lastObjectsCount = 0;
+      const streamedObjects = new Set<number>();
+
+      // Process Claude's streaming response with incremental JSON parsing
       for await (const chunk of stream) {
         if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
           const textChunk = chunk.delta.text;
           fullResponse += textChunk;
 
-          // Extract complete sentences
-          const sentences = sentenceParser.addChunk(textChunk);
+          // Try to parse JSON incrementally
+          try {
+            const agentResponse = this.parseResponse(fullResponse);
 
-          // Generate TTS for each complete sentence
-          for (const sentence of sentences) {
-            logger.debug('Complete sentence detected', {
-              sentenceIndex: sentence.index,
-              text: sentence.text
-            });
+            // NARRATION STREAMING: Extract new narration text
+            if (agentResponse.narration && agentResponse.narration.length > lastNarrationLength) {
+              const newNarration = agentResponse.narration.slice(lastNarrationLength);
 
-            // Send text chunk event
-            yield {
-              type: 'text_chunk',
-              timestamp: Date.now(),
-              data: {
-                text: sentence.text,
-                sentenceIndex: sentence.index
+              // SAFETY CHECK: Ensure it's clean narration, not JSON fragments
+              const isCleanNarration = !newNarration.includes('{') &&
+                                       !newNarration.includes('}') &&
+                                       !newNarration.includes('"explanation"') &&
+                                       !newNarration.includes('"objects"') &&
+                                       !newNarration.includes('"narration"') &&
+                                       !newNarration.includes('"references"');
+
+              if (isCleanNarration && newNarration.trim().length > 0) {
+                lastNarrationLength = agentResponse.narration.length;
+
+                // Log what we're about to speak for debugging
+                logger.info('🗣️ Speaking narration chunk', {
+                  text: newNarration.substring(0, 100) + (newNarration.length > 100 ? '...' : '')
+                });
+
+                // Extract complete sentences from new narration
+                const sentences = sentenceParser.addChunk(newNarration);
+
+                // Generate TTS for each complete sentence
+                for (const sentence of sentences) {
+                  logger.debug('Complete narration sentence detected', {
+                    sentenceIndex: sentence.index,
+                    text: sentence.text
+                  });
+
+                  // Send text chunk event
+                  yield {
+                    type: 'text_chunk',
+                    timestamp: Date.now(),
+                    data: {
+                      text: sentence.text,
+                      sentenceIndex: sentence.index
+                    }
+                  };
+
+                  // Generate TTS asynchronously and stream audio
+                  try {
+                    const audioResult = await ttsService.generateSentenceSpeech(
+                      sentence.text,
+                      voice,
+                      sentence.index
+                    );
+
+                    yield {
+                      type: 'audio_chunk',
+                      timestamp: Date.now(),
+                      data: audioResult
+                    };
+                  } catch (error) {
+                    logger.warn('TTS generation failed for sentence, continuing', {
+                      sentenceIndex: sentence.index,
+                      error: error instanceof Error ? error.message : 'Unknown'
+                    });
+                    // Continue without audio for this sentence
+                  }
+                }
+              } else {
+                logger.debug('Skipping non-narration text chunk', {
+                  text: newNarration.substring(0, 100),
+                  hasJSON: newNarration.includes('{') || newNarration.includes('}')
+                });
               }
-            };
-
-            // Generate TTS asynchronously and stream audio
-            try {
-              const audioResult = await ttsService.generateSentenceSpeech(
-                sentence.text,
-                voice,
-                sentence.index
-              );
-
-              yield {
-                type: 'audio_chunk',
-                timestamp: Date.now(),
-                data: audioResult
-              };
-            } catch (error) {
-              logger.warn('TTS generation failed for sentence, continuing', {
-                sentenceIndex: sentence.index,
-                error: error instanceof Error ? error.message : 'Unknown'
-              });
-              // Continue without audio for this sentence
             }
+
+            // CANVAS OBJECT STREAMING: Stream new objects one at a time
+            if (agentResponse.objects && agentResponse.objects.length > lastObjectsCount) {
+              const newObjects = agentResponse.objects.slice(lastObjectsCount);
+
+              for (let i = 0; i < newObjects.length; i++) {
+                const globalIndex = lastObjectsCount + i;
+
+                // Skip if already streamed (safety check)
+                if (streamedObjects.has(globalIndex)) continue;
+
+                const request = newObjects[i];
+
+                // Generate canvas object
+                const existingCanvasObjects = streamingContext.existingObjects;
+                const position = layoutEngine.calculatePosition(
+                  {
+                    existingObjects: existingCanvasObjects.map(obj => ({
+                      id: obj.id,
+                      position: obj.position,
+                      size: obj.size
+                    }))
+                  },
+                  { width: 400, height: 200 }
+                );
+
+                let enhancedContent = request.content;
+                if (request.type === 'diagram') {
+                  enhancedContent = `${request.content} - Context: ${question}`;
+                }
+
+                const canvasObject = objectGenerator.generateObject(
+                  {
+                    type: request.type,
+                    content: enhancedContent,
+                    referenceName: request.referenceName,
+                    metadata: request.metadata
+                  },
+                  position,
+                  turnId
+                );
+
+                // Add to existing objects for next position calculation
+                streamingContext.existingObjects.push(canvasObject);
+
+                // Stream canvas object immediately
+                const placement: ObjectPlacement = {
+                  objectId: canvasObject.id,
+                  position: canvasObject.position,
+                  animateIn: 'fade',
+                  timing: totalObjects * 300 // Stagger by 300ms
+                };
+
+                yield {
+                  type: 'canvas_object',
+                  timestamp: Date.now(),
+                  data: {
+                    object: canvasObject,
+                    placement
+                  }
+                };
+
+                streamedObjects.add(globalIndex);
+                totalObjects++;
+
+                logger.debug('Streamed canvas object', {
+                  type: canvasObject.type,
+                  index: globalIndex,
+                  referenceName: request.referenceName
+                });
+              }
+
+              lastObjectsCount = agentResponse.objects.length;
+            }
+
+            // REFERENCES: Stream references as they appear
+            if (agentResponse.references && agentResponse.references.length > totalReferences) {
+              const newReferences = agentResponse.references.slice(totalReferences);
+
+              for (const ref of newReferences) {
+                const objectReference = this.generateReferences(
+                  [ref],
+                  streamingContext.existingObjects,
+                  []
+                )[0];
+
+                if (objectReference) {
+                  yield {
+                    type: 'reference',
+                    timestamp: Date.now(),
+                    data: objectReference
+                  };
+
+                  totalReferences++;
+                }
+              }
+            }
+
+          } catch (error) {
+            // Incomplete JSON - continue accumulating
+            // This is normal during streaming, only log at debug level
+            logger.debug('Waiting for more JSON data', {
+              bufferLength: fullResponse.length
+            });
           }
         }
       }
 
-      // Flush any remaining sentence
+      // Flush any remaining narration sentence
       const finalSentence = sentenceParser.flush();
       if (finalSentence) {
-        logger.debug('Flushing final sentence', {
+        logger.debug('Flushing final narration sentence', {
           sentenceIndex: finalSentence.index,
           text: finalSentence.text
         });
@@ -201,52 +342,58 @@ export class StreamingOrchestrator {
         }
       }
 
-      // Parse full response for canvas objects and references
-      const agentResponse = this.parseResponse(fullResponse);
+      // Final parse to catch any remaining objects/references
+      const finalResponse = this.parseResponse(fullResponse);
 
-      // Generate and stream canvas objects
-      const canvasObjects = this.generateCanvasObjects(
-        agentResponse.objects,
-        streamingContext.existingObjects,
-        turnId,
-        question
-      );
+      // Stream any remaining objects that weren't caught during streaming
+      if (finalResponse.objects && finalResponse.objects.length > lastObjectsCount) {
+        const remainingObjects = finalResponse.objects.slice(lastObjectsCount);
 
-      for (const obj of canvasObjects) {
-        const placement: ObjectPlacement = {
-          objectId: obj.id,
-          position: obj.position,
-          animateIn: 'fade',
-          timing: totalObjects * 500
-        };
+        for (let i = 0; i < remainingObjects.length; i++) {
+          const globalIndex = lastObjectsCount + i;
+          if (streamedObjects.has(globalIndex)) continue;
 
-        yield {
-          type: 'canvas_object',
-          timestamp: Date.now(),
-          data: {
-            object: obj,
-            placement
-          }
-        };
+          const request = remainingObjects[i];
+          const position = layoutEngine.calculatePosition(
+            {
+              existingObjects: streamingContext.existingObjects.map(obj => ({
+                id: obj.id,
+                position: obj.position,
+                size: obj.size
+              }))
+            },
+            { width: 400, height: 200 }
+          );
 
-        totalObjects++;
-      }
+          const canvasObject = objectGenerator.generateObject(
+            {
+              type: request.type,
+              content: request.content,
+              referenceName: request.referenceName,
+              metadata: request.metadata
+            },
+            position,
+            turnId
+          );
 
-      // Stream references
-      const references = this.generateReferences(
-        agentResponse.references,
-        streamingContext.existingObjects,
-        canvasObjects
-      );
+          streamingContext.existingObjects.push(canvasObject);
 
-      for (const ref of references) {
-        yield {
-          type: 'reference',
-          timestamp: Date.now(),
-          data: ref
-        };
+          yield {
+            type: 'canvas_object',
+            timestamp: Date.now(),
+            data: {
+              object: canvasObject,
+              placement: {
+                objectId: canvasObject.id,
+                position: canvasObject.position,
+                animateIn: 'fade',
+                timing: totalObjects * 300
+              }
+            }
+          };
 
-        totalReferences++;
+          totalObjects++;
+        }
       }
 
       // Send completion event
@@ -395,25 +542,40 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
+
+        // STRICT: Only return narration if it exists and is clean
+        const hasValidNarration = parsed.narration &&
+                                  typeof parsed.narration === 'string' &&
+                                  parsed.narration.length > 0 &&
+                                  !parsed.narration.startsWith('{') && // Not raw JSON
+                                  !parsed.narration.includes('"explanation"') && // Not JSON string
+                                  !parsed.narration.includes('"objects"'); // Not JSON string
+
         return {
-          explanation: parsed.explanation || responseText,
-          narration: parsed.narration || parsed.explanation || responseText,
+          explanation: parsed.explanation || '',
+          narration: hasValidNarration ? parsed.narration : '',  // Empty if invalid - DON'T speak yet
           objects: parsed.objects || [],
           references: parsed.references || []
         };
       }
 
+      // Incomplete JSON - return empty narration (don't speak partial JSON)
+      logger.debug('No complete JSON found yet', { textLength: responseText.length });
       return {
-        explanation: responseText,
-        narration: responseText,
+        explanation: '',
+        narration: '',
         objects: [],
         references: []
       };
     } catch (error) {
-      logger.warn('Failed to parse JSON response', { error });
+      // Parse error - return empty narration (don't speak malformed JSON)
+      logger.debug('JSON parse error (normal during streaming)', {
+        error: error instanceof Error ? error.message : 'Unknown',
+        textSnippet: responseText.substring(0, 100)
+      });
       return {
-        explanation: responseText,
-        narration: responseText,
+        explanation: '',
+        narration: '',
         objects: [],
         references: []
       };
