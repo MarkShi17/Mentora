@@ -96,7 +96,7 @@ function renderObjectContent(object: CanvasObject) {
 type ObjectLayerProps = {
   objects: CanvasObject[];
   transform: { x: number; y: number; k: number };
-  onSelect: (id: string) => void;
+  onSelect: (id: string, event: React.MouseEvent) => void;
 };
 
 export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) {
@@ -115,8 +115,8 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
           <div
             key={object.id}
             className={cn(
-              "pointer-events-auto absolute rounded-lg border-2 border-transparent shadow-lg transition-colors",
-              object.selected ? "border-sky-400" : "border-transparent",
+              "pointer-events-auto absolute rounded-lg border-2 border-transparent shadow-lg transition-all",
+              object.selected ? "border-sky-400 shadow-[0_0_20px_rgba(56,189,248,0.35)]" : "border-transparent",
               getObjectSizeClass(object.type)
             )}
             style={{
@@ -126,7 +126,7 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
             }}
             onClick={(event) => {
               event.stopPropagation();
-              onSelect(object.id);
+              onSelect(object.id, event);
             }}
           >
             <div className="flex flex-col bg-slate-900/70 p-3 backdrop-blur rounded-lg border border-slate-700/50 shadow-lg">

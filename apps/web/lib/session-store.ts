@@ -40,15 +40,19 @@ type SessionState = {
   sourcesDrawerOpen: boolean;
   captionsEnabled: boolean;
   canvasMode: "pan" | "lasso" | "pin";
-  canvasView: CanvasView;
+  canvasViews: Record<string, CanvasView>;
+  selectionMethods: Record<string, "click" | "lasso">;
+  lastSelectedObjectIds: Record<string, string | null>;
   focusTarget: FocusTarget;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
-  toggleObjectSelection: (sessionId: string, objectId: string) => void;
+  toggleObjectSelection: (sessionId: string, objectId: string, keepOthers?: boolean) => void;
   clearObjectSelection: (sessionId: string) => void;
   setSelectedObjects: (sessionId: string, ids: string[]) => void;
+  setSelectionMethod: (sessionId: string, method: "click" | "lasso") => void;
+  setLastSelectedObject: (sessionId: string, objectId: string | null) => void;
   setSources: (sessionId: string, sources: SourceLink[]) => void;
   setVoiceActive: (value: boolean) => void;
   appendTimelineEvent: (sessionId: string, event: Omit<TimelineEvent, "id" | "timestamp">) => void;
@@ -57,7 +61,7 @@ type SessionState = {
   setCanvasMode: (mode: "pan" | "lasso" | "pin") => void;
   addPin: (sessionId: string, payload: { x: number; y: number; label?: string }) => Pin | null;
   removePin: (sessionId: string, pinId: string) => void;
-  setCanvasView: (view: CanvasView) => void;
+  setCanvasView: (sessionId: string, view: CanvasView) => void;
   requestFocus: (target: { x: number; y: number; id?: string }) => void;
   clearFocus: () => void;
 };
@@ -75,11 +79,49 @@ export const useSessionStore = create<SessionState>()(
       createdAt: now
     };
 
+    // Test object at (0,0) to verify centering
+    const testObject1: CanvasObject = {
+      id: "test-obj-1",
+      type: "text",
+      label: "Test Object 1",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 100,
+      color: "#3b82f6",
+      selected: false,
+      data: {
+        content: "This object is at (0,0)\nIt should appear in the visual center of the canvas."
+      },
+      metadata: {
+        description: "Test object for canvas centering"
+      }
+    };
+
+    // Second test object for multi-selection testing
+    const testObject2: CanvasObject = {
+      id: "test-obj-2",
+      type: "diagram",
+      label: "Test Object 2",
+      x: 400,
+      y: 0,
+      width: 250,
+      height: 150,
+      color: "#10b981",
+      selected: false,
+      data: {
+        svg: '<svg viewBox="0 0 200 100"><rect x="10" y="10" width="180" height="80" fill="#10b981" opacity="0.3" rx="8"/><text x="100" y="55" text-anchor="middle" fill="#059669" font-size="16">Diagram</text></svg>'
+      },
+      metadata: {
+        description: "Test object for multi-selection"
+      }
+    };
+
     return {
       sessions: [defaultSession],
       activeSessionId: defaultSessionId,
       messages: { [defaultSessionId]: [] },
-      canvasObjects: { [defaultSessionId]: [] },
+      canvasObjects: { [defaultSessionId]: [testObject1, testObject2] },
       sources: { [defaultSessionId]: [] },
       timeline: { [defaultSessionId]: [] },
       transcripts: { [defaultSessionId]: "" },
@@ -88,7 +130,9 @@ export const useSessionStore = create<SessionState>()(
       sourcesDrawerOpen: false,
       captionsEnabled: true,
       canvasMode: "pan",
-      canvasView: { transform: { x: 0, y: 0, k: 1 }, stageSize: null },
+      canvasViews: {},
+      selectionMethods: {},
+      lastSelectedObjectIds: {},
       focusTarget: null,
     setActiveSession: (sessionId) => {
       set((state) => {
@@ -178,15 +222,23 @@ export const useSessionStore = create<SessionState>()(
         state.canvasObjects[sessionId] = list;
       });
     },
-    toggleObjectSelection: (sessionId, objectId) => {
+    toggleObjectSelection: (sessionId, objectId, keepOthers = false) => {
       set((state) => {
         const list = state.canvasObjects[sessionId];
         if (!list) {
           return;
         }
-        state.canvasObjects[sessionId] = list.map((item) =>
-          item.id === objectId ? { ...item, selected: !item.selected } : { ...item, selected: false }
-        );
+        if (keepOthers) {
+          // Multi-select: toggle the clicked object without clearing others
+          state.canvasObjects[sessionId] = list.map((item) =>
+            item.id === objectId ? { ...item, selected: !item.selected } : item
+          );
+        } else {
+          // Single select: toggle the clicked object and clear others
+          state.canvasObjects[sessionId] = list.map((item) =>
+            item.id === objectId ? { ...item, selected: !item.selected } : { ...item, selected: false }
+          );
+        }
       });
     },
     clearObjectSelection: (sessionId) => {
@@ -280,12 +332,22 @@ export const useSessionStore = create<SessionState>()(
         state.pins[sessionId] = list.filter((pin) => pin.id !== pinId);
       });
     },
-    setCanvasView: (view) => {
+    setCanvasView: (sessionId, view) => {
       set((state) => {
-        state.canvasView = {
+        state.canvasViews[sessionId] = {
           transform: { ...view.transform },
           stageSize: view.stageSize ? { ...view.stageSize } : null
         };
+      });
+    },
+    setSelectionMethod: (sessionId, method) => {
+      set((state) => {
+        state.selectionMethods[sessionId] = method;
+      });
+    },
+    setLastSelectedObject: (sessionId, objectId) => {
+      set((state) => {
+        state.lastSelectedObjectIds[sessionId] = objectId;
       });
     },
     requestFocus: (target) => {

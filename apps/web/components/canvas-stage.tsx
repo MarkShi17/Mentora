@@ -54,6 +54,8 @@ export function CanvasStage() {
   const [transform, setTransform] = useState<TransformState>(IDENTITY);
   const transformRef = useRef<TransformState>(IDENTITY);
   const stageSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const lastLoadedSessionRef = useRef<string | null>(null);
 
 const activeSessionId = useSessionStore((state) => state.activeSessionId);
 const canvasObjects = useSessionStore(
@@ -63,6 +65,14 @@ const canvasMode = useSessionStore((state) => state.canvasMode);
 const toggleObjectSelection = useSessionStore((state) => state.toggleObjectSelection);
 const clearObjectSelection = useSessionStore((state) => state.clearObjectSelection);
 const setSelectedObjects = useSessionStore((state) => state.setSelectedObjects);
+const setSelectionMethod = useSessionStore((state) => state.setSelectionMethod);
+const setLastSelectedObject = useSessionStore((state) => state.setLastSelectedObject);
+const selectionMethod = useSessionStore((state) =>
+  state.activeSessionId ? state.selectionMethods[state.activeSessionId] : undefined
+);
+const lastSelectedObjectId = useSessionStore((state) =>
+  state.activeSessionId ? state.lastSelectedObjectIds[state.activeSessionId] : null
+);
 const setCanvasView = useSessionStore((state) => state.setCanvasView);
 const focusTarget = useSessionStore((state) => state.focusTarget);
 const clearFocus = useSessionStore((state) => state.clearFocus);
@@ -72,7 +82,9 @@ const pins = useSessionStore((state) =>
 const requestFocus = useSessionStore((state) => state.requestFocus);
 const addPin = useSessionStore((state) => state.addPin);
 const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
-const stageSize = useSessionStore((state) => state.canvasView.stageSize);
+const stageSize = useSessionStore((state) =>
+  state.activeSessionId ? state.canvasViews[state.activeSessionId]?.stageSize : null
+);
 
   const canvasModeRef = useRef(canvasMode);
   useEffect(() => {
@@ -119,9 +131,11 @@ const initialPinCenteredRef = useRef<string | null>(null);
     (nextState: TransformState) => {
       transformRef.current = nextState;
       setTransform(nextState);
-      setCanvasView({ transform: nextState, stageSize: stageSizeRef.current });
+      if (activeSessionId) {
+        setCanvasView(activeSessionId, { transform: nextState, stageSize: stageSizeRef.current });
+      }
     },
-    [setCanvasView]
+    [setCanvasView, activeSessionId]
   );
 
   const screenToWorld = useCallback(
@@ -157,9 +171,10 @@ const initialPinCenteredRef = useRef<string | null>(null);
         .map((object) => object.id);
 
       setSelectedObjects(sessionId, ids);
+      setSelectionMethod(sessionId, "lasso");
       return ids;
     },
-    [setSelectedObjects]
+    [setSelectedObjects, setSelectionMethod]
   );
 
   useEffect(() => {
@@ -234,23 +249,85 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   useEffect(() => {
     const element = containerRef.current;
-    if (!element) {
+    if (!element || !activeSessionId) {
       return;
     }
     const updateSize = () => {
       const rect = element.getBoundingClientRect();
       stageSizeRef.current = { width: rect.width, height: rect.height };
-      setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
+      // Only save after initialization to avoid saving IDENTITY before centering
+      if (activeSessionId && isInitialized) {
+        setCanvasView(activeSessionId, { transform: transformRef.current, stageSize: stageSizeRef.current });
+      }
     };
     updateSize();
     const observer = new ResizeObserver(updateSize);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [setCanvasView, activeSessionId]);
+  }, [setCanvasView, activeSessionId, isInitialized]);
 
   useEffect(() => {
-    setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
-  }, [transform, setCanvasView]);
+    // Only save after initialization to avoid saving IDENTITY before centering
+    if (activeSessionId && isInitialized) {
+      setCanvasView(activeSessionId, { transform: transformRef.current, stageSize: stageSizeRef.current });
+    }
+  }, [transform, setCanvasView, activeSessionId, isInitialized]);
+
+  // Center canvas on initial load or session switch
+  useEffect(() => {
+    if (!activeSessionId) {
+      return;
+    }
+
+    if (lastLoadedSessionRef.current === activeSessionId && isInitialized) {
+      return;
+    }
+
+    const stage = stageSizeRef.current;
+    if (!stage) {
+      return;
+    }
+
+    // Check if there's a saved canvas view for this session
+    const state = useSessionStore.getState();
+    const savedView = state.canvasViews[activeSessionId];
+
+    if (savedView && savedView.stageSize) {
+      // Restore saved view
+      const savedTransform = savedView.transform;
+      transformRef.current = savedTransform;
+      setTransform(savedTransform);
+      const selection = selectionRef.current;
+      const zoomBehavior = zoomBehaviorRef.current;
+      if (selection && zoomBehavior) {
+        selection.call(zoomBehavior.transform, asZoomTransform(savedTransform));
+      }
+    } else {
+      // Calculate center transform
+      // Account for floating header (80px) and prompt bar (80px)
+      const headerHeight = 80;
+      const promptHeight = 80;
+      const visualHeight = stage.height - headerHeight - promptHeight;
+
+      const centerTransform: TransformState = {
+        x: stage.width / 2,
+        y: headerHeight + (visualHeight / 2),
+        k: 1
+      };
+
+      transformRef.current = centerTransform;
+      setTransform(centerTransform);
+      const selection = selectionRef.current;
+      const zoomBehavior = zoomBehaviorRef.current;
+      if (selection && zoomBehavior) {
+        selection.call(zoomBehavior.transform, asZoomTransform(centerTransform));
+      }
+      setCanvasView(activeSessionId, { transform: centerTransform, stageSize: stage });
+    }
+
+    setIsInitialized(true);
+    lastLoadedSessionRef.current = activeSessionId;
+  }, [activeSessionId, stageSize, setCanvasView, isInitialized]);
 
   useEffect(() => {
     if (!focusTarget) {
@@ -327,13 +404,17 @@ const initialPinCenteredRef = useRef<string | null>(null);
   }, [activeSessionId, canvasMode, clearObjectSelection]);
 
   const handleSelect = useCallback(
-    (objectId: string) => {
+    (objectId: string, event: React.MouseEvent) => {
       if (!activeSessionId) {
         return;
       }
-      toggleObjectSelection(activeSessionId, objectId);
+      // Check for Cmd (Mac) or Ctrl (Windows/Linux) for multi-select
+      const isMultiSelect = event.ctrlKey || event.metaKey;
+      toggleObjectSelection(activeSessionId, objectId, isMultiSelect);
+      setSelectionMethod(activeSessionId, "click");
+      setLastSelectedObject(activeSessionId, objectId);
     },
-    [activeSessionId, toggleObjectSelection]
+    [activeSessionId, toggleObjectSelection, setSelectionMethod, setLastSelectedObject]
   );
 
   const handlePinFocus = useCallback(
@@ -553,13 +634,17 @@ const initialPinCenteredRef = useRef<string | null>(null);
         style={{ cursor: canvasCursor }}
       >
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
-        <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
-        <PinLayer
-          pins={pins}
-          transform={transform}
-          interactive={canvasMode !== "pin"}
-          onFocus={handlePinFocus}
-        />
+        {isInitialized && (
+          <>
+            <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
+            <PinLayer
+              pins={pins}
+              transform={transform}
+              interactive={canvasMode !== "pin"}
+              onFocus={handlePinFocus}
+            />
+          </>
+        )}
         {pinDraft ? (
           <div className="pointer-events-none absolute inset-0 z-30">
             <div
@@ -603,7 +688,12 @@ const initialPinCenteredRef = useRef<string | null>(null);
             </div>
           </div>
         ) : null}
-        <SelectionLayer objects={canvasObjects} transform={transform} />
+        <SelectionLayer
+          objects={canvasObjects}
+          transform={transform}
+          selectionMethod={selectionMethod}
+          lastSelectedObjectId={lastSelectedObjectId}
+        />
         {canvasMode === "lasso" ? (
           <div
             className="absolute inset-0 z-20 select-none"
