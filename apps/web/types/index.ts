@@ -12,6 +12,7 @@ export type Message = {
   content: string;
   timestamp: string;
   highlightIds?: string[];
+  canvasObjectIds?: string[];  // IDs of canvas objects created during this message
 };
 
 export type CanvasObjectType = "diagram" | "note" | "formula" | "image" | "text" | "code" | "graph" | "latex";
