@@ -6,6 +6,7 @@ type VoiceOption = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
 
 export function useOpenAITTS() {
   const [speaking, setSpeaking] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -83,29 +84,33 @@ export function useOpenAITTS() {
       audioRef.current.currentTime = 0;
     }
     setSpeaking(false);
+    setPaused(false);
     setLoading(false);
   }, []);
 
   const pause = useCallback(() => {
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
+      setPaused(true);
     }
   }, []);
 
   const resume = useCallback(() => {
     if (audioRef.current && audioRef.current.paused) {
       audioRef.current.play();
+      setPaused(false);
     }
   }, []);
 
-  return { 
-    speak, 
-    stop, 
-    pause, 
-    resume, 
-    speaking, 
-    loading, 
-    error, 
+  return {
+    speak,
+    stop,
+    pause,
+    resume,
+    speaking,
+    paused,
+    loading,
+    error,
     supported: true // OpenAI TTS is always supported since it's server-side
   };
 }

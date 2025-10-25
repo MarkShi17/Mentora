@@ -95,6 +95,7 @@ const addPin = useSessionStore((state) => state.addPin);
 const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
 const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
 const updateCanvasObjects = useSessionStore((state) => state.updateCanvasObjects);
+const deleteCanvasObjects = useSessionStore((state) => state.deleteCanvasObjects);
 const bringToFront = useSessionStore((state) => state.bringToFront);
 const stageSize = useSessionStore((state) =>
   state.activeSessionId ? state.canvasViews[state.activeSessionId]?.stageSize : null
@@ -460,6 +461,17 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
   const handleCloseMenu = useCallback(() => {
     setMenuPosition(null);
   }, []);
+
+  const handleDeleteObjects = useCallback(
+    (objectIds: string[]) => {
+      if (!activeSessionId) {
+        return;
+      }
+      deleteCanvasObjects(activeSessionId, objectIds);
+      setMenuPosition(null);
+    },
+    [activeSessionId, deleteCanvasObjects]
+  );
 
   const handlePinFocus = useCallback(
     (pin: Pin) => {
@@ -1008,6 +1020,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
           transform={transform}
           selectionMethod={selectionMethod}
           lastSelectedObjectId={lastSelectedObjectId}
+          onDelete={handleDeleteObjects}
           dragState={dragState}
         />
         {canvasMode === "lasso" ? (
@@ -1034,7 +1047,14 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
           </div>
         ) : null}
       </div>
-      {menuPosition && <ObjectContextMenu position={menuPosition} onClose={handleCloseMenu} />}
+      {menuPosition && (
+        <ObjectContextMenu
+          position={menuPosition}
+          onClose={handleCloseMenu}
+          selectedObjectIds={canvasObjects.filter((obj) => obj.selected).map((obj) => obj.id)}
+          onDelete={handleDeleteObjects}
+        />
+      )}
     </div>
   );
 }

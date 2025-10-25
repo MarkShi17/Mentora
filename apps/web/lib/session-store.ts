@@ -57,6 +57,7 @@ type SessionState = {
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   updateCanvasObjects: (sessionId: string, objects: CanvasObject[]) => void;
+  deleteCanvasObjects: (sessionId: string, objectIds: string[]) => void;
   toggleObjectSelection: (sessionId: string, objectId: string, keepOthers?: boolean) => void;
   clearObjectSelection: (sessionId: string) => void;
   setSelectedObjects: (sessionId: string, ids: string[]) => void;
@@ -219,6 +220,20 @@ export const useSessionStore = create<SessionState>()(
     updateCanvasObjects: (sessionId, objects) => {
       set((state) => {
         state.canvasObjects[sessionId] = objects;
+      });
+    },
+    deleteCanvasObjects: (sessionId, objectIds) => {
+      set((state) => {
+        const list = state.canvasObjects[sessionId];
+        if (!list) {
+          return;
+        }
+        // Filter out objects with IDs in the objectIds array
+        state.canvasObjects[sessionId] = list.filter((obj) => !objectIds.includes(obj.id));
+
+        // Clear selection method and last selected object
+        state.selectionMethods[sessionId] = undefined;
+        state.lastSelectedObjectIds[sessionId] = null;
       });
     },
     toggleObjectSelection: (sessionId, objectId, keepOthers = false) => {

@@ -10,6 +10,7 @@ type SelectionLayerProps = {
   transform: { x: number; y: number; k: number };
   selectionMethod?: "click" | "lasso";
   lastSelectedObjectId?: string | null;
+  onDelete: (objectIds: string[]) => void;
   dragState?: {
     objectId: string;
     selectedObjectIds: string[];
@@ -26,6 +27,7 @@ export function SelectionLayer({
   transform,
   selectionMethod,
   lastSelectedObjectId,
+  onDelete,
   dragState
 }: SelectionLayerProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
@@ -92,7 +94,14 @@ export function SelectionLayer({
             </div>
           </div>
         </div>
-        {menuPosition && <ObjectContextMenu position={menuPosition} onClose={handleCloseMenu} />}
+        {menuPosition && (
+          <ObjectContextMenu
+            position={menuPosition}
+            onClose={handleCloseMenu}
+            selectedObjectIds={selectedObjects.map((obj) => obj.id)}
+            onDelete={onDelete}
+          />
+        )}
       </>
     );
   }
@@ -153,7 +162,14 @@ export function SelectionLayer({
             </div>
           </div>
         </div>
-        {menuPosition && <ObjectContextMenu position={menuPosition} onClose={handleCloseMenu} />}
+        {menuPosition && (
+          <ObjectContextMenu
+            position={menuPosition}
+            onClose={handleCloseMenu}
+            selectedObjectIds={selectedObjects.map((obj) => obj.id)}
+            onDelete={onDelete}
+          />
+        )}
       </>
     );
   }
@@ -189,7 +205,14 @@ export function SelectionLayer({
           </div>
         </div>
       </div>
-      {menuPosition && <ObjectContextMenu position={menuPosition} onClose={handleCloseMenu} />}
+      {menuPosition && (
+        <ObjectContextMenu
+          position={menuPosition}
+          onClose={handleCloseMenu}
+          selectedObjectIds={selectedObjects.map((obj) => obj.id)}
+          onDelete={onDelete}
+        />
+      )}
     </>
   );
 }

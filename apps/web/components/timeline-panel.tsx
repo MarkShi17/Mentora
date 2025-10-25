@@ -199,7 +199,7 @@ export function TimelinePanel() {
                     : "text-slate-700"
                 )}
               >
-                <span className="capitalize">{message.role}</span>
+                <span className="capitalize">{message.role === "assistant" ? "Mentora" : message.role}</span>
                 <span className="ml-2 text-xs font-normal text-slate-500">
                   {formatTime(message.timestamp)}
                 </span>
