@@ -1,12 +1,15 @@
 'use client';
 
+import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { select, zoom, zoomIdentity } from "d3";
 import { ObjectLayer } from "@/components/object-layer";
+import { PinLayer } from "@/components/pin-layer";
 import { SelectionLayer } from "@/components/selection-layer";
+import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
-import type { CanvasObject } from "@/types";
+import type { CanvasObject, Pin } from "@/types";
 
 const GRID_SIZE = 40;
 const MIN_SCALE = 0.25;
@@ -24,6 +27,12 @@ type LassoState = {
   currentScreen: { x: number; y: number };
   originWorld: { x: number; y: number };
   currentWorld: { x: number; y: number };
+};
+
+type PinDraft = {
+  screen: { x: number; y: number };
+  world: { x: number; y: number };
+  label: string;
 };
 
 const IDENTITY: TransformState = { x: 0, y: 0, k: 1 };
@@ -45,15 +54,26 @@ export function CanvasStage() {
 
   const [transform, setTransform] = useState<TransformState>(IDENTITY);
   const transformRef = useRef<TransformState>(IDENTITY);
+  const stageSizeRef = useRef<{ width: number; height: number } | null>(null);
 
-  const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const canvasObjects = useSessionStore(
-    (state) => (state.activeSessionId ? state.canvasObjects[state.activeSessionId] ?? [] : [])
-  );
-  const canvasMode = useSessionStore((state) => state.canvasMode);
-  const toggleObjectSelection = useSessionStore((state) => state.toggleObjectSelection);
-  const clearObjectSelection = useSessionStore((state) => state.clearObjectSelection);
-  const setSelectedObjects = useSessionStore((state) => state.setSelectedObjects);
+const activeSessionId = useSessionStore((state) => state.activeSessionId);
+const canvasObjects = useSessionStore(
+  (state) => (state.activeSessionId ? state.canvasObjects[state.activeSessionId] ?? [] : [])
+);
+const canvasMode = useSessionStore((state) => state.canvasMode);
+const toggleObjectSelection = useSessionStore((state) => state.toggleObjectSelection);
+const clearObjectSelection = useSessionStore((state) => state.clearObjectSelection);
+const setSelectedObjects = useSessionStore((state) => state.setSelectedObjects);
+const setCanvasView = useSessionStore((state) => state.setCanvasView);
+const focusTarget = useSessionStore((state) => state.focusTarget);
+const clearFocus = useSessionStore((state) => state.clearFocus);
+const pins = useSessionStore((state) =>
+  state.activeSessionId ? state.pins[state.activeSessionId] ?? [] : []
+);
+const requestFocus = useSessionStore((state) => state.requestFocus);
+const addPin = useSessionStore((state) => state.addPin);
+const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
+const stageSize = useSessionStore((state) => state.canvasView.stageSize);
 
   const canvasModeRef = useRef(canvasMode);
   useEffect(() => {
@@ -63,14 +83,25 @@ export function CanvasStage() {
   const activeSessionIdRef = useRef(activeSessionId);
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
+    initialPinCenteredRef.current = null;
   }, [activeSessionId]);
+
+  useEffect(() => {
+    if (canvasModeRef.current === "pin") {
+      setCanvasMode("pan");
+    }
+    setPinDraft(null);
+  }, [activeSessionId, setCanvasMode]);
 
   const canvasObjectsRef = useRef<CanvasObject[]>(canvasObjects);
   useEffect(() => {
     canvasObjectsRef.current = canvasObjects;
   }, [canvasObjects]);
 
-  const previousSelectionRef = useRef<string[] | null>(null);
+const previousSelectionRef = useRef<string[] | null>(null);
+const [pinDraft, setPinDraft] = useState<PinDraft | null>(null);
+const pinInputRef = useRef<HTMLInputElement | null>(null);
+const initialPinCenteredRef = useRef<string | null>(null);
 
   const [lasso, setLasso] = useState<LassoState | null>(null);
   const lassoRef = useRef<LassoState | null>(null);
@@ -78,12 +109,23 @@ export function CanvasStage() {
     lassoRef.current = lasso;
   }, [lasso]);
 
-  const applyTransform = useCallback((nextState: TransformState) => {
-    transformRef.current = nextState;
-    flushSync(() => {
-      setTransform(nextState);
-    });
-  }, []);
+  useEffect(() => {
+    if (pinDraft && pinInputRef.current) {
+      pinInputRef.current.focus();
+      pinInputRef.current.select();
+    }
+  }, [pinDraft]);
+
+  const applyTransform = useCallback(
+    (nextState: TransformState) => {
+      transformRef.current = nextState;
+      flushSync(() => {
+        setTransform(nextState);
+      });
+      setCanvasView({ transform: nextState, stageSize: stageSizeRef.current });
+    },
+    [setCanvasView]
+  );
 
   const screenToWorld = useCallback(
     (point: { x: number; y: number }) => {
@@ -188,7 +230,85 @@ export function CanvasStage() {
       setLasso(null);
       previousSelectionRef.current = null;
     }
+    if (canvasMode !== "pin") {
+      setPinDraft(null);
+    }
   }, [canvasMode]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) {
+      return;
+    }
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect();
+      stageSizeRef.current = { width: rect.width, height: rect.height };
+      setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [setCanvasView, activeSessionId]);
+
+  useEffect(() => {
+    setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
+  }, [transform, setCanvasView]);
+
+  useEffect(() => {
+    if (!focusTarget) {
+      return;
+    }
+    const stageSize = stageSizeRef.current;
+    if (!stageSize) {
+      clearFocus();
+      return;
+    }
+    const currentScale = transformRef.current.k;
+    const nextTransform: TransformState = {
+      k: currentScale,
+      x: stageSize.width / 2 - focusTarget.x * currentScale,
+      y: stageSize.height / 2 - focusTarget.y * currentScale
+    };
+    applyTransform(nextTransform);
+    const selection = selectionRef.current;
+    const zoomBehavior = zoomBehaviorRef.current;
+    if (selection && zoomBehavior) {
+      selection.call(zoomBehavior.transform, asZoomTransform(nextTransform));
+    }
+    clearFocus();
+  }, [focusTarget, applyTransform, clearFocus]);
+
+  useEffect(() => {
+    if (!activeSessionId || !stageSize) {
+      return;
+    }
+    if (initialPinCenteredRef.current === activeSessionId) {
+      return;
+    }
+    const sessionPins = pins;
+    if (!sessionPins || sessionPins.length === 0) {
+      return;
+    }
+    const stage = stageSizeRef.current ?? stageSize;
+    if (!stage) {
+      return;
+    }
+    const pin = sessionPins[0];
+    const scale = transformRef.current.k;
+    const nextTransform: TransformState = {
+      k: scale,
+      x: stage.width / 2 - pin.x * scale,
+      y: stage.height / 2 - pin.y * scale
+    };
+    applyTransform(nextTransform);
+    const selection = selectionRef.current;
+    const zoomBehavior = zoomBehaviorRef.current;
+    if (selection && zoomBehavior) {
+      selection.call(zoomBehavior.transform, asZoomTransform(nextTransform));
+    }
+    initialPinCenteredRef.current = activeSessionId;
+  }, [activeSessionId, stageSize, pins, applyTransform]);
 
   useEffect(() => {
     return () => {
@@ -219,6 +339,13 @@ export function CanvasStage() {
     [activeSessionId, toggleObjectSelection]
   );
 
+  const handlePinFocus = useCallback(
+    (pin: Pin) => {
+      requestFocus({ id: pin.id, x: pin.x, y: pin.y });
+    },
+    [requestFocus]
+  );
+
   const getScreenPoint = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!containerRef.current) {
@@ -231,6 +358,30 @@ export function CanvasStage() {
       };
     },
     []
+  );
+
+  const startPinPlacement = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (canvasMode !== "pin" || pinDraft) {
+        return;
+      }
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      if (!activeSessionIdRef.current) {
+        setCanvasMode("pan");
+        return;
+      }
+      const screenPoint = getScreenPoint(event);
+      const worldPoint = screenToWorld(screenPoint);
+      setPinDraft({
+        screen: screenPoint,
+        world: worldPoint,
+        label: ""
+      });
+    },
+    [canvasMode, pinDraft, getScreenPoint, screenToWorld, setCanvasMode]
   );
 
   const startLasso = useCallback(
@@ -282,6 +433,39 @@ export function CanvasStage() {
     },
     [canvasMode, getScreenPoint, screenToWorld, selectObjectsInBox]
   );
+
+  const handlePinLabelChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = event.target;
+    setPinDraft((draft) => {
+      if (!draft) {
+        return draft;
+      }
+      return { ...draft, label: value };
+    });
+  }, []);
+
+  const commitPinDraft = useCallback(() => {
+    if (!pinDraft || !activeSessionId) {
+      setPinDraft(null);
+      setCanvasMode("pan");
+      return;
+    }
+    const newPin = addPin(activeSessionId, {
+      x: pinDraft.world.x,
+      y: pinDraft.world.y,
+      label: pinDraft.label.trim() || undefined
+    });
+    if (newPin) {
+      requestFocus({ id: newPin.id, x: newPin.x, y: newPin.y });
+    }
+    setPinDraft(null);
+    setCanvasMode("pan");
+  }, [pinDraft, activeSessionId, addPin, requestFocus, setCanvasMode]);
+
+  const cancelPinDraft = useCallback(() => {
+    setPinDraft(null);
+    setCanvasMode("pan");
+  }, [setCanvasMode]);
 
   const finishLasso = useCallback(
     (commit: boolean) => {
@@ -360,7 +544,7 @@ export function CanvasStage() {
     };
   }, [transform.x, transform.y, transform.k]);
 
-  const canvasCursor = canvasMode === "lasso" ? "crosshair" : "grab";
+  const canvasCursor = canvasMode === "pan" ? "grab" : "crosshair";
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-950">
@@ -368,10 +552,60 @@ export function CanvasStage() {
         className="absolute inset-0"
         ref={containerRef}
         onClick={handleCanvasClick}
+        onPointerDown={startPinPlacement}
         style={{ cursor: canvasCursor }}
       >
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
         <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
+        <PinLayer
+          pins={pins}
+          transform={transform}
+          interactive={canvasMode !== "pin"}
+          onFocus={handlePinFocus}
+        />
+        {pinDraft ? (
+          <div className="pointer-events-none absolute inset-0 z-30">
+            <div
+              className="pointer-events-auto absolute w-56 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-slate-950/95 p-3 shadow-xl"
+              style={{ left: pinDraft.screen.x, top: pinDraft.screen.y }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  commitPinDraft();
+                }}
+              >
+                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Pin name
+                  <input
+                    ref={pinInputRef}
+                    className="mt-1 w-full rounded-md border border-border bg-slate-900 px-2 py-1 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    value={pinDraft.label}
+                    onChange={handlePinLabelChange}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelPinDraft();
+                      }
+                    }}
+                    placeholder="e.g. Entry Node"
+                  />
+                </label>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelPinDraft}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="secondary" size="sm">
+                    Save
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ) : null}
         <SelectionLayer objects={canvasObjects} transform={transform} />
         {canvasMode === "lasso" ? (
           <div

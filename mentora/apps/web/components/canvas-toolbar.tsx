@@ -1,7 +1,7 @@
 'use client';
 
 import type { ComponentType } from "react";
-import { MousePointer2 } from "lucide-react";
+import { MapPin, MousePointer2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
@@ -25,6 +25,9 @@ export function CanvasToolbar() {
   const canvasMode = useSessionStore((state) => state.canvasMode);
   const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const pinCount = useSessionStore((state) =>
+    state.activeSessionId ? (state.pins[state.activeSessionId] ?? []).length : 0
+  );
   const selectedCount = useSessionStore((state) => {
     const sessionId = state.activeSessionId;
     if (!sessionId) {
@@ -32,6 +35,13 @@ export function CanvasToolbar() {
     }
     return (state.canvasObjects[sessionId] ?? []).filter((object) => object.selected).length;
   });
+
+  const togglePinMode = () => {
+    if (!activeSessionId) {
+      return;
+    }
+    setCanvasMode(canvasMode === "pin" ? "pan" : "pin");
+  };
 
   return (
     <nav className="flex items-center justify-between rounded-lg border border-border bg-slate-950/70 px-4 py-2 text-sm text-slate-200 shadow-sm backdrop-blur">
@@ -49,9 +59,21 @@ export function CanvasToolbar() {
           onClick={() => setCanvasMode("lasso")}
           disabled={!activeSessionId}
         />
+        <Button
+          type="button"
+          size="sm"
+          disabled={!activeSessionId}
+          variant={canvasMode === "pin" ? "secondary" : "outline"}
+          className="ml-2 gap-2"
+          onClick={togglePinMode}
+        >
+          <MapPin className="h-4 w-4" />
+          {canvasMode === "pin" ? "Click to place" : "Drop Pin"}
+        </Button>
       </div>
       <div className="flex items-center gap-3 text-xs text-slate-400">
         <span>{selectedCount} selected</span>
+        <span>{pinCount} pins</span>
         <Button variant="outline" size="sm" disabled className="cursor-not-allowed text-xs">
           Future actions
         </Button>

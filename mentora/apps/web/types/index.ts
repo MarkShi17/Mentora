@@ -46,3 +46,11 @@ export type TimelineEvent = {
   description: string;
   payload?: Record<string, unknown>;
 };
+
+export type Pin = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  createdAt: string;
+};
