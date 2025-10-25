@@ -54,6 +54,8 @@ export function CanvasStage() {
   const [transform, setTransform] = useState<TransformState>(IDENTITY);
   const transformRef = useRef<TransformState>(IDENTITY);
   const stageSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const lastLoadedSessionRef = useRef<string | null>(null);
 
 const activeSessionId = useSessionStore((state) => state.activeSessionId);
 const canvasObjects = useSessionStore(
@@ -63,6 +65,14 @@ const canvasMode = useSessionStore((state) => state.canvasMode);
 const toggleObjectSelection = useSessionStore((state) => state.toggleObjectSelection);
 const clearObjectSelection = useSessionStore((state) => state.clearObjectSelection);
 const setSelectedObjects = useSessionStore((state) => state.setSelectedObjects);
+const setSelectionMethod = useSessionStore((state) => state.setSelectionMethod);
+const setLastSelectedObject = useSessionStore((state) => state.setLastSelectedObject);
+const selectionMethod = useSessionStore((state) =>
+  state.activeSessionId ? state.selectionMethods[state.activeSessionId] : undefined
+);
+const lastSelectedObjectId = useSessionStore((state) =>
+  state.activeSessionId ? state.lastSelectedObjectIds[state.activeSessionId] : null
+);
 const setCanvasView = useSessionStore((state) => state.setCanvasView);
 const focusTarget = useSessionStore((state) => state.focusTarget);
 const clearFocus = useSessionStore((state) => state.clearFocus);
@@ -72,7 +82,11 @@ const pins = useSessionStore((state) =>
 const requestFocus = useSessionStore((state) => state.requestFocus);
 const addPin = useSessionStore((state) => state.addPin);
 const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
-const stageSize = useSessionStore((state) => state.canvasView.stageSize);
+const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+const bringToFront = useSessionStore((state) => state.bringToFront);
+const stageSize = useSessionStore((state) =>
+  state.activeSessionId ? state.canvasViews[state.activeSessionId]?.stageSize : null
+);
 
   const canvasModeRef = useRef(canvasMode);
   useEffect(() => {
@@ -108,6 +122,18 @@ const initialPinCenteredRef = useRef<string | null>(null);
     lassoRef.current = lasso;
   }, [lasso]);
 
+  // Object dragging state
+  const [dragState, setDragState] = useState<{
+    objectId: string;
+    startWorld: { x: number; y: number };
+    startObject: { x: number; y: number };
+    currentDelta: { x: number; y: number };
+  } | null>(null);
+  const dragStateRef = useRef<typeof dragState>(null);
+  useEffect(() => {
+    dragStateRef.current = dragState;
+  }, [dragState]);
+
   useEffect(() => {
     if (pinDraft && pinInputRef.current) {
       pinInputRef.current.focus();
@@ -119,9 +145,11 @@ const initialPinCenteredRef = useRef<string | null>(null);
     (nextState: TransformState) => {
       transformRef.current = nextState;
       setTransform(nextState);
-      setCanvasView({ transform: nextState, stageSize: stageSizeRef.current });
+      if (activeSessionId) {
+        setCanvasView(activeSessionId, { transform: nextState, stageSize: stageSizeRef.current });
+      }
     },
-    [setCanvasView]
+    [setCanvasView, activeSessionId]
   );
 
   const screenToWorld = useCallback(
@@ -157,9 +185,10 @@ const initialPinCenteredRef = useRef<string | null>(null);
         .map((object) => object.id);
 
       setSelectedObjects(sessionId, ids);
+      setSelectionMethod(sessionId, "lasso");
       return ids;
     },
-    [setSelectedObjects]
+    [setSelectedObjects, setSelectionMethod]
   );
 
   useEffect(() => {
@@ -186,6 +215,14 @@ const initialPinCenteredRef = useRef<string | null>(null);
         if (event.ctrlKey && event.type === "wheel") {
           return true;
         }
+
+        // Don't activate zoom if clicking on a canvas object
+        const target = event.target as HTMLElement;
+        const isObjectClick = target.closest('[data-canvas-object="true"]');
+        if (isObjectClick) {
+          return false;
+        }
+
         return !event.button && event.type !== "dblclick";
       })
       .on("zoom", handleZoom);
@@ -234,23 +271,85 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   useEffect(() => {
     const element = containerRef.current;
-    if (!element) {
+    if (!element || !activeSessionId) {
       return;
     }
     const updateSize = () => {
       const rect = element.getBoundingClientRect();
       stageSizeRef.current = { width: rect.width, height: rect.height };
-      setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
+      // Only save after initialization to avoid saving IDENTITY before centering
+      if (activeSessionId && isInitialized) {
+        setCanvasView(activeSessionId, { transform: transformRef.current, stageSize: stageSizeRef.current });
+      }
     };
     updateSize();
     const observer = new ResizeObserver(updateSize);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [setCanvasView, activeSessionId]);
+  }, [setCanvasView, activeSessionId, isInitialized]);
 
   useEffect(() => {
-    setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
-  }, [transform, setCanvasView]);
+    // Only save after initialization to avoid saving IDENTITY before centering
+    if (activeSessionId && isInitialized) {
+      setCanvasView(activeSessionId, { transform: transformRef.current, stageSize: stageSizeRef.current });
+    }
+  }, [transform, setCanvasView, activeSessionId, isInitialized]);
+
+  // Center canvas on initial load or session switch
+  useEffect(() => {
+    if (!activeSessionId) {
+      return;
+    }
+
+    if (lastLoadedSessionRef.current === activeSessionId && isInitialized) {
+      return;
+    }
+
+    const stage = stageSizeRef.current;
+    if (!stage) {
+      return;
+    }
+
+    // Check if there's a saved canvas view for this session
+    const state = useSessionStore.getState();
+    const savedView = state.canvasViews[activeSessionId];
+
+    if (savedView && savedView.stageSize) {
+      // Restore saved view
+      const savedTransform = savedView.transform;
+      transformRef.current = savedTransform;
+      setTransform(savedTransform);
+      const selection = selectionRef.current;
+      const zoomBehavior = zoomBehaviorRef.current;
+      if (selection && zoomBehavior) {
+        selection.call(zoomBehavior.transform, asZoomTransform(savedTransform));
+      }
+    } else {
+      // Calculate center transform
+      // Account for floating header (80px) and prompt bar (80px)
+      const headerHeight = 80;
+      const promptHeight = 80;
+      const visualHeight = stage.height - headerHeight - promptHeight;
+
+      const centerTransform: TransformState = {
+        x: stage.width / 2,
+        y: headerHeight + (visualHeight / 2),
+        k: 1
+      };
+
+      transformRef.current = centerTransform;
+      setTransform(centerTransform);
+      const selection = selectionRef.current;
+      const zoomBehavior = zoomBehaviorRef.current;
+      if (selection && zoomBehavior) {
+        selection.call(zoomBehavior.transform, asZoomTransform(centerTransform));
+      }
+      setCanvasView(activeSessionId, { transform: centerTransform, stageSize: stage });
+    }
+
+    setIsInitialized(true);
+    lastLoadedSessionRef.current = activeSessionId;
+  }, [activeSessionId, stageSize, setCanvasView, isInitialized]);
 
   useEffect(() => {
     if (!focusTarget) {
@@ -327,13 +426,20 @@ const initialPinCenteredRef = useRef<string | null>(null);
   }, [activeSessionId, canvasMode, clearObjectSelection]);
 
   const handleSelect = useCallback(
-    (objectId: string) => {
+    (objectId: string, event: React.MouseEvent) => {
       if (!activeSessionId) {
         return;
       }
-      toggleObjectSelection(activeSessionId, objectId);
+      // Bring object to front when selected
+      bringToFront(activeSessionId, objectId);
+
+      // Check for Cmd (Mac) or Ctrl (Windows/Linux) for multi-select
+      const isMultiSelect = event.ctrlKey || event.metaKey;
+      toggleObjectSelection(activeSessionId, objectId, isMultiSelect);
+      setSelectionMethod(activeSessionId, "click");
+      setLastSelectedObject(activeSessionId, objectId);
     },
-    [activeSessionId, toggleObjectSelection]
+    [activeSessionId, toggleObjectSelection, setSelectionMethod, setLastSelectedObject, bringToFront]
   );
 
   const handlePinFocus = useCallback(
@@ -355,6 +461,96 @@ const initialPinCenteredRef = useRef<string | null>(null);
       };
     },
     []
+  );
+
+  const handleObjectDragStart = useCallback(
+    (objectId: string, event: React.PointerEvent) => {
+      if (!activeSessionId || canvasMode !== "pan") {
+        return;
+      }
+      event.stopPropagation();
+
+      // Find the object
+      const object = canvasObjectsRef.current.find(obj => obj.id === objectId);
+      if (!object) {
+        return;
+      }
+
+      // Bring to front
+      bringToFront(activeSessionId, objectId);
+
+      // Get screen point and convert to world coordinates
+      const screenPoint = getScreenPoint(event);
+      const worldPoint = screenToWorld(screenPoint);
+
+      // Set drag state
+      setDragState({
+        objectId,
+        startWorld: worldPoint,
+        startObject: { x: object.x, y: object.y },
+        currentDelta: { x: 0, y: 0 }
+      });
+
+      // Capture pointer
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [activeSessionId, canvasMode, bringToFront, getScreenPoint, screenToWorld]
+  );
+
+  const handleObjectDragMove = useCallback(
+    (objectId: string, event: React.PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag || drag.objectId !== objectId) {
+        return;
+      }
+
+      event.stopPropagation();
+
+      // Get current world position
+      const screenPoint = getScreenPoint(event);
+      const worldPoint = screenToWorld(screenPoint);
+
+      // Calculate delta in world coordinates
+      const deltaX = worldPoint.x - drag.startWorld.x;
+      const deltaY = worldPoint.y - drag.startWorld.y;
+
+      // Update drag state with current delta (for visual transform)
+      setDragState({
+        ...drag,
+        currentDelta: { x: deltaX, y: deltaY }
+      });
+    },
+    [getScreenPoint, screenToWorld]
+  );
+
+  const handleObjectDragEnd = useCallback(
+    (objectId: string, event: React.PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag || drag.objectId !== objectId || !activeSessionId) {
+        return;
+      }
+
+      event.stopPropagation();
+
+      // Commit final position to store
+      const object = canvasObjectsRef.current.find(obj => obj.id === objectId);
+      if (object) {
+        updateCanvasObject(activeSessionId, {
+          ...object,
+          x: drag.startObject.x + drag.currentDelta.x,
+          y: drag.startObject.y + drag.currentDelta.y
+        });
+      }
+
+      // Release pointer capture
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      // Clear drag state
+      setDragState(null);
+    },
+    [activeSessionId, updateCanvasObject]
   );
 
   const startPinPlacement = useCallback(
@@ -553,13 +749,26 @@ const initialPinCenteredRef = useRef<string | null>(null);
         style={{ cursor: canvasCursor }}
       >
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
-        <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
-        <PinLayer
-          pins={pins}
-          transform={transform}
-          interactive={canvasMode !== "pin"}
-          onFocus={handlePinFocus}
-        />
+        {isInitialized && (
+          <>
+            <ObjectLayer
+              objects={canvasObjects}
+              transform={transform}
+              onSelect={handleSelect}
+              onDragStart={handleObjectDragStart}
+              onDragMove={handleObjectDragMove}
+              onDragEnd={handleObjectDragEnd}
+              isDragging={!!dragState}
+              dragState={dragState}
+            />
+            <PinLayer
+              pins={pins}
+              transform={transform}
+              interactive={canvasMode !== "pin"}
+              onFocus={handlePinFocus}
+            />
+          </>
+        )}
         {pinDraft ? (
           <div className="pointer-events-none absolute inset-0 z-30">
             <div
@@ -603,7 +812,12 @@ const initialPinCenteredRef = useRef<string | null>(null);
             </div>
           </div>
         ) : null}
-        <SelectionLayer objects={canvasObjects} transform={transform} />
+        <SelectionLayer
+          objects={canvasObjects}
+          transform={transform}
+          selectionMethod={selectionMethod}
+          lastSelectedObjectId={lastSelectedObjectId}
+        />
         {canvasMode === "lasso" ? (
           <div
             className="absolute inset-0 z-20 select-none"

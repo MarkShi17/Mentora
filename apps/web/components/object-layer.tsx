@@ -82,14 +82,27 @@ function renderObjectContent(object: CanvasObject) {
 type ObjectLayerProps = {
   objects: CanvasObject[];
   transform: { x: number; y: number; k: number };
-  onSelect: (id: string) => void;
+  onSelect: (id: string, event: React.MouseEvent) => void;
+  onDragStart?: (id: string, event: React.PointerEvent) => void;
+  onDragMove?: (id: string, event: React.PointerEvent) => void;
+  onDragEnd?: (id: string, event: React.PointerEvent) => void;
+  isDragging?: boolean;
+  dragState?: {
+    objectId: string;
+    startWorld: { x: number; y: number };
+    startObject: { x: number; y: number };
+    currentDelta: { x: number; y: number };
+  } | null;
 };
 
-export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) {
+export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragMove, onDragEnd, isDragging, dragState }: ObjectLayerProps) {
   const stageStyle: CSSProperties = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
     transformOrigin: "0 0"
   };
+
+  // Sort objects by zIndex so higher ones render on top
+  const sortedObjects = [...objects].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
   return (
     <div className="pointer-events-none absolute inset-0">
@@ -97,23 +110,55 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
         className="relative h-full w-full"
         style={stageStyle}
       >
-        {objects.map((object) => (
+        {sortedObjects.map((object) => {
+          const isBeingDragged = dragState?.objectId === object.id;
+          const dragTransform = isBeingDragged && dragState
+            ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
+            : undefined;
+
+          return (
           <div
             key={object.id}
+            data-canvas-object="true"
             className={cn(
               "pointer-events-auto absolute rounded-lg border-2 border-transparent shadow-lg transition-colors",
-              object.selected ? "border-sky-400" : "border-transparent"
+              object.selected ? "border-sky-400" : "border-transparent",
+              isDragging ? "cursor-grabbing" : "cursor-grab",
+              !isBeingDragged && "transition-all"
             )}
             style={{
               left: object.x,
               top: object.y,
               width: object.width || object.size?.width || 'auto',
               height: object.height || object.size?.height || 'auto',
-              background: `${object.color}20`
+              background: `${object.color}20`,
+              zIndex: object.zIndex || 0,
+              transform: dragTransform
             }}
-            onClick={(event) => {
+            onPointerDown={(event) => {
               event.stopPropagation();
-              onSelect(object.id);
+              event.preventDefault();
+              if (onDragStart) {
+                onDragStart(object.id, event);
+              }
+            }}
+            onPointerMove={(event) => {
+              event.stopPropagation();
+              event.preventDefault();
+              if (onDragMove) {
+                onDragMove(object.id, event);
+              }
+            }}
+            onPointerUp={(event) => {
+              event.stopPropagation();
+              event.preventDefault();
+              if (onDragEnd) {
+                onDragEnd(object.id, event);
+              }
+              // If not dragging, treat as click for selection
+              if (!isDragging) {
+                onSelect(object.id, event as any);
+              }
             }}
           >
             <div className="flex flex-col bg-slate-900/80 p-4 backdrop-blur rounded-lg border border-slate-700/50 shadow-xl h-full">
@@ -138,7 +183,8 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
               ) : null}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

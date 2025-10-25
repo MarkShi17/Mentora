@@ -56,7 +56,7 @@ export function FloatingHeader() {
           icon={MousePointer2}
           active={canvasMode === "pan"}
           onClick={() => setCanvasMode("pan")}
-          tooltip="Pan"
+          tooltip="Grab"
         />
         <IconButton
           icon={BoxSelectIcon}
