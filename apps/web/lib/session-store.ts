@@ -65,21 +65,31 @@ type SessionState = {
 const withImmer = immer<SessionState>;
 
 export const useSessionStore = create<SessionState>()(
-  withImmer((set, get) => ({
-    sessions: [],
-    activeSessionId: null,
-    messages: {},
-    canvasObjects: {},
-    sources: {},
-    timeline: {},
-    transcripts: {},
-    pins: {},
-    voiceActive: false,
-    sourcesDrawerOpen: false,
-    captionsEnabled: true,
-    canvasMode: "pan",
-    canvasView: { transform: { x: 0, y: 0, k: 1 }, stageSize: null },
-    focusTarget: null,
+  withImmer((set, get) => {
+    // Create a default session on initialization
+    const defaultSessionId = `session-${nanoid(6)}`;
+    const now = new Date().toISOString();
+    const defaultSession: Session = {
+      id: defaultSessionId,
+      title: "Getting Started",
+      createdAt: now
+    };
+
+    return {
+      sessions: [defaultSession],
+      activeSessionId: defaultSessionId,
+      messages: { [defaultSessionId]: [] },
+      canvasObjects: { [defaultSessionId]: [] },
+      sources: { [defaultSessionId]: [] },
+      timeline: { [defaultSessionId]: [] },
+      transcripts: { [defaultSessionId]: "" },
+      pins: { [defaultSessionId]: [] },
+      voiceActive: false,
+      sourcesDrawerOpen: false,
+      captionsEnabled: true,
+      canvasMode: "pan",
+      canvasView: { transform: { x: 0, y: 0, k: 1 }, stageSize: null },
+      focusTarget: null,
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -288,5 +298,6 @@ export const useSessionStore = create<SessionState>()(
         state.focusTarget = null;
       });
     }
-  }))
+    };
+  })
 );
