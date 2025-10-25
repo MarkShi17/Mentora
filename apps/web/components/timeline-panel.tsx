@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState, useRef } from "react";
+import { Fragment, useState, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, MessageSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { VoiceControls } from "@/components/voice-controls";
@@ -30,6 +30,34 @@ export function TimelinePanel() {
   const dialogue = activeSessionId ? messages[activeSessionId] ?? [] : [];
   const captionsEnabled = useSessionStore((state) => state.captionsEnabled);
   const setCaptionsEnabled = useSessionStore((state) => state.setCaptionsEnabled);
+  const canvasObjects = useSessionStore((state) => state.canvasObjects);
+  const requestFocus = useSessionStore((state) => state.requestFocus);
+  const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+
+  const handleObjectClick = useCallback((objectId: string) => {
+    if (!activeSessionId) return;
+
+    const sessionObjects = canvasObjects[activeSessionId] || [];
+    const object = sessionObjects.find(obj => obj.id === objectId);
+
+    if (!object) return;
+
+    // Focus on this object in canvas
+    requestFocus({
+      id: object.id,
+      x: object.x + object.width / 2,  // Center of object
+      y: object.y + object.height / 2
+    });
+
+    // Temporarily highlight the object
+    const originalSelected = object.selected;
+    updateCanvasObject(activeSessionId, { ...object, selected: true });
+    setTimeout(() => {
+      updateCanvasObject(activeSessionId, { ...object, selected: originalSelected });
+    }, 2000);
+
+    console.log(`🎯 Focused on canvas object: ${object.label}`);
+  }, [activeSessionId, canvasObjects, requestFocus, updateCanvasObject]);
 
   const handleDragStart = (event: React.PointerEvent<HTMLDivElement>) => {
     // Only allow dragging from the header area, not from buttons
@@ -205,6 +233,25 @@ export function TimelinePanel() {
                 </span>
               </p>
               <p className="mt-1 text-sm text-slate-700 leading-relaxed">{message.content}</p>
+              {message.canvasObjectIds && message.canvasObjectIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {message.canvasObjectIds.map(objId => {
+                    const sessionObjects = activeSessionId ? canvasObjects[activeSessionId] || [] : [];
+                    const obj = sessionObjects.find(o => o.id === objId);
+                    if (!obj) return null;
+
+                    return (
+                      <button
+                        key={objId}
+                        onClick={() => handleObjectClick(objId)}
+                        className="px-2 py-1 text-xs rounded-full bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors border border-sky-200 font-medium"
+                      >
+                        📌 {obj.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {message.role === "assistant" && (
                 <VoiceControls
                   text={message.content}
