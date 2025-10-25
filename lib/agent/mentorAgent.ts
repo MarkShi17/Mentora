@@ -516,6 +516,12 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
     // Process each content item from MCP result
     for (const content of mcpResult.content) {
+      logger.info('Processing MCP content item', {
+        type: content.type,
+        hasResource: !!content.resource,
+        content: content
+      });
+      
       // Skip text-only content for visualization tools
       if (content.type === 'text') {
         continue;
@@ -561,6 +567,12 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       // Handle resource content (from Manim MCP)
       if (content.type === 'resource' && content.resource) {
         const resource = content.resource;
+        logger.info('Processing Manim resource', {
+          resource: resource,
+          mimeType: resource.mimeType,
+          hasText: !!resource.text,
+          hasUri: !!resource.uri
+        });
         const isVideo = resource.mimeType?.startsWith('video/');
         const isImage = resource.mimeType?.startsWith('image/');
 

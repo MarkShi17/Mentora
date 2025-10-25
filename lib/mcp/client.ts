@@ -182,8 +182,33 @@ export class MCPClient {
           contentLength: data.result?.content?.length || 0,
           serverName: this.config.name
         });
+        
+        // Debug: Log the actual content structure
+        if (data.result?.content) {
+          logger.info('MCP response content structure', {
+            contentLength: data.result.content.length,
+            contentTypes: data.result.content.map((c: any) => c.type),
+            contentDetails: data.result.content.map((c: any) => ({
+              type: c.type,
+              hasResource: !!c.resource,
+              resourceKeys: c.resource ? Object.keys(c.resource) : []
+            })),
+            serverName: this.config.name
+          });
+        }
 
-        return data.result || { content: [], isError: true };
+        const result = data.result || { content: [], isError: true };
+        logger.info('MCP client returning result', {
+          hasContent: !!result.content,
+          contentLength: result.content?.length || 0,
+          contentStructure: result.content?.map((c: any) => ({
+            type: c.type,
+            hasResource: !!c.resource,
+            resourceKeys: c.resource ? Object.keys(c.resource) : []
+          })),
+          serverName: this.config.name
+        });
+        return result;
       },
       close: async () => {
         // No persistent connection to close
@@ -247,6 +272,7 @@ export class MCPClient {
               text: 'text' in item ? item.text : undefined,
               data: 'data' in item ? item.data : undefined,
               mimeType: 'mimeType' in item ? item.mimeType : undefined,
+              resource: 'resource' in item ? item.resource : undefined,
             }))
           : [],
         isError,
