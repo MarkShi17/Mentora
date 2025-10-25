@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from "react";
 import type { CSSProperties } from "react";
 import type { CanvasObject } from "@/types";
+import { ObjectContextMenu, ObjectMenuButton } from "@/components/object-context-menu";
 
 type SelectionLayerProps = {
   objects: CanvasObject[];
@@ -26,12 +28,24 @@ export function SelectionLayer({
   lastSelectedObjectId,
   dragState
 }: SelectionLayerProps) {
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+
   const selectedObjects = objects.filter((object) => object.selected);
   if (selectedObjects.length === 0) {
     return null;
   }
 
   const padding = 8;
+
+  const handleOpenMenu = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    const rect = (event.target as HTMLElement).getBoundingClientRect();
+    setMenuPosition({ x: rect.right + 4, y: rect.top });
+  };
+
+  const handleCloseMenu = () => {
+    setMenuPosition(null);
+  };
 
   // Helper to get position accounting for drag state
   const getPosition = (obj: CanvasObject) => {
@@ -57,31 +71,35 @@ export function SelectionLayer({
     const pos = getPosition(obj);
 
     return (
-      <div className="pointer-events-none absolute inset-0">
-        <div className="relative h-full w-full" style={stageStyle}>
-          {/* Label positioned above object */}
-          <div
-            className="absolute"
-            style={{
-              left: pos.x,
-              top: pos.y,
-              transform: "translateY(-100%)"
-            }}
-          >
-            <div className="mb-2 flex justify-center">
-              <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap">
-                Highlighted
+      <>
+        <div className="pointer-events-none absolute inset-0">
+          <div className="relative h-full w-full" style={stageStyle}>
+            {/* Label positioned above object */}
+            <div
+              className="absolute"
+              style={{
+                left: pos.x,
+                top: pos.y,
+                transform: "translateY(-100%)"
+              }}
+            >
+              <div className="mb-2 flex justify-center items-center pointer-events-auto">
+                <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+                  <span>Highlighted</span>
+                  <ObjectMenuButton onOpenMenu={handleOpenMenu} />
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+        {menuPosition && <ObjectContextMenu position={menuPosition} onClose={handleCloseMenu} />}
+      </>
     );
   }
 
   // Multiple objects with lasso selection - show bounding box only (objects have their own borders)
   if (selectionMethod === "lasso") {
-    // Use actual width and height from objects, with drag-adjusted positions
+    // Use drag-adjusted positions for the bounding box to follow the objects
     const positions = selectedObjects.map(obj => {
       const pos = getPosition(obj);
       return {
@@ -104,33 +122,39 @@ export function SelectionLayer({
     const boundingPadding = 12;
 
     return (
-      <div className="pointer-events-none absolute inset-0">
-        <div className="relative h-full w-full" style={stageStyle}>
-          {/* Bounding rectangle encompassing all selected objects */}
-          <div
-            className="absolute rounded-lg bg-sky-400/10"
-            style={{
-              left: minX - boundingPadding,
-              top: minY - boundingPadding,
-              width: boundingWidth + boundingPadding * 2,
-              height: boundingHeight + boundingPadding * 2
-            }}
-          />
-          <div
-            className="absolute rounded-lg border-2 border-sky-400/80 shadow-[0_0_20px_rgba(56,189,248,0.35)]"
-            style={{
-              left: minX - boundingPadding,
-              top: minY - boundingPadding,
-              width: boundingWidth + boundingPadding * 2,
-              height: boundingHeight + boundingPadding * 2
-            }}
-          >
-            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[calc(100%+8px)] rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap">
-              {selectedObjects.length} Selected
+      <>
+        <div className="pointer-events-none absolute inset-0">
+          <div className="relative h-full w-full" style={stageStyle}>
+            {/* Bounding rectangle encompassing all selected objects */}
+            <div
+              className="absolute rounded-lg bg-sky-400/10"
+              style={{
+                left: minX - boundingPadding,
+                top: minY - boundingPadding,
+                width: boundingWidth + boundingPadding * 2,
+                height: boundingHeight + boundingPadding * 2
+              }}
+            />
+            <div
+              className="absolute rounded-lg border-2 border-sky-400/80 shadow-[0_0_20px_rgba(56,189,248,0.35)]"
+              style={{
+                left: minX - boundingPadding,
+                top: minY - boundingPadding,
+                width: boundingWidth + boundingPadding * 2,
+                height: boundingHeight + boundingPadding * 2
+              }}
+            >
+              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[calc(100%+8px)] pointer-events-auto">
+                <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+                  <span>{selectedObjects.length} Selected</span>
+                  <ObjectMenuButton onOpenMenu={handleOpenMenu} />
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+        {menuPosition && <ObjectContextMenu position={menuPosition} onClose={handleCloseMenu} />}
+      </>
     );
   }
 
@@ -144,24 +168,28 @@ export function SelectionLayer({
   const lastPos = getPosition(lastSelectedObject);
 
   return (
-    <div className="pointer-events-none absolute inset-0">
-      <div className="relative h-full w-full" style={stageStyle}>
-        {/* Label positioned above the last selected object */}
-        <div
-          className="absolute"
-          style={{
-            left: lastPos.x,
-            top: lastPos.y,
-            transform: "translateY(-100%)"
-          }}
-        >
-          <div className="mb-2 flex justify-center">
-            <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap">
-              Highlighted
+    <>
+      <div className="pointer-events-none absolute inset-0">
+        <div className="relative h-full w-full" style={stageStyle}>
+          {/* Label positioned above the last selected object */}
+          <div
+            className="absolute"
+            style={{
+              left: lastPos.x,
+              top: lastPos.y,
+              transform: "translateY(-100%)"
+            }}
+          >
+            <div className="mb-2 flex justify-center items-center pointer-events-auto">
+              <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+                <span>Highlighted</span>
+                <ObjectMenuButton onOpenMenu={handleOpenMenu} />
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+      {menuPosition && <ObjectContextMenu position={menuPosition} onClose={handleCloseMenu} />}
+    </>
   );
 }

@@ -27,6 +27,12 @@ type FocusTarget = {
   id?: string;
 } | null;
 
+type Settings = {
+  preferredName: string;
+  voice: string;
+  explanationLevel: "beginner" | "intermediate" | "advanced";
+};
+
 type SessionState = {
   sessions: Session[];
   activeSessionId: string | null;
@@ -44,6 +50,7 @@ type SessionState = {
   selectionMethods: Record<string, "click" | "lasso">;
   lastSelectedObjectIds: Record<string, string | null>;
   focusTarget: FocusTarget;
+  settings: Settings;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   // initializeDefaultSession: () => Promise<void>; // Removed - no longer auto-creating sessions
@@ -67,6 +74,7 @@ type SessionState = {
   setCanvasView: (sessionId: string, view: CanvasView) => void;
   requestFocus: (target: { x: number; y: number; id?: string }) => void;
   clearFocus: () => void;
+  updateSettings: (settings: Partial<Settings>) => void;
 };
 
 const withImmer = immer<SessionState>;
@@ -91,6 +99,11 @@ export const useSessionStore = create<SessionState>()(
       selectionMethods: {},
       lastSelectedObjectIds: {},
       focusTarget: null,
+      settings: {
+        preferredName: "",
+        voice: "alloy",
+        explanationLevel: "intermediate"
+      },
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -358,6 +371,11 @@ export const useSessionStore = create<SessionState>()(
     clearFocus: () => {
       set((state) => {
         state.focusTarget = null;
+      });
+    },
+    updateSettings: (settings) => {
+      set((state) => {
+        state.settings = { ...state.settings, ...settings };
       });
     }
     };

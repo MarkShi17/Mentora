@@ -188,7 +188,7 @@ export function TimelinePanel() {
             variant="ghost"
             size="icon"
             onClick={() => setIsExpanded(false)}
-            className="h-7 w-7 transition-all hover:scale-105 active:scale-95 hover:bg-slate-100 group"
+            className="h-7 w-7 transition-all hover:scale-105 active:scale-95 hover:bg-slate-100 group text-slate-600 hover:text-slate-900"
           >
             {COLLAPSE_STYLE === "tab" ? (
               <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />

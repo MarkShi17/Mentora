@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
+import { SettingsDialog } from "@/components/settings-dialog";
 
 export function SidebarHistory() {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
@@ -89,8 +91,22 @@ export function SidebarHistory() {
           ))}
         </ul>
       </div>
+
+      {/* Settings Button */}
+      <div className="border-t border-slate-200 p-3">
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100"
+        >
+          <Settings className="h-4 w-4" />
+          <span>Settings</span>
+        </button>
+      </div>
       </div>
       </aside>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }

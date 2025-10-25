@@ -6,6 +6,7 @@ import { select, zoom, zoomIdentity } from "d3";
 import { ObjectLayer } from "@/components/object-layer";
 import { PinLayer } from "@/components/pin-layer";
 import { SelectionLayer } from "@/components/selection-layer";
+import { ObjectContextMenu } from "@/components/object-context-menu";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
 import type { CanvasObject, Pin } from "@/types";
@@ -126,6 +127,7 @@ const previousSelectionRef = useRef<string[] | null>(null);
 const [pinDraft, setPinDraft] = useState<PinDraft | null>(null);
 const pinInputRef = useRef<HTMLInputElement | null>(null);
 const initialPinCenteredRef = useRef<string | null>(null);
+const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
   const [lasso, setLasso] = useState<LassoState | null>(null);
   const lassoRef = useRef<LassoState | null>(null);
@@ -412,6 +414,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
   }, []);
 
   const handleCanvasClick = useCallback(() => {
+    // Close menu on any canvas click
+    setMenuPosition(null);
+
     if (canvasMode !== "pan") {
       return;
     }
@@ -423,6 +428,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   const handleSelect = useCallback(
     (objectId: string, event: React.MouseEvent) => {
+      // Close menu on object selection
+      setMenuPosition(null);
+
       if (!activeSessionId) {
         return;
       }
@@ -437,6 +445,21 @@ const initialPinCenteredRef = useRef<string | null>(null);
     },
     [activeSessionId, toggleObjectSelection, setSelectionMethod, setLastSelectedObject, bringToFront]
   );
+
+  const handleObjectContextMenu = useCallback(
+    (objectId: string, event: React.MouseEvent) => {
+      if (!activeSessionId) {
+        return;
+      }
+      // Set menu position at mouse position
+      setMenuPosition({ x: event.clientX, y: event.clientY });
+    },
+    [activeSessionId]
+  );
+
+  const handleCloseMenu = useCallback(() => {
+    setMenuPosition(null);
+  }, []);
 
   const handlePinFocus = useCallback(
     (pin: Pin) => {
@@ -461,6 +484,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   const handleObjectDragStart = useCallback(
     (objectId: string, event: React.PointerEvent) => {
+      // Close menu on drag start
+      setMenuPosition(null);
+
       if (!activeSessionId || canvasMode !== "pan") {
         return;
       }
@@ -630,6 +656,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
       // Check if multi-select at drag end (should match drag start)
       const isMultiSelectEnd = event.ctrlKey || event.metaKey;
 
+      // Get current selection method to preserve it (especially "lasso")
+      const currentSelectionMethod = selectionMethod;
+
       // Handle based on whether it was a click or drag
       if (wasClick) {
         // It was a click - selection already handled at drag start
@@ -651,7 +680,10 @@ const initialPinCenteredRef = useRef<string | null>(null);
           updateCanvasObjects(activeSessionId, updatedObjects);
         }
 
-        setSelectionMethod(activeSessionId, "click");
+        // Only change to "click" if it wasn't "lasso" - preserve lasso selection
+        if (currentSelectionMethod !== "lasso") {
+          setSelectionMethod(activeSessionId, "click");
+        }
         setLastSelectedObject(activeSessionId, objectId);
       } else {
         // It was a drag - update positions for ALL objects in the drag group
@@ -683,7 +715,10 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
         updateCanvasObjects(activeSessionId, updatedObjects);
 
-        setSelectionMethod(activeSessionId, "click");
+        // Only change to "click" if it wasn't "lasso" - preserve lasso selection
+        if (currentSelectionMethod !== "lasso") {
+          setSelectionMethod(activeSessionId, "click");
+        }
         setLastSelectedObject(activeSessionId, objectId);
       }
 
@@ -696,11 +731,14 @@ const initialPinCenteredRef = useRef<string | null>(null);
       dragStateRef.current = null;
       setDragState(null);
     },
-    [activeSessionId, updateCanvasObject, updateCanvasObjects, setSelectionMethod, setLastSelectedObject, getScreenPoint, screenToWorld]
+    [activeSessionId, updateCanvasObject, updateCanvasObjects, setSelectionMethod, setLastSelectedObject, getScreenPoint, screenToWorld, selectionMethod]
   );
 
   const startPinPlacement = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      // Close menu on pin placement
+      setMenuPosition(null);
+
       if (canvasMode !== "pin" || pinDraft) {
         return;
       }
@@ -725,6 +763,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   const startLasso = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      // Close menu on lasso start
+      setMenuPosition(null);
+
       if (canvasMode !== "lasso") {
         return;
       }
@@ -907,6 +948,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
               onDragStart={handleObjectDragStart}
               onDragMove={handleObjectDragMove}
               onDragEnd={handleObjectDragEnd}
+              onContextMenu={handleObjectContextMenu}
               isDragging={!!dragState}
               dragState={dragState}
             />
@@ -992,6 +1034,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
           </div>
         ) : null}
       </div>
+      {menuPosition && <ObjectContextMenu position={menuPosition} onClose={handleCloseMenu} />}
     </div>
   );
 }

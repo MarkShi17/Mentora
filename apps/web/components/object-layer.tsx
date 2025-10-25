@@ -86,6 +86,7 @@ type ObjectLayerProps = {
   onDragStart?: (id: string, event: React.PointerEvent) => void;
   onDragMove?: (id: string, event: React.PointerEvent) => void;
   onDragEnd?: (id: string, event: React.PointerEvent) => void;
+  onContextMenu?: (id: string, event: React.MouseEvent) => void;
   isDragging?: boolean;
   dragState?: {
     objectId: string;
@@ -98,7 +99,7 @@ type ObjectLayerProps = {
   } | null;
 };
 
-export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragMove, onDragEnd, isDragging, dragState }: ObjectLayerProps) {
+export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragMove, onDragEnd, onContextMenu, isDragging, dragState }: ObjectLayerProps) {
   const stageStyle: CSSProperties = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
     transformOrigin: "0 0"
@@ -162,6 +163,13 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
             }}
             onClick={(event) => {
               event.stopPropagation();
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (onContextMenu) {
+                onContextMenu(object.id, event);
+              }
             }}
           >
             <div className="flex flex-col bg-white/95 p-4 backdrop-blur rounded-lg border border-slate-200 shadow-xl h-full">
