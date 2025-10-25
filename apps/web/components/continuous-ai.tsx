@@ -11,8 +11,6 @@ export function ContinuousAI() {
   const [isActive, setIsActive] = useState(false);
   const [wasListeningBeforeSpeech, setWasListeningBeforeSpeech] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
-  const [isPushToTalkActive, setIsPushToTalkActive] = useState(false); // Spacebar held down
-  const [isButtonLocked, setIsButtonLocked] = useState(false); // Button clicked to lock on
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -25,7 +23,8 @@ export function ContinuousAI() {
     stopListening,
     pauseListening,
     resumeListening,
-    setQuestionCallback
+    setQuestionCallback,
+    forceProcessTranscript
   } = useContinuousAI();
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -33,8 +32,14 @@ export function ContinuousAI() {
   const allMessages = useSessionStore((state) => state.messages);
   const createSession = useSessionStore((state) => state.createSession);
   const addMessage = useSessionStore((state) => state.addMessage);
+  const updateMessage = useSessionStore((state) => state.updateMessage);
+  const removeMessage = useSessionStore((state) => state.removeMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+  const voiceInputState = useSessionStore((state) => state.voiceInputState);
+  const setLiveTutorOn = useSessionStore((state) => state.setLiveTutorOn);
+  const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
+  const setIsPushToTalkActive = useSessionStore((state) => state.setIsPushToTalkActive);
 
   // Get messages for active session
   const messages = activeSessionId ? (allMessages[activeSessionId] || []) : [];
@@ -43,6 +48,7 @@ export function ContinuousAI() {
   const currentSessionRef = useRef<string | null>(null);
   const completeTextRef = useRef<string>('');
   const objectsInCurrentResponse = useRef<string[]>([]);  // Track objects created in current response
+  const thinkingMessageIdRef = useRef<string | null>(null);  // Track thinking message to replace it
 
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
@@ -93,19 +99,30 @@ export function ContinuousAI() {
       const sessionId = currentSessionRef.current;
       const finalText = completeTextRef.current;
       const objectIds = objectsInCurrentResponse.current;
+      const thinkingMessageId = thinkingMessageIdRef.current;
 
       if (sessionId && finalText.trim()) {
-        // Add assistant message to chat history with canvas object references
-        addMessage(sessionId, {
-          role: "assistant",
-          content: finalText,
-          canvasObjectIds: objectIds.length > 0 ? objectIds : undefined
-        });
+        if (thinkingMessageId) {
+          // Replace the "Thinking..." message with the actual response
+          updateMessage(sessionId, thinkingMessageId, {
+            content: finalText,
+            canvasObjectIds: objectIds.length > 0 ? objectIds : undefined
+          });
+          console.log('✅ Updated thinking message with final response');
+        } else {
+          // Fallback: add new message if thinking message wasn't created
+          addMessage(sessionId, {
+            role: "assistant",
+            content: finalText,
+            canvasObjectIds: objectIds.length > 0 ? objectIds : undefined
+          });
+          console.log('💬 Assistant message added to chat history from onComplete');
+        }
+
         appendTimelineEvent(sessionId, {
           description: "AI completed streaming response with audio.",
           type: "response"
         });
-        console.log('💬 Assistant message added to chat history from onComplete');
         console.log(`📎 Linked ${objectIds.length} canvas objects to message`);
       }
 
@@ -113,7 +130,8 @@ export function ContinuousAI() {
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
-    }, [addMessage, appendTimelineEvent])
+      thinkingMessageIdRef.current = null;
+    }, [addMessage, updateMessage, appendTimelineEvent])
   });
 
   const getColorForType = (type: string): string => {
@@ -128,8 +146,11 @@ export function ContinuousAI() {
   };
 
   const handleQuestionDetected = useCallback(async (question: string, context: string[]) => {
-    console.log('🎯 Question detected:', question);
-    console.log('📚 Context:', context);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🎯 QUESTION DETECTED');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('Question:', question);
+    console.log('Context:', context);
 
     // Check if AI is currently active (streaming or speaking)
     const isAIActive = streamingQA.isStreaming || streamingQA.audioState.isPlaying;
@@ -169,8 +190,16 @@ export function ContinuousAI() {
     addMessage(sessionId, { role: "user", content: question });
     appendTimelineEvent(sessionId, { description: "AI detected and processed question.", type: "prompt" });
 
-    console.log('💬 User message added to chat history');
-    console.log('🚀 Starting streaming response...');
+    console.log('✅ User message added to chat history');
+
+    // Add "thinking..." placeholder message
+    const thinkingMessageId = addMessage(sessionId, { role: "assistant", content: "Thinking..." });
+    thinkingMessageIdRef.current = thinkingMessageId;
+    console.log('🤔 Thinking indicator added to chat');
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🚀 STARTING STREAMING RESPONSE');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     // Store session ID for onComplete callback
     currentSessionRef.current = sessionId;
@@ -247,22 +276,30 @@ export function ContinuousAI() {
   }, [messages.length, streamingQA.currentText]);
 
   const toggleAI = useCallback(() => {
-    if (isButtonLocked) {
-      // Button is locked on - unlock it
-      console.log('🔓 Button unlocked');
-      setIsButtonLocked(false);
-      stopListening();
-      setIsActive(false);
-    } else {
-      // Lock button on
-      console.log('🔒 Button locked on');
-      setIsButtonLocked(true);
+    const newState = !voiceInputState.isLiveTutorOn;
+    setLiveTutorOn(newState);
+
+    if (newState) {
+      // Turning Live Tutor ON - start continuous question detection
+      console.log('🔒 Live Tutor ON - Continuous question detection enabled');
       startListening();
       setIsActive(true);
+    } else {
+      // Turning Live Tutor OFF - stop listening
+      console.log('🔓 Live Tutor OFF - Push-to-talk mode enabled');
+      stopListening();
+      setIsActive(false);
     }
-  }, [isButtonLocked, stopListening, startListening]);
+  }, [voiceInputState.isLiveTutorOn, setLiveTutorOn, stopListening, startListening]);
 
-  // Push-to-talk: Hold spacebar to speak, release to stop
+  // Sync currentTranscript to store when spacebar is held (not in Live Tutor mode)
+  useEffect(() => {
+    if (voiceInputState.isPushToTalkActive && !voiceInputState.isLiveTutorOn) {
+      setSpacebarTranscript(currentTranscript);
+    }
+  }, [currentTranscript, voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, setSpacebarTranscript]);
+
+  // Push-to-talk: Hold spacebar to speak, release to submit (ONLY when Live Tutor is OFF)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Only trigger if spacebar is pressed and not in an input/textarea/contenteditable
@@ -273,9 +310,15 @@ export function ContinuousAI() {
           event.target.isContentEditable;
 
         if (!isInInputField && !event.repeat) {
+          // Only allow spacebar push-to-talk when Live Tutor is OFF
+          if (voiceInputState.isLiveTutorOn) {
+            console.log('⚠️ Spacebar ignored - Live Tutor is ON');
+            return;
+          }
+
           event.preventDefault(); // Prevent page scroll
 
-          // Check if AI is currently speaking
+          // Check if AI is currently speaking - allow interrupt
           const isAISpeaking = streamingQA.isStreaming || streamingQA.audioState.isPlaying;
 
           if (isAISpeaking) {
@@ -286,9 +329,10 @@ export function ContinuousAI() {
             setTimeout(() => setInterrupted(false), 1500);
           }
 
-          // Start push-to-talk
-          console.log('🎤 Push-to-talk activated');
+          // Start push-to-talk for prompt input
+          console.log('🎤 Push-to-talk activated (input mode)');
           setIsPushToTalkActive(true);
+          setSpacebarTranscript(''); // Clear previous
           startListening();
           setIsActive(true);
         }
@@ -302,16 +346,15 @@ export function ContinuousAI() {
           event.target.tagName === 'TEXTAREA' ||
           event.target.isContentEditable;
 
-        if (!isInInputField && isPushToTalkActive) {
+        if (!isInInputField && voiceInputState.isPushToTalkActive) {
           event.preventDefault();
 
-          // Release push-to-talk (only if not button-locked)
-          if (!isButtonLocked) {
-            console.log('🔇 Push-to-talk released');
-            setIsPushToTalkActive(false);
-            stopListening();
-            setIsActive(false);
-          }
+          console.log('🔇 Push-to-talk released - transcript will auto-submit');
+          setIsPushToTalkActive(false);
+          stopListening();
+          setIsActive(false);
+
+          // Transcript is in the store, prompt-bar will pick it up and auto-submit
         }
       }
     };
@@ -322,7 +365,7 @@ export function ContinuousAI() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isPushToTalkActive, isButtonLocked, startListening, stopListening, streamingQA]);
+  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, startListening, stopListening, streamingQA, setIsPushToTalkActive, setSpacebarTranscript]);
 
   const isQuestionDetected = currentTranscript &&
     currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor)/);
@@ -513,21 +556,25 @@ export function ContinuousAI() {
       <div className="pointer-events-auto flex flex-col items-center gap-2">
         <div className={cn(
           "flex items-center gap-1.5 rounded-full px-3 py-1 backdrop-blur-sm border transition-colors",
-          isButtonLocked
+          voiceInputState.isLiveTutorOn
             ? "bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-400/20"
-            : isPushToTalkActive
+            : voiceInputState.isPushToTalkActive
             ? "bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border-yellow-400/20"
-            : "bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border-cyan-400/20"
+            : "bg-gradient-to-r from-slate-500/10 to-slate-500/10 border-slate-400/20"
         )}>
           <span className={cn(
             "text-xs font-semibold tracking-wide transition-colors",
-            isButtonLocked
+            voiceInputState.isLiveTutorOn
               ? "text-green-400"
-              : isPushToTalkActive
+              : voiceInputState.isPushToTalkActive
               ? "text-yellow-400"
-              : "text-cyan-400"
+              : "text-slate-400"
           )}>
-            {isButtonLocked ? "LOCKED ON" : isPushToTalkActive ? "HOLD TO SPEAK" : "LIVE TUTOR"}
+            {voiceInputState.isLiveTutorOn
+              ? "LIVE TUTOR ON"
+              : voiceInputState.isPushToTalkActive
+              ? "RECORDING..."
+              : "LIVE TUTOR OFF"}
           </span>
         </div>
 
@@ -598,12 +645,12 @@ export function ContinuousAI() {
             <p className={cn(
               "text-xs font-medium transition-colors duration-300",
               isListening
-                ? isButtonLocked ? "text-green-400" : "text-yellow-400"
+                ? voiceInputState.isLiveTutorOn ? "text-green-400" : "text-yellow-400"
                 : speaking
                 ? "text-green-400"
                 : "text-slate-400"
             )}>
-              {speaking ? "AI Speaking" : isListening ? (isButtonLocked ? "Listening (Locked)" : "Listening (Hold)") : "Active"}
+              {speaking ? "AI Speaking" : isListening ? (voiceInputState.isLiveTutorOn ? "Listening (Live)" : "Recording") : "Active"}
             </p>
           </div>
         )}
