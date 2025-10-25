@@ -9,6 +9,11 @@ export interface QARequest {
   question: string;
   highlightedObjects?: string[];
   mode?: TeachingMode;
+  context?: {
+    recentConversation?: string[];
+    topics?: string[];
+    conversationHistory?: string[];
+  };
 }
 
 export interface QAResponse {

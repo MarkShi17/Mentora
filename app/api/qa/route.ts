@@ -73,7 +73,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<QARespons
       session,
       body.highlightedObjects,
       body.mode || 'guided',
-      assistantTurnId
+      assistantTurnId,
+      body.context
     );
 
     // Generate TTS audio

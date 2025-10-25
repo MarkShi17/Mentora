@@ -11,14 +11,18 @@ export function useOpenAITTS() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const speak = useCallback(async (text: string, voice: VoiceOption = 'nova') => {
+    console.log('TTS speak called with text:', text, 'voice:', voice);
     if (!text.trim()) {
+      console.log('TTS speak: empty text, returning');
       return;
     }
 
     if (speaking) {
+      console.log('TTS speak: already speaking, stopping first');
       stop();
     }
 
+    console.log('TTS speak: starting TTS generation');
     setLoading(true);
     setError(null);
 
@@ -39,19 +43,31 @@ export function useOpenAITTS() {
       const data = await response.json();
       
       // Create audio element and play
+      console.log('TTS: creating audio element');
       const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
       audioRef.current = audio;
       
-      audio.onloadstart = () => setLoading(false);
-      audio.onplay = () => setSpeaking(true);
-      audio.onended = () => setSpeaking(false);
+      audio.onloadstart = () => {
+        console.log('TTS: audio load started');
+        setLoading(false);
+      };
+      audio.onplay = () => {
+        console.log('TTS: audio started playing');
+        setSpeaking(true);
+      };
+      audio.onended = () => {
+        console.log('TTS: audio finished playing');
+        setSpeaking(false);
+      };
       audio.onerror = (event) => {
         console.error("Audio playback error:", event);
         setSpeaking(false);
         setError("Failed to play audio");
       };
 
+      console.log('TTS: attempting to play audio');
       await audio.play();
+      console.log('TTS: audio play() completed');
       
     } catch (error) {
       console.error("TTS error:", error);

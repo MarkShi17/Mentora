@@ -6,6 +6,7 @@ import { SidebarHistory } from "@/components/sidebar-history";
 import { SourcesDrawer } from "@/components/sources-drawer";
 import { TimelinePanel } from "@/components/timeline-panel";
 import { SessionInitializer } from "@/components/session-initializer";
+import { ContinuousAI } from "@/components/continuous-ai";
 
 export default function HomePage() {
   return (
@@ -20,6 +21,7 @@ export default function HomePage() {
       </section>
       <SourcesDrawer />
       <CaptionsOverlay />
+      <ContinuousAI />
     </div>
   );
 }

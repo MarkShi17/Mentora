@@ -39,7 +39,12 @@ export class MentorAgent {
     session: Session,
     highlightedObjectIds: string[] = [],
     mode: TeachingMode = 'guided',
-    turnId: string
+    turnId: string,
+    context?: {
+      recentConversation?: string[];
+      topics?: string[];
+      conversationHistory?: string[];
+    }
   ): Promise<{
     text: string;
     narration: string;
@@ -51,13 +56,13 @@ export class MentorAgent {
       logger.info('Generating teaching response', { question, mode, sessionId: session.id });
 
       // Build context from session history and canvas
-      const context = contextBuilder.buildContext(session, highlightedObjectIds);
+      const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system prompt
-      const systemPrompt = this.buildSystemPrompt(session, context, mode);
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context);
 
       // Generate user prompt
-      const userPrompt = this.buildUserPrompt(question, context);
+      const userPrompt = this.buildUserPrompt(question, sessionContext);
 
       // Call Claude API
       const response = await this.anthropic.messages.create({
@@ -115,7 +120,16 @@ export class MentorAgent {
     }
   }
 
-  private buildSystemPrompt(session: Session, context: any, mode: TeachingMode): string {
+  private buildSystemPrompt(
+    session: Session, 
+    context: any, 
+    mode: TeachingMode, 
+    conversationContext?: {
+      recentConversation?: string[];
+      topics?: string[];
+      conversationHistory?: string[];
+    }
+  ): string {
     const teachingStyle =
       mode === 'guided'
         ? `Use the Socratic method:
@@ -128,12 +142,33 @@ export class MentorAgent {
 - Still break into logical steps
 - Be thorough but concise`;
 
-    return `You are Mentora, an AI tutor working on an infinite canvas workspace.
+    // Build contextual information
+    let contextualInfo = '';
+    if (conversationContext) {
+      if (conversationContext.recentConversation && conversationContext.recentConversation.length > 0) {
+        contextualInfo += `\nRECENT CONVERSATION CONTEXT:\n${conversationContext.recentConversation.join('\n')}\n`;
+      }
+      if (conversationContext.topics && conversationContext.topics.length > 0) {
+        contextualInfo += `\nTOPICS DISCUSSED:\n${conversationContext.topics.join(', ')}\n`;
+      }
+      if (conversationContext.conversationHistory && conversationContext.conversationHistory.length > 0) {
+        contextualInfo += `\nCONVERSATION HISTORY:\n${conversationContext.conversationHistory.slice(-3).join('\n')}\n`;
+      }
+    }
+
+    return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.
 
 CANVAS STATE:
 ${context.canvasState}
 
-${context.highlightedObjects ? `STUDENT HIGHLIGHTED:\n${context.highlightedObjects}\n` : ''}
+${context.highlightedObjects ? `STUDENT HIGHLIGHTED:\n${context.highlightedObjects}\n` : ''}${contextualInfo}
+
+CONTEXTUAL AWARENESS:
+- You have been listening to the user's ongoing conversation and building context
+- Use the conversation history and topics to provide more relevant and personalized responses
+- Reference previous discussions when appropriate to show continuity
+- Build upon previous explanations and concepts discussed
+- Be intellectually sophisticated and demonstrate deep understanding of the conversation flow
 
 TEACHING STYLE (${mode} mode):
 ${teachingStyle}
