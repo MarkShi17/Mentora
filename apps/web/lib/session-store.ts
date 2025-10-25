@@ -3,7 +3,9 @@ import { immer } from "zustand/middleware/immer";
 import { nanoid } from "@/lib/utils";
 import {
   CanvasObject,
+  ConnectionAnchor,
   Message,
+  ObjectConnection,
   Pin,
   Session,
   SourceLink,
@@ -44,6 +46,7 @@ type SessionState = {
   activeSessionId: string | null;
   messages: Record<string, Message[]>;
   canvasObjects: Record<string, CanvasObject[]>;
+  connections: Record<string, ObjectConnection[]>;
   sources: Record<string, SourceLink[]>;
   timeline: Record<string, TimelineEvent[]>;
   transcripts: Record<string, string>;
@@ -90,6 +93,10 @@ type SessionState = {
   setLiveTutorOn: (on: boolean) => void;
   setSpacebarTranscript: (transcript: string) => void;
   setIsPushToTalkActive: (active: boolean) => void;
+  createConnection: (sessionId: string, sourceObjectId: string, targetObjectId: string, sourceAnchor: ConnectionAnchor, targetAnchor: ConnectionAnchor) => string;
+  deleteConnection: (sessionId: string, connectionId: string) => void;
+  deleteConnectionsByObjectId: (sessionId: string, objectId: string) => void;
+  getConnectionsForObject: (sessionId: string, objectId: string) => ObjectConnection[];
 };
 
 const withImmer = immer<SessionState>;
@@ -102,6 +109,7 @@ export const useSessionStore = create<SessionState>()(
       activeSessionId: null,
       messages: {},
       canvasObjects: {},
+      connections: {},
       sources: {},
       timeline: {},
       transcripts: {},
@@ -181,6 +189,7 @@ export const useSessionStore = create<SessionState>()(
           state.activeSessionId = newSession.id;
           state.messages[newSession.id] = [];
           state.canvasObjects[newSession.id] = [];
+          state.connections[newSession.id] = [];
           state.sources[newSession.id] = [];
           state.timeline[newSession.id] = [];
           state.transcripts[newSession.id] = "";
@@ -202,6 +211,7 @@ export const useSessionStore = create<SessionState>()(
           state.activeSessionId = id;
           state.messages[id] = [];
           state.canvasObjects[id] = [];
+          state.connections[id] = [];
           state.sources[id] = [];
           state.timeline[id] = [];
           state.transcripts[id] = "";
@@ -226,6 +236,7 @@ export const useSessionStore = create<SessionState>()(
         // Clean up all related data
         delete state.messages[sessionId];
         delete state.canvasObjects[sessionId];
+        delete state.connections[sessionId];
         delete state.sources[sessionId];
         delete state.timeline[sessionId];
         delete state.transcripts[sessionId];
@@ -302,6 +313,14 @@ export const useSessionStore = create<SessionState>()(
         }
         // Filter out objects with IDs in the objectIds array
         state.canvasObjects[sessionId] = list.filter((obj) => !objectIds.includes(obj.id));
+
+        // Delete all connections involving deleted objects
+        const connectionsList = state.connections[sessionId];
+        if (connectionsList) {
+          state.connections[sessionId] = connectionsList.filter(
+            (conn) => !objectIds.includes(conn.sourceObjectId) && !objectIds.includes(conn.targetObjectId)
+          );
+        }
 
         // Clear selection method and last selected object
         delete state.selectionMethods[sessionId];
@@ -479,6 +498,51 @@ export const useSessionStore = create<SessionState>()(
       set((state) => {
         state.voiceInputState.isPushToTalkActive = active;
       });
+    },
+    createConnection: (sessionId, sourceObjectId, targetObjectId, sourceAnchor, targetAnchor) => {
+      const connection: ObjectConnection = {
+        id: `conn-${nanoid(6)}`,
+        sourceObjectId,
+        targetObjectId,
+        sourceAnchor,
+        targetAnchor,
+        createdAt: new Date().toISOString()
+      };
+      set((state) => {
+        if (!state.connections[sessionId]) {
+          state.connections[sessionId] = [];
+        }
+        state.connections[sessionId].push(connection);
+      });
+      return connection.id;
+    },
+    deleteConnection: (sessionId, connectionId) => {
+      set((state) => {
+        const list = state.connections[sessionId];
+        if (!list) {
+          return;
+        }
+        state.connections[sessionId] = list.filter((conn) => conn.id !== connectionId);
+      });
+    },
+    deleteConnectionsByObjectId: (sessionId, objectId) => {
+      set((state) => {
+        const list = state.connections[sessionId];
+        if (!list) {
+          return;
+        }
+        // Remove all connections where this object is either source or target
+        state.connections[sessionId] = list.filter(
+          (conn) => conn.sourceObjectId !== objectId && conn.targetObjectId !== objectId
+        );
+      });
+    },
+    getConnectionsForObject: (sessionId, objectId) => {
+      const state = get();
+      const connections = state.connections[sessionId] || [];
+      return connections.filter(
+        (conn) => conn.sourceObjectId === objectId || conn.targetObjectId === objectId
+      );
     }
     };
   })
