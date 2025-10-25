@@ -2,15 +2,6 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { nanoid } from "@/lib/utils";
 import {
-  mockCanvasObjects,
-  mockMessages,
-  mockPins,
-  mockSessions,
-  mockSources,
-  mockTimeline,
-  mockTranscripts
-} from "@/lib/mock-data";
-import {
   CanvasObject,
   Message,
   Pin,
@@ -75,18 +66,14 @@ const withImmer = immer<SessionState>;
 
 export const useSessionStore = create<SessionState>()(
   withImmer((set, get) => ({
-    sessions: mockSessions,
-    activeSessionId: mockSessions[0]?.id ?? null,
-    messages: mockMessages,
-    canvasObjects: mockCanvasObjects,
-    sources: mockSources,
-    timeline: mockTimeline,
-    transcripts: mockTranscripts,
-    pins: mockSessions.reduce<Record<string, Pin[]>>((acc, session) => {
-      const source = mockPins[session.id] ?? [];
-      acc[session.id] = source.map((pin) => ({ ...pin }));
-      return acc;
-    }, {}),
+    sessions: [],
+    activeSessionId: null,
+    messages: {},
+    canvasObjects: {},
+    sources: {},
+    timeline: {},
+    transcripts: {},
+    pins: {},
     voiceActive: false,
     sourcesDrawerOpen: false,
     captionsEnabled: true,

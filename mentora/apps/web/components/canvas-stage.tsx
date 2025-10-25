@@ -2,7 +2,6 @@
 
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { select, zoom, zoomIdentity } from "d3";
 import { ObjectLayer } from "@/components/object-layer";
 import { PinLayer } from "@/components/pin-layer";
@@ -119,9 +118,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
   const applyTransform = useCallback(
     (nextState: TransformState) => {
       transformRef.current = nextState;
-      flushSync(() => {
-        setTransform(nextState);
-      });
+      setTransform(nextState);
       setCanvasView({ transform: nextState, stageSize: stageSizeRef.current });
     },
     [setCanvasView]

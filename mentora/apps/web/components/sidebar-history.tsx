@@ -2,6 +2,7 @@
 
 import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
+import { VoiceControls } from "@/components/voice-controls";
 import { formatTime } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
@@ -90,6 +91,12 @@ export function SidebarHistory() {
                     </span>
                   </p>
                   <p className="mt-1 text-sm text-slate-300">{message.content}</p>
+                  {message.role === "assistant" && (
+                    <VoiceControls 
+                      text={message.content} 
+                      className="mt-2" 
+                    />
+                  )}
                 </div>
               </Fragment>
             ))}

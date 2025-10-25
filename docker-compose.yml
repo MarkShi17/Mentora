@@ -40,7 +40,7 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:3000
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
       - NODE_ENV=development
       - PORT=3001
     volumes:
