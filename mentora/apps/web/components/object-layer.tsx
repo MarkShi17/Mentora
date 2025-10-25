@@ -1,6 +1,5 @@
 'use client';
 
-import { motion } from "framer-motion";
 import type { CSSProperties } from "react";
 import { CanvasObject } from "@/types";
 import { cn } from "@/lib/cn";
@@ -24,9 +23,8 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
         style={stageStyle}
       >
         {objects.map((object) => (
-          <motion.div
+          <div
             key={object.id}
-            layout
             className={cn(
               "pointer-events-auto absolute overflow-hidden rounded-lg border-2 border-transparent shadow-lg transition-colors",
               object.selected ? "border-sky-400" : "border-transparent"
@@ -56,7 +54,7 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
                 <p className="text-xs text-slate-300">{String(object.metadata?.description ?? "")}</p>
               ) : null}
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
     </div>
