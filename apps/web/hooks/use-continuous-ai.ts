@@ -3,6 +3,48 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSessionStore } from "@/lib/session-store";
 
+// Web Speech API type definitions
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  readonly length: number;
+  readonly isFinal: boolean;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  readonly transcript: string;
+  readonly confidence: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  readonly error: string;
+  readonly message: string;
+}
+
 type SpeechRecognitionConstructor = new () => SpeechRecognition;
 
 function getSpeechRecognition(): SpeechRecognitionConstructor | null {
@@ -65,25 +107,27 @@ export function useContinuousAI() {
       // Direct commands
       'show me', 'tell me', 'explain', 'help me', 'teach me', 'walk me through',
       'can you', 'could you', 'would you', 'please', 'i need', 'i want',
-      
+      'give me', 'provide', 'generate', 'display',
+
       // Question words
       'what', 'how', 'why', 'when', 'where', 'who', 'which', 'do you', 'are you', 'is it', 'does it',
-      
+
       // Learning requests
       'learn', 'understand', 'know about', 'figure out', 'find out', 'discover',
-      
+
       // Action requests
       'create', 'make', 'build', 'draw', 'write', 'code', 'solve', 'calculate',
-      
+      'example', 'demonstrate', 'illustrate',
+
       // Clarification requests
       'clarify', 'elaborate', 'expand on', 'go deeper', 'more detail', 'i don\'t understand',
-      
+
       // Follow-up requests
       'what about', 'and then', 'next', 'also', 'furthermore', 'additionally', 'what if', 'suppose',
       'continue', 'keep going', 'more', 'another', 'different', 'alternative',
-      
+
       // Direct addressing
-      'mentora', 'ai', 'assistant', 'tutor', 'you'
+      'mentora', 'ai', 'assistant', 'tutor', 'you', 'hey mentora', 'ok mentora'
     ];
     
     // Context clues that suggest the user is talking to the AI
@@ -126,8 +170,12 @@ export function useContinuousAI() {
       confidence += 0.2;
     }
     
-    // Check for direct addressing (mentora, ai, etc.)
-    if (utterance.includes('mentora') || utterance.includes('ai') || utterance.includes('assistant') || utterance.includes('tutor')) {
+    // Check for direct addressing (mentora, ai, etc.) - VERY HIGH CONFIDENCE
+    if (utterance.includes('mentora')) {
+      confidence += 0.8; // Very high confidence when directly addressing Mentora
+      isQuestion = true;
+      context.push('Direct address to Mentora');
+    } else if (utterance.includes('ai') || utterance.includes('assistant') || utterance.includes('tutor')) {
       confidence += 0.4;
       isQuestion = true;
     }
@@ -486,9 +534,9 @@ export function useContinuousAI() {
       }
     };
 
-    recognition.addEventListener("result", handleResult);
-    recognition.addEventListener("error", handleError);
-    recognition.addEventListener("end", handleEnd);
+    recognition.addEventListener("result", handleResult as any);
+    recognition.addEventListener("error", handleError as any);
+    recognition.addEventListener("end", handleEnd as any);
 
     try {
       recognition.start();

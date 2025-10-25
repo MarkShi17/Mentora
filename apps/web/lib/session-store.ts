@@ -61,6 +61,8 @@ type SessionState = {
   focusTarget: FocusTarget;
   settings: Settings;
   voiceInputState: VoiceInputState;
+  stopStreamingCallback: (() => void) | null;
+  rerunQuestionCallback: ((question: string) => void) | null;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   updateSessionTitle: (sessionId: string, title: string) => void;
@@ -93,6 +95,8 @@ type SessionState = {
   setLiveTutorOn: (on: boolean) => void;
   setSpacebarTranscript: (transcript: string) => void;
   setIsPushToTalkActive: (active: boolean) => void;
+  setStopStreamingCallback: (callback: (() => void) | null) => void;
+  setRerunQuestionCallback: (callback: ((question: string) => void) | null) => void;
   createConnection: (sessionId: string, sourceObjectId: string, targetObjectId: string, sourceAnchor: ConnectionAnchor, targetAnchor: ConnectionAnchor) => string;
   deleteConnection: (sessionId: string, connectionId: string) => void;
   deleteConnectionsByObjectId: (sessionId: string, objectId: string) => void;
@@ -132,6 +136,8 @@ export const useSessionStore = create<SessionState>()(
         spacebarTranscript: "",
         isPushToTalkActive: false
       },
+      stopStreamingCallback: null,
+      rerunQuestionCallback: null,
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -323,7 +329,7 @@ export const useSessionStore = create<SessionState>()(
         }
 
         // Clear selection method and last selected object
-        state.selectionMethods[sessionId] = undefined;
+        delete state.selectionMethods[sessionId];
         state.lastSelectedObjectIds[sessionId] = null;
       });
     },
@@ -497,6 +503,16 @@ export const useSessionStore = create<SessionState>()(
     setIsPushToTalkActive: (active) => {
       set((state) => {
         state.voiceInputState.isPushToTalkActive = active;
+      });
+    },
+    setStopStreamingCallback: (callback) => {
+      set((state) => {
+        state.stopStreamingCallback = callback;
+      });
+    },
+    setRerunQuestionCallback: (callback) => {
+      set((state) => {
+        state.rerunQuestionCallback = callback;
       });
     },
     createConnection: (sessionId, sourceObjectId, targetObjectId, sourceAnchor, targetAnchor) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { VoiceToggle } from "@/components/voice-toggle";
 import { useSessionStore } from "@/lib/session-store";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
@@ -19,6 +19,9 @@ function getColorForType(type: string): string {
 
 export function PromptBar() {
   const [value, setValue] = useState("");
+  const thinkingMessageIdRef = useRef<string | null>(null);
+  const currentSessionRef = useRef<string | null>(null);
+
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
   const createSession = useSessionStore((state) => state.createSession);
@@ -27,6 +30,10 @@ export function PromptBar() {
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
   const voiceInputState = useSessionStore((state) => state.voiceInputState);
   const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
+  const setStopStreamingCallback = useSessionStore((state) => state.setStopStreamingCallback);
+  const setRerunQuestionCallback = useSessionStore((state) => state.setRerunQuestionCallback);
+  const updateMessage = useSessionStore((state) => state.updateMessage);
+  const removeMessage = useSessionStore((state) => state.removeMessage);
 
   // Streaming QA hook - always enabled
   const streamingQA = useStreamingQA({
@@ -63,13 +70,11 @@ export function PromptBar() {
     setValue((prev) => `${prev} ${transcript}`.trim());
   }, []);
 
-  const submitPromptMessage = useCallback(async () => {
-    if (!value.trim()) {
+  const submitPromptWithText = useCallback(async (text: string) => {
+    const prompt = text.trim();
+    if (!prompt) {
       return;
     }
-
-    const prompt = value.trim();
-    setValue("");
 
     // Auto-create session if none exists
     let sessionId = activeSessionId;
@@ -100,6 +105,12 @@ export function PromptBar() {
       description: "Learner submitted a question.",
       type: "prompt"
     });
+
+    // Add "thinking..." placeholder message
+    const thinkingMessageId = addMessage(sessionId, { role: "assistant", content: "Thinking..." });
+    thinkingMessageIdRef.current = thinkingMessageId;
+    currentSessionRef.current = sessionId;
+
     const { canvasObjects } = state;
     const selectedObjects =
       canvasObjects[sessionId]?.filter((object) => object.selected).map((object) => object.id) ?? [];
@@ -111,10 +122,14 @@ export function PromptBar() {
         mode: "guided"
       });
 
-      // Add assistant message with the complete text after streaming
-      if (streamingQA.currentText.trim()) {
-        addMessage(sessionId, { role: "assistant", content: streamingQA.currentText });
+      // Replace thinking message with complete text after streaming
+      if (streamingQA.currentText.trim() && thinkingMessageIdRef.current) {
+        updateMessage(sessionId, thinkingMessageIdRef.current, {
+          content: streamingQA.currentText
+        });
       }
+      thinkingMessageIdRef.current = null;
+      currentSessionRef.current = null;
     } catch (error) {
       console.error("Streaming error:", error);
 
@@ -137,7 +152,16 @@ export function PromptBar() {
         type: "response"
       });
     }
-  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, addMessage, value, updateCanvasObject, streamingQA]);
+  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, addMessage, updateCanvasObject, streamingQA]);
+
+  const submitPromptMessage = useCallback(async () => {
+    if (!value.trim()) {
+      return;
+    }
+    const prompt = value.trim();
+    setValue(""); // Clear input
+    await submitPromptWithText(prompt);
+  }, [value, submitPromptWithText]);
 
   // Watch for spacebar transcript (push-to-talk mode) and auto-submit
   useEffect(() => {
@@ -147,16 +171,52 @@ export function PromptBar() {
 
       if (transcript) {
         console.log('📝 Auto-submitting spacebar transcript:', transcript);
-        setValue(transcript);
-        setSpacebarTranscript(''); // Clear from store
 
-        // Auto-submit after a brief delay to let the input update
-        setTimeout(() => {
-          void submitPromptMessage();
-        }, 100);
+        // Clear from store immediately
+        setSpacebarTranscript('');
+
+        // Submit directly with the transcript (don't wait for state update)
+        void submitPromptWithText(transcript);
       }
     }
-  }, [voiceInputState.spacebarTranscript, voiceInputState.isPushToTalkActive, setSpacebarTranscript, submitPromptMessage]);
+  }, [voiceInputState.spacebarTranscript, voiceInputState.isPushToTalkActive, setSpacebarTranscript, submitPromptWithText]);
+
+  // Register stop streaming callback for prompt-bar initiated streams
+  useEffect(() => {
+    setStopStreamingCallback(() => {
+      console.log('🛑 Stop callback invoked from prompt-bar');
+
+      // Stop streaming and audio
+      streamingQA.stopStreaming();
+
+      // Update thinking message to "Stopped" instead of deleting
+      const thinkingMessageId = thinkingMessageIdRef.current;
+      const sessionId = currentSessionRef.current;
+      if (sessionId && thinkingMessageId) {
+        updateMessage(sessionId, thinkingMessageId, {
+          content: "Stopped"
+        });
+        thinkingMessageIdRef.current = null;
+        currentSessionRef.current = null;
+      }
+    });
+
+    return () => {
+      setStopStreamingCallback(null);
+    };
+  }, [streamingQA, setStopStreamingCallback, updateMessage]);
+
+  // Register rerun question callback
+  useEffect(() => {
+    setRerunQuestionCallback((question: string) => {
+      console.log('🔄 Rerun question from prompt-bar:', question);
+      void submitPromptWithText(question);
+    });
+
+    return () => {
+      setRerunQuestionCallback(null);
+    };
+  }, [submitPromptWithText, setRerunQuestionCallback]);
 
   const handleSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {

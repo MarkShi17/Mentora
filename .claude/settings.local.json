@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(docker-compose logs:*)"
       "Bash(docker-compose logs:*)",
       "Bash(lsof:*)",
       "Bash(docker ps:*)",

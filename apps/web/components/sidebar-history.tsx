@@ -208,7 +208,6 @@ export function SidebarHistory() {
                 Cancel
               </Button>
               <Button
-                variant="destructive"
                 onClick={confirmDelete}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
