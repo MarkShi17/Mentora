@@ -30,7 +30,7 @@ type SessionState = {
   captionsEnabled: boolean;
   canvasMode: "pan" | "lasso";
   setActiveSession: (sessionId: string) => void;
-  createSession: (payload: { title: string }) => string;
+  createSession: (payload: { title: string }) => Promise<string>;
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   toggleObjectSelection: (sessionId: string, objectId: string) => void;
@@ -67,24 +67,58 @@ export const useSessionStore = create<SessionState>()(
         state.activeSessionId = sessionId;
       });
     },
-    createSession: ({ title }) => {
-      const id = `session-${nanoid(6)}`;
-      const now = new Date().toISOString();
-      const newSession: Session = {
-        id,
-        title,
-        createdAt: now
-      };
-      set((state) => {
-        state.sessions.unshift(newSession);
-        state.activeSessionId = id;
-        state.messages[id] = [];
-        state.canvasObjects[id] = [];
-        state.sources[id] = [];
-        state.timeline[id] = [];
-        state.transcripts[id] = "";
-      });
-      return id;
+    createSession: async ({ title }) => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        const response = await fetch(`${apiUrl}/api/sessions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            title,
+            subject: "general"
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to create session");
+        }
+        
+        const data = await response.json();
+        const newSession = data.session;
+        
+        set((state) => {
+          state.sessions.unshift(newSession);
+          state.activeSessionId = newSession.id;
+          state.messages[newSession.id] = [];
+          state.canvasObjects[newSession.id] = [];
+          state.sources[newSession.id] = [];
+          state.timeline[newSession.id] = [];
+          state.transcripts[newSession.id] = "";
+        });
+        
+        return newSession.id;
+      } catch (error) {
+        // Fallback to local session creation if backend fails
+        const id = `session-${nanoid(6)}`;
+        const now = new Date().toISOString();
+        const newSession: Session = {
+          id,
+          title,
+          createdAt: now
+        };
+        set((state) => {
+          state.sessions.unshift(newSession);
+          state.activeSessionId = id;
+          state.messages[id] = [];
+          state.canvasObjects[id] = [];
+          state.sources[id] = [];
+          state.timeline[id] = [];
+          state.transcripts[id] = "";
+        });
+        return id;
+      }
     },
     addMessage: (sessionId, message) => {
       set((state) => {

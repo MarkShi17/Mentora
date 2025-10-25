@@ -8,6 +8,17 @@ import { handleError, ValidationError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
 import { generateTurnId } from '@/lib/utils/ids';
 
+export async function OPTIONS(): Promise<NextResponse> {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse<QAResponse>> {
   try {
     const body = (await request.json()) as QARequest;
@@ -95,13 +106,26 @@ export async function POST(request: NextRequest): Promise<NextResponse<QARespons
       objectsCreated: agentResponse.canvasObjects.length,
     });
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
   } catch (error) {
     logger.error('Failed to process QA request', error);
     const errorResponse = handleError(error);
     return NextResponse.json(
       { error: errorResponse.message },
-      { status: errorResponse.statusCode }
+      { 
+        status: errorResponse.statusCode,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      }
     );
   }
 }

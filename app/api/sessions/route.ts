@@ -4,6 +4,17 @@ import { CreateSessionRequest, CreateSessionResponse, SessionsListResponse } fro
 import { handleError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
 
+export async function OPTIONS(): Promise<NextResponse> {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+}
+
 export async function GET(): Promise<NextResponse<SessionsListResponse>> {
   try {
     const sessions = sessionManager.getAllSessions();
@@ -12,13 +23,26 @@ export async function GET(): Promise<NextResponse<SessionsListResponse>> {
       sessions,
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
   } catch (error) {
     logger.error('Failed to get sessions', error);
     const errorResponse = handleError(error);
     return NextResponse.json(
       { error: errorResponse.message },
-      { status: errorResponse.statusCode }
+      { 
+        status: errorResponse.statusCode,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      }
     );
   }
 }
@@ -37,13 +61,27 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateSes
       session,
     };
 
-    return NextResponse.json(response, { status: 201 });
+    return NextResponse.json(response, { 
+      status: 201,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
   } catch (error) {
     logger.error('Failed to create session', error);
     const errorResponse = handleError(error);
     return NextResponse.json(
       { error: errorResponse.message },
-      { status: errorResponse.statusCode }
+      { 
+        status: errorResponse.statusCode,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      }
     );
   }
 }

@@ -13,7 +13,7 @@ export function SidebarHistory() {
   const createSession = useSessionStore((state) => state.createSession);
   const messages = useSessionStore((state) => state.messages);
 
-  const handleCreateSession = () => {
+  const handleCreateSession = async () => {
     const now = new Date();
     const hours = now.getHours();
     const minutes = now.getMinutes();
@@ -22,7 +22,7 @@ export function SidebarHistory() {
     const displayMinutes = minutes.toString().padStart(2, '0');
     const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
     const title = `New Lesson ${timeString}`;
-    createSession({ title });
+    await createSession({ title });
   };
 
   return (

@@ -22,17 +22,31 @@ type PromptPayload = {
 };
 
 async function submitPrompt(payload: PromptPayload): Promise<PromptResponse> {
-  const response = await fetch("/api/qa", {
+  const apiUrl = 'http://localhost:3000';
+  const response = await fetch(`${apiUrl}/api/qa`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      sessionId: payload.sessionId,
+      question: payload.prompt,
+      mode: "guided",
+      highlightedObjectIds: payload.highlights || []
+    })
   });
   if (!response.ok) {
     throw new Error("Failed to contact tutor.");
   }
-  return response.json();
+  const data = await response.json();
+  return {
+    reply: data.text,
+    canvasObjects: data.canvasObjects || [],
+    timelineEvent: {
+      description: "Assistant provided guidance.",
+      type: "response"
+    }
+  };
 }
 
 export function PromptBar() {
@@ -40,6 +54,7 @@ export function PromptBar() {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const addMessage = useSessionStore((state) => state.addMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
+  const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
 
   const { mutateAsync, isPending } = useMutation({
     mutationFn: submitPrompt,
@@ -78,6 +93,12 @@ export function PromptBar() {
       });
       if (data.timelineEvent) {
         appendTimelineEvent(sessionId, data.timelineEvent);
+      }
+      // Add canvas objects from backend response
+      if (data.canvasObjects) {
+        data.canvasObjects.forEach((obj: any) => {
+          updateCanvasObject(sessionId, obj);
+        });
       }
     } catch (error) {
       addMessage(sessionId, {
