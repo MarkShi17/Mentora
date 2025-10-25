@@ -65,25 +65,27 @@ export function useContinuousAI() {
       // Direct commands
       'show me', 'tell me', 'explain', 'help me', 'teach me', 'walk me through',
       'can you', 'could you', 'would you', 'please', 'i need', 'i want',
-      
+      'give me', 'provide', 'generate', 'display',
+
       // Question words
       'what', 'how', 'why', 'when', 'where', 'who', 'which', 'do you', 'are you', 'is it', 'does it',
-      
+
       // Learning requests
       'learn', 'understand', 'know about', 'figure out', 'find out', 'discover',
-      
+
       // Action requests
       'create', 'make', 'build', 'draw', 'write', 'code', 'solve', 'calculate',
-      
+      'example', 'demonstrate', 'illustrate',
+
       // Clarification requests
       'clarify', 'elaborate', 'expand on', 'go deeper', 'more detail', 'i don\'t understand',
-      
+
       // Follow-up requests
       'what about', 'and then', 'next', 'also', 'furthermore', 'additionally', 'what if', 'suppose',
       'continue', 'keep going', 'more', 'another', 'different', 'alternative',
-      
+
       // Direct addressing
-      'mentora', 'ai', 'assistant', 'tutor', 'you'
+      'mentora', 'ai', 'assistant', 'tutor', 'you', 'hey mentora', 'ok mentora'
     ];
     
     // Context clues that suggest the user is talking to the AI
@@ -126,8 +128,12 @@ export function useContinuousAI() {
       confidence += 0.2;
     }
     
-    // Check for direct addressing (mentora, ai, etc.)
-    if (utterance.includes('mentora') || utterance.includes('ai') || utterance.includes('assistant') || utterance.includes('tutor')) {
+    // Check for direct addressing (mentora, ai, etc.) - VERY HIGH CONFIDENCE
+    if (utterance.includes('mentora')) {
+      confidence += 0.8; // Very high confidence when directly addressing Mentora
+      isQuestion = true;
+      context.push('Direct address to Mentora');
+    } else if (utterance.includes('ai') || utterance.includes('assistant') || utterance.includes('tutor')) {
       confidence += 0.4;
       isQuestion = true;
     }

@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useState, useRef, useCallback } from "react";
-import { ChevronLeft, ChevronRight, MessageSquare, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquare, X, StopCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTime } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
@@ -33,6 +33,8 @@ export function TimelinePanel() {
   const canvasObjects = useSessionStore((state) => state.canvasObjects);
   const requestFocus = useSessionStore((state) => state.requestFocus);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+  const stopStreamingCallback = useSessionStore((state) => state.stopStreamingCallback);
+  const rerunQuestionCallback = useSessionStore((state) => state.rerunQuestionCallback);
 
   const handleObjectClick = useCallback((objectId: string) => {
     if (!activeSessionId) return;
@@ -233,27 +235,62 @@ export function TimelinePanel() {
         {dialogue.map((message) => (
           <Fragment key={message.id}>
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p
-                className={cn(
-                  "text-sm font-semibold",
-                  message.role === "assistant"
-                    ? "text-sky-600"
-                    : "text-slate-700"
+              <div className="flex items-center justify-between">
+                <p
+                  className={cn(
+                    "text-sm font-semibold",
+                    message.role === "assistant"
+                      ? "text-sky-600"
+                      : "text-slate-700"
+                  )}
+                >
+                  <span className="capitalize">{message.role === "assistant" ? "Mentora" : message.role}</span>
+                  <span className="ml-2 text-xs font-normal text-slate-500">
+                    {formatTime(message.timestamp)}
+                  </span>
+                </p>
+                {message.role === "user" && (
+                  <button
+                    onClick={() => {
+                      if (rerunQuestionCallback) {
+                        console.log('🔄 Rerunning question:', message.content);
+                        rerunQuestionCallback(message.content);
+                      }
+                    }}
+                    className="p-1 rounded-md hover:bg-sky-50 transition-colors group"
+                    title="Rerun this question"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 text-slate-400 group-hover:text-sky-500 transition-colors" />
+                  </button>
                 )}
-              >
-                <span className="capitalize">{message.role === "assistant" ? "Mentora" : message.role}</span>
-                <span className="ml-2 text-xs font-normal text-slate-500">
-                  {formatTime(message.timestamp)}
-                </span>
-              </p>
+              </div>
               {message.content === "Thinking..." ? (
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-sm text-slate-600">Thinking</span>
-                  <div className="flex gap-1">
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-600">Thinking</span>
+                    <div className="flex gap-1">
+                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                    </div>
                   </div>
+                  <button
+                    onClick={() => {
+                      if (stopStreamingCallback) {
+                        console.log('🛑 Stopping AI generation from timeline panel');
+                        stopStreamingCallback();
+                      }
+                    }}
+                    className="p-1 rounded-md hover:bg-red-50 transition-colors group"
+                    title="Stop generating"
+                  >
+                    <StopCircle className="h-4 w-4 text-slate-400 group-hover:text-red-500 transition-colors" />
+                  </button>
+                </div>
+              ) : message.content === "Stopped" ? (
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-sm text-slate-600">Generation stopped</span>
+                  <div className="w-2 h-2 rounded-full bg-red-500"></div>
                 </div>
               ) : (
                 <p className="mt-1 text-sm text-slate-700 leading-relaxed">{message.content}</p>
