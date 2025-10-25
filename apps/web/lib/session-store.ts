@@ -53,6 +53,7 @@ type SessionState = {
   settings: Settings;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
+  updateSessionTitle: (sessionId: string, title: string) => void;
   // initializeDefaultSession: () => Promise<void>; // Removed - no longer auto-creating sessions
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
@@ -190,6 +191,14 @@ export const useSessionStore = create<SessionState>()(
         });
         return id;
       }
+    },
+    updateSessionTitle: (sessionId, title) => {
+      set((state) => {
+        const session = state.sessions.find((s) => s.id === sessionId);
+        if (session) {
+          session.title = title;
+        }
+      });
     },
     addMessage: (sessionId, message) => {
       set((state) => {
