@@ -193,8 +193,8 @@ export function SelectionLayer({
       return {
         x: pos.x,
         y: pos.y,
-        width: obj.width || obj.size?.width || 300,
-        height: obj.height || obj.size?.height || 150
+        width: obj.width || 300,
+        height: obj.height || 150
       };
     });
 

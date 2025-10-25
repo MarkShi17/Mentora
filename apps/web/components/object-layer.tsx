@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { CanvasObject } from "@/types";
 import { cn } from "@/lib/cn";
+import { CodeBlock } from "@/components/code-block";
 
 // Removed getObjectSizeClass - now using backend-calculated sizes directly
 
@@ -13,7 +14,7 @@ function renderObjectContent(object: CanvasObject) {
     case 'text':
       return (
         <div className="text-base text-slate-800 leading-relaxed p-2 h-full overflow-auto">
-          {object.data.content.split('\n').map((line, index) => (
+          {object.data.content?.split('\n').map((line, index) => (
             <p key={index} className="mb-3 last:mb-0">
               {line.trim() ? (
                 line.startsWith('•') ? (
@@ -35,26 +36,30 @@ function renderObjectContent(object: CanvasObject) {
     case 'diagram':
       return (
         <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto">
-          <div 
+          <div
             className="bg-white rounded"
-            dangerouslySetInnerHTML={{ __html: object.data.svg }}
+            dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
           />
         </div>
       );
     
     case 'code':
       return (
-        <pre className="text-sm text-slate-800 bg-slate-100 p-4 rounded-lg overflow-auto leading-relaxed h-full">
-          <code>{object.data.code}</code>
-        </pre>
+        <CodeBlock
+          code={object.data.code || ''}
+          language={object.data.language || 'text'}
+          theme="dark"
+          showLineNumbers={true}
+          showCopyButton={true}
+        />
       );
     
     case 'graph':
       return (
         <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto">
-          <div 
+          <div
             className="bg-white rounded"
-            dangerouslySetInnerHTML={{ __html: object.data.svg }}
+            dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
           />
         </div>
       );
@@ -146,10 +151,10 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               !isBeingDragged && !isBeingResized && "transition-all"
             )}
             style={{
-              left: objectX,
-              top: objectY,
-              width: objectWidth,
-              height: objectHeight,
+              left: object.x,
+              top: object.y,
+              width: object.width || 'auto',
+              height: object.height || 'auto',
               background: `${object.color}20`,
               zIndex: object.zIndex || 0,
               transform: dragTransform

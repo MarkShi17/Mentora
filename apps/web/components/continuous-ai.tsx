@@ -11,6 +11,8 @@ export function ContinuousAI() {
   const [isActive, setIsActive] = useState(false);
   const [wasListeningBeforeSpeech, setWasListeningBeforeSpeech] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
+  const [isPushToTalkActive, setIsPushToTalkActive] = useState(false); // Spacebar held down
+  const [isButtonLocked, setIsButtonLocked] = useState(false); // Button clicked to lock on
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -28,22 +30,23 @@ export function ContinuousAI() {
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
+  const allMessages = useSessionStore((state) => state.messages);
   const createSession = useSessionStore((state) => state.createSession);
   const addMessage = useSessionStore((state) => state.addMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
 
   // Get messages for active session
-  const activeSession = sessions.find(s => s.id === activeSessionId);
-  const messages = activeSession?.messages || [];
+  const messages = activeSessionId ? (allMessages[activeSessionId] || []) : [];
 
   // Track session ID and complete text for adding to chat history when streaming finishes
   const currentSessionRef = useRef<string | null>(null);
   const completeTextRef = useRef<string>('');
+  const objectsInCurrentResponse = useRef<string[]>([]);  // Track objects created in current response
 
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
-    onCanvasObject: useCallback((object, placement) => {
+    onCanvasObject: useCallback((object: any, placement: any) => {
       if (activeSessionId) {
         const canvasObject = {
           id: object.id,
@@ -75,30 +78,41 @@ export function ContinuousAI() {
           // Add timeline event for new object
           appendTimelineEvent(activeSessionId, {
             description: `Created ${object.type}: ${object.metadata?.referenceName || object.id}`,
-            type: "canvas_update"
+            type: "visual"
           });
 
           console.log(`✅ Canvas object "${canvasObject.label}" now visible`);
         }, delay);
+
+        // Track this object for the current response
+        objectsInCurrentResponse.current.push(object.id);
+        console.log(`📝 Tracked object ${object.id} for current response`);
       }
     }, [activeSessionId, updateCanvasObject, appendTimelineEvent]),
     onComplete: useCallback(() => {
       const sessionId = currentSessionRef.current;
       const finalText = completeTextRef.current;
+      const objectIds = objectsInCurrentResponse.current;
 
       if (sessionId && finalText.trim()) {
-        // Add assistant message to chat history
-        addMessage(sessionId, { role: "assistant", content: finalText });
+        // Add assistant message to chat history with canvas object references
+        addMessage(sessionId, {
+          role: "assistant",
+          content: finalText,
+          canvasObjectIds: objectIds.length > 0 ? objectIds : undefined
+        });
         appendTimelineEvent(sessionId, {
           description: "AI completed streaming response with audio.",
           type: "response"
         });
         console.log('💬 Assistant message added to chat history from onComplete');
+        console.log(`📎 Linked ${objectIds.length} canvas objects to message`);
       }
 
       // Reset refs
       currentSessionRef.current = null;
       completeTextRef.current = '';
+      objectsInCurrentResponse.current = [];
     }, [addMessage, appendTimelineEvent])
   });
 
@@ -161,6 +175,7 @@ export function ContinuousAI() {
     // Store session ID for onComplete callback
     currentSessionRef.current = sessionId;
     completeTextRef.current = '';
+    objectsInCurrentResponse.current = [];  // Reset for new response
 
     try {
       // Use streaming QA for real-time response with audio
@@ -193,7 +208,7 @@ export function ContinuousAI() {
       addMessage(sessionId, { role: "assistant", content: errorMessage });
       appendTimelineEvent(sessionId, {
         description: `Error: ${errorMessage}`,
-        type: "error"
+        type: "response"
       });
     }
   }, [activeSessionId, createSession, addMessage, appendTimelineEvent, conversationContext, streamingQA]);
@@ -232,16 +247,22 @@ export function ContinuousAI() {
   }, [messages.length, streamingQA.currentText]);
 
   const toggleAI = useCallback(() => {
-    if (isActive) {
+    if (isButtonLocked) {
+      // Button is locked on - unlock it
+      console.log('🔓 Button unlocked');
+      setIsButtonLocked(false);
       stopListening();
       setIsActive(false);
     } else {
+      // Lock button on
+      console.log('🔒 Button locked on');
+      setIsButtonLocked(true);
       startListening();
       setIsActive(true);
     }
-  }, [isActive, stopListening, startListening]);
+  }, [isButtonLocked, stopListening, startListening]);
 
-  // Add spacebar keyboard shortcut for toggling Live Tutor
+  // Push-to-talk: Hold spacebar to speak, release to stop
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Only trigger if spacebar is pressed and not in an input/textarea/contenteditable
@@ -251,18 +272,57 @@ export function ContinuousAI() {
           event.target.tagName === 'TEXTAREA' ||
           event.target.isContentEditable;
 
-        if (!isInInputField) {
+        if (!isInInputField && !event.repeat) {
           event.preventDefault(); // Prevent page scroll
-          toggleAI();
+
+          // Check if AI is currently speaking
+          const isAISpeaking = streamingQA.isStreaming || streamingQA.audioState.isPlaying;
+
+          if (isAISpeaking) {
+            // User is interrupting AI
+            console.log('🛑 User interrupting AI via spacebar hold');
+            streamingQA.stopStreaming();
+            setInterrupted(true);
+            setTimeout(() => setInterrupted(false), 1500);
+          }
+
+          // Start push-to-talk
+          console.log('🎤 Push-to-talk activated');
+          setIsPushToTalkActive(true);
+          startListening();
+          setIsActive(true);
+        }
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space' && event.target instanceof HTMLElement) {
+        const isInInputField =
+          event.target.tagName === 'INPUT' ||
+          event.target.tagName === 'TEXTAREA' ||
+          event.target.isContentEditable;
+
+        if (!isInInputField && isPushToTalkActive) {
+          event.preventDefault();
+
+          // Release push-to-talk (only if not button-locked)
+          if (!isButtonLocked) {
+            console.log('🔇 Push-to-talk released');
+            setIsPushToTalkActive(false);
+            stopListening();
+            setIsActive(false);
+          }
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [toggleAI]);
+  }, [isPushToTalkActive, isButtonLocked, startListening, stopListening, streamingQA]);
 
   const isQuestionDetected = currentTranscript &&
     currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor)/);
@@ -370,11 +430,104 @@ export function ContinuousAI() {
         </div>
       )}
 
+      {/* AI Response Display (Streaming) */}
+      {(streamingQA.isStreaming || streamingQA.currentText) && (
+        <div className="pointer-events-auto animate-in slide-in-from-left-5 fade-in duration-300 mb-2">
+          <div className="relative overflow-hidden rounded-2xl border border-blue-400/30 bg-white/95 backdrop-blur-xl shadow-2xl max-w-md">
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/5 to-transparent animate-shimmer" />
+
+            <div className="relative p-4 space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+                <div className={cn(
+                  "h-2 w-2 rounded-full",
+                  speaking ? "bg-green-400 animate-pulse" : isGenerating ? "bg-blue-400 animate-pulse" : "bg-slate-600"
+                )} />
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  {speaking ? "Speaking" : isGenerating ? "Generating" : "Complete"}
+                </span>
+              </div>
+
+              {/* Live Transcript */}
+              {streamingQA.currentText && (
+                <div className="rounded-xl p-3 bg-slate-50 border border-slate-200 max-h-48 overflow-y-auto">
+                  <p className="text-sm text-slate-900 leading-relaxed">
+                    {streamingQA.currentText}
+                  </p>
+                </div>
+              )}
+
+              {/* Current Speaking Text */}
+              {speaking && currentSpeechText && (
+                <div className="flex items-start gap-2 pt-2 border-t border-slate-200">
+                  <div className="flex gap-1 mt-1">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="w-1 rounded-full bg-green-400 animate-pulse"
+                        style={{
+                          height: `${Math.random() * 10 + 6}px`,
+                          animationDelay: `${i * 150}ms`
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-xs text-green-300 leading-relaxed">
+                    {currentSpeechText}
+                  </p>
+                </div>
+              )}
+
+              {/* Audio Queue Progress */}
+              {streamingQA.audioState.queueLength > 0 && (
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-400 to-green-400 rounded-full transition-all duration-300"
+                        style={{
+                          width: `${streamingQA.audioState.currentSentenceIndex !== null ? ((streamingQA.audioState.currentSentenceIndex + 1) / streamingQA.audioState.queueLength) * 100 : 0}%`
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      {streamingQA.audioState.currentSentenceIndex !== null ? streamingQA.audioState.currentSentenceIndex + 1 : 0}/{streamingQA.audioState.queueLength}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Error Display */}
+              {streamingQA.error && (
+                <div className="rounded-lg p-3 bg-red-500/10 border border-red-500/30">
+                  <p className="text-xs text-red-300">
+                    {streamingQA.error}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Microphone Control */}
       <div className="pointer-events-auto flex flex-col items-center gap-2">
-        <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500/10 to-blue-500/10 px-3 py-1 backdrop-blur-sm border border-cyan-400/20">
-          <span className="text-xs font-semibold text-cyan-400 tracking-wide">
-            LIVE TUTOR
+        <div className={cn(
+          "flex items-center gap-1.5 rounded-full px-3 py-1 backdrop-blur-sm border transition-colors",
+          isButtonLocked
+            ? "bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-400/20"
+            : isPushToTalkActive
+            ? "bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border-yellow-400/20"
+            : "bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border-cyan-400/20"
+        )}>
+          <span className={cn(
+            "text-xs font-semibold tracking-wide transition-colors",
+            isButtonLocked
+              ? "text-green-400"
+              : isPushToTalkActive
+              ? "text-yellow-400"
+              : "text-cyan-400"
+          )}>
+            {isButtonLocked ? "LOCKED ON" : isPushToTalkActive ? "HOLD TO SPEAK" : "LIVE TUTOR"}
           </span>
         </div>
 
@@ -445,12 +598,12 @@ export function ContinuousAI() {
             <p className={cn(
               "text-xs font-medium transition-colors duration-300",
               isListening
-                ? "text-cyan-400"
+                ? isButtonLocked ? "text-green-400" : "text-yellow-400"
                 : speaking
                 ? "text-green-400"
                 : "text-slate-400"
             )}>
-              {speaking ? "Speaking" : isListening ? "Listening" : "Active"}
+              {speaking ? "AI Speaking" : isListening ? (isButtonLocked ? "Listening (Locked)" : "Listening (Hold)") : "Active"}
             </p>
           </div>
         )}
