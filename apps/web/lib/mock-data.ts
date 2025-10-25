@@ -136,19 +136,11 @@ export const mockTimeline: Record<string, TimelineEvent[]> = {
 };
 
 export const mockTranscripts: Record<string, string> = {
-  "session-1": "Assistant: Welcome! User: How do pointers move through the list?",
-  "session-2": "Assistant: Let's explore the limit together."
+  // "session-1": "Assistant: Welcome! User: How do pointers move through the list?",
+  // "session-2": "Assistant: Let's explore the limit together."
 };
 
 export const mockPins: Record<string, Pin[]> = {
-  "session-1": [
-    {
-      id: "pin-1",
-      label: "Entry Node",
-      x: 190,
-      y: 180,
-      createdAt: isoPlus(5)
-    }
-  ],
+  "session-1": [],
   "session-2": []
 };

@@ -4,6 +4,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { select, zoom, zoomIdentity } from "d3";
+import { MapPin } from "lucide-react";
 import { ObjectLayer } from "@/components/object-layer";
 import { PinLayer } from "@/components/pin-layer";
 import { SelectionLayer } from "@/components/selection-layer";
@@ -70,7 +71,6 @@ const clearFocus = useSessionStore((state) => state.clearFocus);
 const pins = useSessionStore((state) =>
   state.activeSessionId ? state.pins[state.activeSessionId] ?? [] : []
 );
-const requestFocus = useSessionStore((state) => state.requestFocus);
 const addPin = useSessionStore((state) => state.addPin);
 const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
 const stageSize = useSessionStore((state) => state.canvasView.stageSize);
@@ -112,7 +112,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
   useEffect(() => {
     if (pinDraft && pinInputRef.current) {
       pinInputRef.current.focus();
-      pinInputRef.current.select();
+      // Don't select text - just place cursor at end
+      const length = pinInputRef.current.value.length;
+      pinInputRef.current.setSelectionRange(length, length);
     }
   }, [pinDraft]);
 
@@ -279,36 +281,37 @@ const initialPinCenteredRef = useRef<string | null>(null);
     clearFocus();
   }, [focusTarget, applyTransform, clearFocus]);
 
-  useEffect(() => {
-    if (!activeSessionId || !stageSize) {
-      return;
-    }
-    if (initialPinCenteredRef.current === activeSessionId) {
-      return;
-    }
-    const sessionPins = pins;
-    if (!sessionPins || sessionPins.length === 0) {
-      return;
-    }
-    const stage = stageSizeRef.current ?? stageSize;
-    if (!stage) {
-      return;
-    }
-    const pin = sessionPins[0];
-    const scale = transformRef.current.k;
-    const nextTransform: TransformState = {
-      k: scale,
-      x: stage.width / 2 - pin.x * scale,
-      y: stage.height / 2 - pin.y * scale
-    };
-    applyTransform(nextTransform);
-    const selection = selectionRef.current;
-    const zoomBehavior = zoomBehaviorRef.current;
-    if (selection && zoomBehavior) {
-      selection.call(zoomBehavior.transform, asZoomTransform(nextTransform));
-    }
-    initialPinCenteredRef.current = activeSessionId;
-  }, [activeSessionId, stageSize, pins, applyTransform]);
+  // Disabled: Don't auto-center on first pin
+  // useEffect(() => {
+  //   if (!activeSessionId || !stageSize) {
+  //     return;
+  //   }
+  //   if (initialPinCenteredRef.current === activeSessionId) {
+  //     return;
+  //   }
+  //   const sessionPins = pins;
+  //   if (!sessionPins || sessionPins.length === 0) {
+  //     return;
+  //   }
+  //   const stage = stageSizeRef.current ?? stageSize;
+  //   if (!stage) {
+  //     return;
+  //   }
+  //   const pin = sessionPins[0];
+  //   const scale = transformRef.current.k;
+  //   const nextTransform: TransformState = {
+  //     k: scale,
+  //     x: stage.width / 2 - pin.x * scale,
+  //     y: stage.height / 2 - pin.y * scale
+  //   };
+  //   applyTransform(nextTransform);
+  //   const selection = selectionRef.current;
+  //   const zoomBehavior = zoomBehaviorRef.current;
+  //   if (selection && zoomBehavior) {
+  //     selection.call(zoomBehavior.transform, asZoomTransform(nextTransform));
+  //   }
+  //   initialPinCenteredRef.current = activeSessionId;
+  // }, [activeSessionId, stageSize, pins, applyTransform]);
 
   useEffect(() => {
     return () => {
@@ -341,9 +344,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   const handlePinFocus = useCallback(
     (pin: Pin) => {
-      requestFocus({ id: pin.id, x: pin.x, y: pin.y });
+      // Don't auto-focus on pin click - keep canvas where it is
     },
-    [requestFocus]
+    []
   );
 
   const getScreenPoint = useCallback(
@@ -450,17 +453,15 @@ const initialPinCenteredRef = useRef<string | null>(null);
       setCanvasMode("pan");
       return;
     }
-    const newPin = addPin(activeSessionId, {
+    addPin(activeSessionId, {
       x: pinDraft.world.x,
       y: pinDraft.world.y,
       label: pinDraft.label.trim() || undefined
     });
-    if (newPin) {
-      requestFocus({ id: newPin.id, x: newPin.x, y: newPin.y });
-    }
+    // Don't requestFocus - keep canvas where it is
     setPinDraft(null);
     setCanvasMode("pan");
-  }, [pinDraft, activeSessionId, addPin, requestFocus, setCanvasMode]);
+  }, [pinDraft, activeSessionId, addPin, setCanvasMode]);
 
   const cancelPinDraft = useCallback(() => {
     setPinDraft(null);
@@ -566,11 +567,12 @@ const initialPinCenteredRef = useRef<string | null>(null);
         {pinDraft ? (
           <div className="pointer-events-none absolute inset-0 z-30">
             <div
-              className="pointer-events-auto absolute w-56 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-slate-950/95 p-3 shadow-xl"
-              style={{ left: pinDraft.screen.x, top: pinDraft.screen.y }}
+              className="pointer-events-auto absolute w-56 -translate-x-1/2"
+              style={{ left: pinDraft.screen.x, top: pinDraft.screen.y - 40, transform: 'translate(-50%, -100%)' }}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
             >
+              <div className="rounded-lg border border-border bg-slate-950/95 p-3 shadow-xl">
               <form
                 className="flex flex-col gap-3"
                 onSubmit={(event) => {
@@ -603,6 +605,14 @@ const initialPinCenteredRef = useRef<string | null>(null);
                   </Button>
                 </div>
               </form>
+              </div>
+            </div>
+            {/* Pin preview icon */}
+            <div
+              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+              style={{ left: pinDraft.screen.x, top: pinDraft.screen.y }}
+            >
+              <MapPin className="h-6 w-6 text-sky-400 drop-shadow-lg" fill="currentColor" />
             </div>
           </div>
         ) : null}
