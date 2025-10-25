@@ -136,6 +136,6 @@ export const mockTimeline: Record<string, TimelineEvent[]> = {
 };
 
 export const mockTranscripts: Record<string, string> = {
-  "session-1": "Assistant: Welcome! User: How do pointers move through the list?",
-  "session-2": "Assistant: Let's explore the limit together."
+  // "session-1": "Assistant: Welcome! User: How do pointers move through the list?",
+  // "session-2": "Assistant: Let's explore the limit together."
 };
