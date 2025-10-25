@@ -186,7 +186,8 @@ const initialPinCenteredRef = useRef<string | null>(null);
           const objMaxX = object.x + object.width;
           const objMinY = object.y;
           const objMaxY = object.y + object.height;
-          return objMinX >= minX && objMaxX <= maxX && objMinY >= minY && objMaxY <= maxY;
+          // Check for intersection (partial overlap) instead of full containment
+          return objMaxX >= minX && objMinX <= maxX && objMaxY >= minY && objMinY <= maxY;
         })
         .map((object) => object.id);
 
@@ -812,8 +813,13 @@ const initialPinCenteredRef = useRef<string | null>(null);
         return;
       }
       if (commit) {
-        selectObjectsInBox(current.originWorld, current.currentWorld);
+        const selectedIds = selectObjectsInBox(current.originWorld, current.currentWorld);
         previousSelectionRef.current = null;
+
+        // If at least one object was selected, switch back to pan mode (grab cursor)
+        if (selectedIds.length > 0) {
+          setCanvasMode("pan");
+        }
       } else {
         const sessionId = activeSessionIdRef.current;
         if (sessionId && previousSelectionRef.current) {
@@ -823,7 +829,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
       lassoRef.current = null;
       setLasso(null);
     },
-    [selectObjectsInBox, setSelectedObjects]
+    [selectObjectsInBox, setSelectedObjects, setCanvasMode]
   );
 
   const handleLassoPointerUp = useCallback(
