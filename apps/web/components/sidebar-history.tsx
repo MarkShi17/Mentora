@@ -29,12 +29,12 @@ export function SidebarHistory() {
   };
 
   return (
-    <div className="relative h-full">
+    <div className="absolute left-0 top-0 z-30 h-full pointer-events-none">
       {/* Toggle button */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className={cn(
-          "absolute left-0 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-r-lg border border-l-0 border-border bg-slate-950/90 text-slate-300 shadow-lg transition-all hover:bg-slate-900 hover:text-slate-100",
+          "pointer-events-auto absolute left-0 top-4 z-40 flex h-8 w-8 items-center justify-center rounded-r-lg border border-l-0 border-border bg-slate-950/90 text-slate-300 shadow-lg transition-all hover:bg-slate-900 hover:text-slate-100",
           isCollapsed ? "translate-x-0" : "translate-x-80"
         )}
       >
@@ -46,7 +46,7 @@ export function SidebarHistory() {
       </button>
 
       <aside className={cn(
-        "flex h-full flex-col overflow-hidden border-r border-border bg-slate-950/70 transition-all duration-300",
+        "pointer-events-auto flex h-full flex-col overflow-hidden border-r border-border bg-slate-950/95 backdrop-blur-sm transition-all duration-300",
         isCollapsed ? "w-0 border-r-0" : "w-80"
       )}>
         {/* Sidebar content */}
