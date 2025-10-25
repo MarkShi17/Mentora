@@ -66,3 +66,90 @@ export interface HealthResponse {
   timestamp: number;
   version: string;
 }
+
+// Streaming QA Types
+export type StreamEventType =
+  | 'text_chunk'      // Partial text from Claude
+  | 'audio_chunk'     // TTS audio for a sentence
+  | 'canvas_object'   // New canvas object generated
+  | 'reference'       // Object reference detected
+  | 'metadata'        // Response metadata
+  | 'complete'        // Stream finished
+  | 'error';          // Error occurred
+
+export interface BaseStreamEvent {
+  type: StreamEventType;
+  timestamp: number;
+}
+
+export interface TextChunkEvent extends BaseStreamEvent {
+  type: 'text_chunk';
+  data: {
+    text: string;
+    sentenceIndex: number;
+  };
+}
+
+export interface AudioChunkEvent extends BaseStreamEvent {
+  type: 'audio_chunk';
+  data: {
+    audio: string;        // Base64 audio chunk
+    text: string;         // Text being spoken
+    sentenceIndex: number;
+    format: 'mp3';
+    voice: string;
+  };
+}
+
+export interface CanvasObjectEvent extends BaseStreamEvent {
+  type: 'canvas_object';
+  data: {
+    object: CanvasObject;
+    placement: ObjectPlacement;
+  };
+}
+
+export interface ReferenceEvent extends BaseStreamEvent {
+  type: 'reference';
+  data: ObjectReference;
+}
+
+export interface MetadataEvent extends BaseStreamEvent {
+  type: 'metadata';
+  data: {
+    turnId: string;
+    totalSentences: number;
+    sessionId: string;
+  };
+}
+
+export interface CompleteEvent extends BaseStreamEvent {
+  type: 'complete';
+  data: {
+    success: true;
+    totalSentences: number;
+    totalObjects: number;
+    totalReferences: number;
+  };
+}
+
+export interface ErrorEvent extends BaseStreamEvent {
+  type: 'error';
+  data: {
+    message: string;
+    code?: string;
+  };
+}
+
+export type StreamEvent =
+  | TextChunkEvent
+  | AudioChunkEvent
+  | CanvasObjectEvent
+  | ReferenceEvent
+  | MetadataEvent
+  | CompleteEvent
+  | ErrorEvent;
+
+export interface StreamingQARequest extends QARequest {
+  stream: true;
+}

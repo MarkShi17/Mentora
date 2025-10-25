@@ -14,16 +14,6 @@ export function SourcesDrawer() {
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="fixed bottom-6 right-6 shadow-lg backdrop-blur"
-          disabled={!activeSessionId}
-        >
-          Sources
-        </Button>
-      </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
         <Dialog.Content className="fixed bottom-0 right-0 m-4 w-96 max-w-[95vw] rounded-xl border border-border bg-slate-950 p-4 shadow-2xl">

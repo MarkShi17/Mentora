@@ -1,12 +1,28 @@
+/**
+ * Streaming Orchestrator
+ *
+ * Coordinates Claude streaming responses with real-time TTS generation.
+ * Ensures OpenAI TTS speaks Claude's contextually-aware narration as it's generated.
+ */
+
 import Anthropic from '@anthropic-ai/sdk';
 import { Session } from '@/types/session';
 import { CanvasObject, ObjectPlacement, ObjectReference } from '@/types/canvas';
-import { TeachingMode } from '@/types/api';
+import { TeachingMode, StreamEvent } from '@/types/api';
 import { contextBuilder } from './contextBuilder';
 import { objectGenerator } from '@/lib/canvas/objectGenerator';
 import { layoutEngine } from '@/lib/canvas/layoutEngine';
+import { ttsService } from '@/lib/voice/ttsService';
+import { SentenceParser } from '@/lib/utils/sentenceParser';
 import { logger } from '@/lib/utils/logger';
-import { ExternalServiceError } from '@/lib/utils/errors';
+
+interface StreamingContext {
+  sessionId: string;
+  turnId: string;
+  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+  existingObjects: CanvasObject[];
+  userQuestion: string;
+}
 
 interface AgentResponse {
   explanation: string;
@@ -23,7 +39,7 @@ interface AgentResponse {
   }>;
 }
 
-export class MentorAgent {
+export class StreamingOrchestrator {
   private anthropic: Anthropic;
 
   constructor() {
@@ -34,96 +50,243 @@ export class MentorAgent {
     this.anthropic = new Anthropic({ apiKey });
   }
 
-  async generateResponse(
+  /**
+   * Stream a teaching response with real-time TTS
+   */
+  async *streamResponse(
     question: string,
     session: Session,
     highlightedObjectIds: string[] = [],
     mode: TeachingMode = 'guided',
     turnId: string,
+    voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
     context?: {
       recentConversation?: string[];
       topics?: string[];
       conversationHistory?: string[];
     }
-  ): Promise<{
-    text: string;
-    narration: string;
-    canvasObjects: CanvasObject[];
-    objectPlacements: ObjectPlacement[];
-    references: ObjectReference[];
-  }> {
-    try {
-      logger.info('Generating teaching response', { question, mode, sessionId: session.id });
+  ): AsyncGenerator<StreamEvent, void, unknown> {
+    logger.info('Starting streaming response', {
+      sessionId: session.id,
+      mode,
+      turnId
+    });
 
-      // Build context from session history and canvas
+    const streamingContext: StreamingContext = {
+      sessionId: session.id,
+      turnId,
+      voice,
+      existingObjects: session.canvasObjects,
+      userQuestion: question
+    };
+
+    try {
+      // Send metadata first
+      yield {
+        type: 'metadata',
+        timestamp: Date.now(),
+        data: {
+          turnId,
+          totalSentences: 0, // Will be updated
+          sessionId: session.id
+        }
+      };
+
+      // Build context from session
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
-      // Generate system prompt
+      // Generate system and user prompts
       const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context);
-
-      // Generate user prompt
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
-      // Call Claude API
-      const response = await this.anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+      // Start Claude streaming
+      const stream = await this.anthropic.messages.stream({
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
         system: systemPrompt,
         messages: [
           {
             role: 'user',
-            content: userPrompt,
-          },
-        ],
+            content: userPrompt
+          }
+        ]
       });
 
-      // Parse response
-      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-      const agentResponse = this.parseResponse(responseText);
+      let fullResponse = '';
+      const sentenceParser = new SentenceParser();
+      let totalObjects = 0;
+      let totalReferences = 0;
 
-      // Generate canvas objects
+      // Process Claude's streaming response
+      for await (const chunk of stream) {
+        if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+          const textChunk = chunk.delta.text;
+          fullResponse += textChunk;
+
+          // Extract complete sentences
+          const sentences = sentenceParser.addChunk(textChunk);
+
+          // Generate TTS for each complete sentence
+          for (const sentence of sentences) {
+            logger.debug('Complete sentence detected', {
+              sentenceIndex: sentence.index,
+              text: sentence.text
+            });
+
+            // Send text chunk event
+            yield {
+              type: 'text_chunk',
+              timestamp: Date.now(),
+              data: {
+                text: sentence.text,
+                sentenceIndex: sentence.index
+              }
+            };
+
+            // Generate TTS asynchronously and stream audio
+            try {
+              const audioResult = await ttsService.generateSentenceSpeech(
+                sentence.text,
+                voice,
+                sentence.index
+              );
+
+              yield {
+                type: 'audio_chunk',
+                timestamp: Date.now(),
+                data: audioResult
+              };
+            } catch (error) {
+              logger.warn('TTS generation failed for sentence, continuing', {
+                sentenceIndex: sentence.index,
+                error: error instanceof Error ? error.message : 'Unknown'
+              });
+              // Continue without audio for this sentence
+            }
+          }
+        }
+      }
+
+      // Flush any remaining sentence
+      const finalSentence = sentenceParser.flush();
+      if (finalSentence) {
+        logger.debug('Flushing final sentence', {
+          sentenceIndex: finalSentence.index,
+          text: finalSentence.text
+        });
+
+        yield {
+          type: 'text_chunk',
+          timestamp: Date.now(),
+          data: {
+            text: finalSentence.text,
+            sentenceIndex: finalSentence.index
+          }
+        };
+
+        try {
+          const audioResult = await ttsService.generateSentenceSpeech(
+            finalSentence.text,
+            voice,
+            finalSentence.index
+          );
+
+          yield {
+            type: 'audio_chunk',
+            timestamp: Date.now(),
+            data: audioResult
+          };
+        } catch (error) {
+          logger.warn('TTS generation failed for final sentence', { error });
+        }
+      }
+
+      // Parse full response for canvas objects and references
+      const agentResponse = this.parseResponse(fullResponse);
+
+      // Generate and stream canvas objects
       const canvasObjects = this.generateCanvasObjects(
         agentResponse.objects,
-        session.canvasObjects,
+        streamingContext.existingObjects,
         turnId,
         question
       );
 
-      // Generate object placements
-      const objectPlacements = this.generateObjectPlacements(canvasObjects);
+      for (const obj of canvasObjects) {
+        const placement: ObjectPlacement = {
+          objectId: obj.id,
+          position: obj.position,
+          animateIn: 'fade',
+          timing: totalObjects * 500
+        };
 
-      // Generate references with timestamps
+        yield {
+          type: 'canvas_object',
+          timestamp: Date.now(),
+          data: {
+            object: obj,
+            placement
+          }
+        };
+
+        totalObjects++;
+      }
+
+      // Stream references
       const references = this.generateReferences(
         agentResponse.references,
-        session.canvasObjects,
+        streamingContext.existingObjects,
         canvasObjects
       );
 
-      logger.info('Teaching response generated successfully', {
-        objectsCreated: canvasObjects.length,
-        references: references.length,
-      });
+      for (const ref of references) {
+        yield {
+          type: 'reference',
+          timestamp: Date.now(),
+          data: ref
+        };
 
-      return {
-        text: agentResponse.explanation,
-        narration: agentResponse.narration,
-        canvasObjects,
-        objectPlacements,
-        references,
+        totalReferences++;
+      }
+
+      // Send completion event
+      yield {
+        type: 'complete',
+        timestamp: Date.now(),
+        data: {
+          success: true,
+          totalSentences: sentenceParser.getSentenceCount(),
+          totalObjects,
+          totalReferences
+        }
       };
+
+      logger.info('Streaming response completed', {
+        totalSentences: sentenceParser.getSentenceCount(),
+        totalObjects,
+        totalReferences
+      });
     } catch (error) {
-      logger.error('Failed to generate teaching response', error);
-      throw new ExternalServiceError(
-        'Failed to generate teaching response. Please try again.',
-        'Claude API'
-      );
+      logger.error('Streaming response failed', { error });
+
+      yield {
+        type: 'error',
+        timestamp: Date.now(),
+        data: {
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
+          code: 'STREAMING_ERROR'
+        }
+      };
     }
   }
 
+  /**
+   * Build system prompt (reused from mentorAgent)
+   */
   private buildSystemPrompt(
-    session: Session, 
-    context: any, 
-    mode: TeachingMode, 
+    session: Session,
+    context: any,
+    mode: TeachingMode,
     conversationContext?: {
       recentConversation?: string[];
       topics?: string[];
@@ -142,7 +305,6 @@ export class MentorAgent {
 - Still break into logical steps
 - Be thorough but concise`;
 
-    // Build contextual information
     let contextualInfo = '';
     if (conversationContext) {
       if (conversationContext.recentConversation && conversationContext.recentConversation.length > 0) {
@@ -184,10 +346,6 @@ VISUAL CREATION:
 - For diagrams: Create meaningful visualizations that demonstrate the concept being discussed
 - Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms
 - Make diagrams contextually relevant to the specific question or concept being explained
-- When creating diagrams, provide specific descriptions that relate to the user's question
-- For tree recursion: describe the actual tree structure being discussed
-- For algorithms: describe the specific steps or data flow
-- For processes: describe the actual workflow or decision points
 
 RESPONSE FORMAT:
 You must respond with a JSON object in the following format:
@@ -234,7 +392,6 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
   private parseResponse(responseText: string): AgentResponse {
     try {
-      // Try to extract JSON from the response
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
@@ -242,24 +399,23 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
           explanation: parsed.explanation || responseText,
           narration: parsed.narration || parsed.explanation || responseText,
           objects: parsed.objects || [],
-          references: parsed.references || [],
+          references: parsed.references || []
         };
       }
 
-      // Fallback if no JSON found
       return {
         explanation: responseText,
         narration: responseText,
         objects: [],
-        references: [],
+        references: []
       };
     } catch (error) {
-      logger.warn('Failed to parse JSON response, using fallback', error);
+      logger.warn('Failed to parse JSON response', { error });
       return {
         explanation: responseText,
         narration: responseText,
         objects: [],
-        references: [],
+        references: []
       };
     }
   }
@@ -275,31 +431,28 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     for (let i = 0; i < objectRequests.length; i++) {
       const request = objectRequests[i];
 
-      // Calculate position
       const position = layoutEngine.calculatePosition(
         {
           existingObjects: [...existingObjects, ...objects].map(obj => ({
             id: obj.id,
             position: obj.position,
-            size: obj.size,
-          })),
+            size: obj.size
+          }))
         },
         { width: 400, height: 200 }
       );
 
-      // Generate object with enhanced content for diagrams
       let enhancedContent = request.content;
       if (request.type === 'diagram') {
-        // For diagrams, combine the AI's description with the user's question context
         enhancedContent = `${request.content} - Context: ${userQuestion}`;
       }
-      
+
       const obj = objectGenerator.generateObject(
         {
           type: request.type,
           content: enhancedContent,
           referenceName: request.referenceName,
-          metadata: request.metadata,
+          metadata: request.metadata
         },
         position,
         turnId
@@ -309,15 +462,6 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     }
 
     return objects;
-  }
-
-  private generateObjectPlacements(objects: CanvasObject[]): ObjectPlacement[] {
-    return objects.map((obj, index) => ({
-      objectId: obj.id,
-      position: obj.position,
-      animateIn: 'fade' as const,
-      timing: index * 500, // Stagger animations by 500ms
-    }));
   }
 
   private generateReferences(
@@ -334,17 +478,14 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
           return null;
         }
 
-        // Estimate timestamp based on mention position (simplified)
-        const timestamp = 0; // In a full implementation, align with TTS word timings
-
         return {
           objectId: ref.objectId,
           mention: ref.mention,
-          timestamp,
+          timestamp: 0
         };
       })
       .filter((ref): ref is ObjectReference => ref !== null);
   }
 }
 
-export const mentorAgent = new MentorAgent();
+export const streamingOrchestrator = new StreamingOrchestrator();
