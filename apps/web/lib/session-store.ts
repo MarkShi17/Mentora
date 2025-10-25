@@ -48,6 +48,7 @@ type SessionState = {
   createSession: (payload: { title: string }) => Promise<string>;
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
+  updateCanvasObjects: (sessionId: string, objects: CanvasObject[]) => void;
   toggleObjectSelection: (sessionId: string, objectId: string, keepOthers?: boolean) => void;
   clearObjectSelection: (sessionId: string) => void;
   setSelectedObjects: (sessionId: string, ids: string[]) => void;
@@ -215,14 +216,20 @@ export const useSessionStore = create<SessionState>()(
     },
     updateCanvasObject: (sessionId, object) => {
       set((state) => {
-        const list = state.canvasObjects[sessionId] ?? [];
-        const idx = list.findIndex((item) => item.id === object.id);
-        if (idx >= 0) {
-          list[idx] = object;
-        } else {
-          list.push(object);
+        if (!state.canvasObjects[sessionId]) {
+          state.canvasObjects[sessionId] = [];
         }
-        state.canvasObjects[sessionId] = list;
+        const idx = state.canvasObjects[sessionId].findIndex((item) => item.id === object.id);
+        if (idx >= 0) {
+          state.canvasObjects[sessionId][idx] = object;
+        } else {
+          state.canvasObjects[sessionId].push(object);
+        }
+      });
+    },
+    updateCanvasObjects: (sessionId, objects) => {
+      set((state) => {
+        state.canvasObjects[sessionId] = objects;
       });
     },
     toggleObjectSelection: (sessionId, objectId, keepOthers = false) => {
