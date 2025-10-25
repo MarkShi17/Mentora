@@ -1,6 +1,6 @@
 # Dependencies
-/node_modules
-/.pnp
+node_modules/
+.pnp/
 .pnp.js
 
 # IMPORTANT: Do NOT ignore package-lock.json
@@ -8,14 +8,14 @@
 # !package-lock.json is already NOT ignored by default
 
 # Testing
-/coverage
+coverage/
 
 # Next.js
-/.next/
-/out/
+.next/
+out/
 
 # Production
-/build
+build/
 
 # Misc
 .DS_Store
