@@ -90,8 +90,10 @@ type ObjectLayerProps = {
   dragState?: {
     objectId: string;
     startWorld: { x: number; y: number };
+    startScreen: { x: number; y: number };
     startObject: { x: number; y: number };
     currentDelta: { x: number; y: number };
+    wasSelectedAtStart: boolean;
   } | null;
 };
 
@@ -154,10 +156,6 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               event.preventDefault();
               if (onDragEnd) {
                 onDragEnd(object.id, event);
-              }
-              // If not dragging, treat as click for selection
-              if (!isDragging) {
-                onSelect(object.id, event as any);
               }
             }}
           >

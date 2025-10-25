@@ -34,6 +34,15 @@ type PinDraft = {
   label: string;
 };
 
+type DragState = {
+  objectId: string;
+  startWorld: { x: number; y: number };
+  startScreen: { x: number; y: number };
+  startObject: { x: number; y: number };
+  currentDelta: { x: number; y: number };
+  wasSelectedAtStart: boolean;
+};
+
 const IDENTITY: TransformState = { x: 0, y: 0, k: 1 };
 
 const toState = (transform: { x: number; y: number; k: number }): TransformState => ({
@@ -83,6 +92,7 @@ const requestFocus = useSessionStore((state) => state.requestFocus);
 const addPin = useSessionStore((state) => state.addPin);
 const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
 const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+const updateCanvasObjects = useSessionStore((state) => state.updateCanvasObjects);
 const bringToFront = useSessionStore((state) => state.bringToFront);
 const stageSize = useSessionStore((state) =>
   state.activeSessionId ? state.canvasViews[state.activeSessionId]?.stageSize : null
@@ -123,13 +133,8 @@ const initialPinCenteredRef = useRef<string | null>(null);
   }, [lasso]);
 
   // Object dragging state
-  const [dragState, setDragState] = useState<{
-    objectId: string;
-    startWorld: { x: number; y: number };
-    startObject: { x: number; y: number };
-    currentDelta: { x: number; y: number };
-  } | null>(null);
-  const dragStateRef = useRef<typeof dragState>(null);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const dragStateRef = useRef<DragState | null>(null);
   useEffect(() => {
     dragStateRef.current = dragState;
   }, [dragState]);
@@ -223,25 +228,14 @@ const initialPinCenteredRef = useRef<string | null>(null);
           return false;
         }
 
-        return !event.button && event.type !== "dblclick";
+        return !event.button;
       })
       .on("zoom", handleZoom);
 
     zoomBehaviorRef.current = zoomBehavior;
     selection.call(zoomBehavior);
 
-    const resetTransform = () => {
-      applyTransform(IDENTITY);
-      selection
-        .transition()
-        .duration(220)
-        .call(zoomBehavior.transform, asZoomTransform(IDENTITY));
-    };
-
-    element.addEventListener("dblclick", resetTransform);
-
     return () => {
-      element.removeEventListener("dblclick", resetTransform);
       selection.on(".zoom", null);
     };
   }, [applyTransform]);
@@ -470,31 +464,37 @@ const initialPinCenteredRef = useRef<string | null>(null);
       }
       event.stopPropagation();
 
-      // Find the object
-      const object = canvasObjectsRef.current.find(obj => obj.id === objectId);
+      // Get fresh object state from store (not ref)
+      const state = useSessionStore.getState();
+      const objects = state.canvasObjects[activeSessionId] || [];
+      const object = objects.find(obj => obj.id === objectId);
+
       if (!object) {
         return;
       }
 
-      // Bring to front
-      bringToFront(activeSessionId, objectId);
+      console.log('[DragStart]', objectId, 'selected:', object.selected);
 
       // Get screen point and convert to world coordinates
       const screenPoint = getScreenPoint(event);
       const worldPoint = screenToWorld(screenPoint);
 
-      // Set drag state
-      setDragState({
+      // Set drag state - track if object was selected at start
+      const nextDragState: DragState = {
         objectId,
         startWorld: worldPoint,
+        startScreen: screenPoint,
         startObject: { x: object.x, y: object.y },
-        currentDelta: { x: 0, y: 0 }
-      });
+        currentDelta: { x: 0, y: 0 },
+        wasSelectedAtStart: object.selected
+      };
+      dragStateRef.current = nextDragState;
+      setDragState(nextDragState);
 
       // Capture pointer
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [activeSessionId, canvasMode, bringToFront, getScreenPoint, screenToWorld]
+    [activeSessionId, canvasMode, getScreenPoint, screenToWorld]
   );
 
   const handleObjectDragMove = useCallback(
@@ -515,10 +515,12 @@ const initialPinCenteredRef = useRef<string | null>(null);
       const deltaY = worldPoint.y - drag.startWorld.y;
 
       // Update drag state with current delta (for visual transform)
-      setDragState({
+      const nextDragState: DragState = {
         ...drag,
         currentDelta: { x: deltaX, y: deltaY }
-      });
+      };
+      dragStateRef.current = nextDragState;
+      setDragState(nextDragState);
     },
     [getScreenPoint, screenToWorld]
   );
@@ -532,14 +534,98 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
       event.stopPropagation();
 
-      // Commit final position to store
-      const object = canvasObjectsRef.current.find(obj => obj.id === objectId);
-      if (object) {
-        updateCanvasObject(activeSessionId, {
-          ...object,
-          x: drag.startObject.x + drag.currentDelta.x,
-          y: drag.startObject.y + drag.currentDelta.y
-        });
+      const screenPoint = getScreenPoint(event);
+      const worldPoint = screenToWorld(screenPoint);
+
+      const screenDeltaX = screenPoint.x - drag.startScreen.x;
+      const screenDeltaY = screenPoint.y - drag.startScreen.y;
+      const worldDeltaX = worldPoint.x - drag.startWorld.x;
+      const worldDeltaY = worldPoint.y - drag.startWorld.y;
+
+      // Calculate total movement distance in screen pixels to determine if it was a click or drag
+      const totalScreenMovement = Math.hypot(screenDeltaX, screenDeltaY);
+      const CLICK_THRESHOLD = 5; // screen pixels
+      const wasClick = totalScreenMovement < CLICK_THRESHOLD;
+
+      console.log(
+        '[DragEnd]',
+        objectId,
+        'wasClick:',
+        wasClick,
+        'wasSelectedAtStart:',
+        drag.wasSelectedAtStart,
+        'totalScreenMovement:',
+        totalScreenMovement
+      );
+
+      // Get fresh state from store
+      const state = useSessionStore.getState();
+      const objects = state.canvasObjects[activeSessionId] || [];
+      const object = objects.find(obj => obj.id === objectId);
+
+      if (!object) {
+        return;
+      }
+
+      // Get the highest zIndex to bring this object to front
+      const maxZIndex = Math.max(...objects.map(obj => obj.zIndex || 0), 0);
+
+      // Handle selection based on whether it was a click or drag
+      if (wasClick) {
+        // It was a click - bring to front and ensure object is selected
+        const isMultiSelect = event.ctrlKey || event.metaKey;
+
+        console.log('[Click]', objectId, 'multiSelect:', isMultiSelect);
+
+        if (isMultiSelect) {
+          // Multi-select mode - toggle this object, bring to front
+          const newSelected = !object.selected;
+          updateCanvasObject(activeSessionId, {
+            ...object,
+            zIndex: maxZIndex + 1,
+            selected: newSelected
+          });
+        } else {
+          // Single select mode - clear all others, select this one, bring to front
+          // Update all objects in a single batch to avoid race conditions
+          const updatedObjects = objects.map(obj =>
+            obj.id === objectId
+              ? { ...obj, selected: true, zIndex: maxZIndex + 1 }
+              : { ...obj, selected: false }
+          );
+          console.log('[Click-Update]', objectId, 'setting selected: true');
+          updateCanvasObjects(activeSessionId, updatedObjects);
+
+          // Verify immediately
+          const verifyState = useSessionStore.getState();
+          const verifyObj = verifyState.canvasObjects[activeSessionId]?.find(o => o.id === objectId);
+          console.log('[Click-Verify]', objectId, 'selected after update:', verifyObj?.selected);
+        }
+
+        setSelectionMethod(activeSessionId, "click");
+        setLastSelectedObject(activeSessionId, objectId);
+      } else {
+        // It was a drag - update position, bring to front, and preserve selection state
+        console.log('[Drag]', objectId, 'wasSelectedAtStart:', drag.wasSelectedAtStart);
+
+        // Get FRESH state right before update to avoid overwriting other changes
+        const freshState = useSessionStore.getState();
+        const freshObjects = freshState.canvasObjects[activeSessionId] || [];
+        const freshObject = freshObjects.find(obj => obj.id === objectId);
+
+        if (freshObject) {
+          const shouldRemainSelected = drag.wasSelectedAtStart || freshObject.selected === true;
+          // Only update THIS object's position and zIndex, preserve everything else including selection
+          updateCanvasObject(activeSessionId, {
+            ...freshObject, // Use fresh object to preserve any changes that happened during drag
+            x: drag.startObject.x + worldDeltaX,
+            y: drag.startObject.y + worldDeltaY,
+            zIndex: maxZIndex + 1,
+            selected: shouldRemainSelected
+          });
+
+          console.log('[Drag-Update]', objectId, 'updated with selected:', shouldRemainSelected);
+        }
       }
 
       // Release pointer capture
@@ -548,9 +634,10 @@ const initialPinCenteredRef = useRef<string | null>(null);
       }
 
       // Clear drag state
+      dragStateRef.current = null;
       setDragState(null);
     },
-    [activeSessionId, updateCanvasObject]
+    [activeSessionId, updateCanvasObject, updateCanvasObjects, setSelectionMethod, setLastSelectedObject, getScreenPoint, screenToWorld]
   );
 
   const startPinPlacement = useCallback(
