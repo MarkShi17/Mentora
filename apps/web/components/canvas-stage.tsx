@@ -2,9 +2,7 @@
 
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { select, zoom, zoomIdentity } from "d3";
-import { MapPin } from "lucide-react";
 import { ObjectLayer } from "@/components/object-layer";
 import { PinLayer } from "@/components/pin-layer";
 import { SelectionLayer } from "@/components/selection-layer";
@@ -56,8 +54,6 @@ export function CanvasStage() {
   const [transform, setTransform] = useState<TransformState>(IDENTITY);
   const transformRef = useRef<TransformState>(IDENTITY);
   const stageSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
 
 const activeSessionId = useSessionStore((state) => state.activeSessionId);
 const canvasObjects = useSessionStore(
@@ -73,11 +69,10 @@ const clearFocus = useSessionStore((state) => state.clearFocus);
 const pins = useSessionStore((state) =>
   state.activeSessionId ? state.pins[state.activeSessionId] ?? [] : []
 );
+const requestFocus = useSessionStore((state) => state.requestFocus);
 const addPin = useSessionStore((state) => state.addPin);
 const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
-const savedCanvasView = useSessionStore((state) =>
-  state.activeSessionId ? state.canvasViews[state.activeSessionId] : null
-);
+const stageSize = useSessionStore((state) => state.canvasView.stageSize);
 
   const canvasModeRef = useRef(canvasMode);
   useEffect(() => {
@@ -88,7 +83,6 @@ const savedCanvasView = useSessionStore((state) =>
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
     initialPinCenteredRef.current = null;
-    setIsInitialized(false); // Reset initialization when session changes
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -117,20 +111,15 @@ const initialPinCenteredRef = useRef<string | null>(null);
   useEffect(() => {
     if (pinDraft && pinInputRef.current) {
       pinInputRef.current.focus();
-      // Don't select text - just place cursor at end
-      const length = pinInputRef.current.value.length;
-      pinInputRef.current.setSelectionRange(length, length);
+      pinInputRef.current.select();
     }
   }, [pinDraft]);
 
   const applyTransform = useCallback(
-    (nextState: TransformState, sessionId?: string) => {
+    (nextState: TransformState) => {
       transformRef.current = nextState;
       setTransform(nextState);
-      const targetSessionId = sessionId || activeSessionIdRef.current;
-      if (targetSessionId) {
-        setCanvasView(targetSessionId, { transform: nextState, stageSize: stageSizeRef.current });
-      }
+      setCanvasView({ transform: nextState, stageSize: stageSizeRef.current });
     },
     [setCanvasView]
   );
@@ -204,7 +193,18 @@ const initialPinCenteredRef = useRef<string | null>(null);
     zoomBehaviorRef.current = zoomBehavior;
     selection.call(zoomBehavior);
 
+    const resetTransform = () => {
+      applyTransform(IDENTITY);
+      selection
+        .transition()
+        .duration(220)
+        .call(zoomBehavior.transform, asZoomTransform(IDENTITY));
+    };
+
+    element.addEventListener("dblclick", resetTransform);
+
     return () => {
+      element.removeEventListener("dblclick", resetTransform);
       selection.on(".zoom", null);
     };
   }, [applyTransform]);
@@ -239,94 +239,18 @@ const initialPinCenteredRef = useRef<string | null>(null);
     }
     const updateSize = () => {
       const rect = element.getBoundingClientRect();
-      const size = { width: rect.width, height: rect.height };
-      stageSizeRef.current = size;
-      setStageSize(size);
-      // Don't save to store here - let the initialization effect handle it
+      stageSizeRef.current = { width: rect.width, height: rect.height };
+      setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
     };
     updateSize();
     const observer = new ResizeObserver(updateSize);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [activeSessionId]);
+  }, [setCanvasView, activeSessionId]);
 
-  const lastLoadedSessionRef = useRef<string | null>(null);
-
-  // Restore or initialize canvas view when switching sessions
   useEffect(() => {
-    if (!activeSessionId) {
-      console.log('❌ No activeSessionId');
-      return;
-    }
-
-    // Only restore/center when switching to a different session (and already initialized)
-    if (lastLoadedSessionRef.current === activeSessionId && isInitialized) {
-      console.log('✅ Already initialized for this session');
-      return;
-    }
-
-    const stage = stageSizeRef.current;
-    console.log('📐 Stage size:', stage);
-    if (!stage || stage.width === 0 || stage.height === 0) {
-      console.log('❌ Stage not ready');
-      return;
-    }
-
-    // Read the current saved view from the store
-    const currentSavedView = useSessionStore.getState().canvasViews[activeSessionId];
-    console.log('💾 Saved view:', currentSavedView);
-
-    // Check if this session has a saved canvas view
-    if (currentSavedView && currentSavedView.transform) {
-      // Restore saved transform
-      const savedTransform = currentSavedView.transform;
-      console.log('🔄 Restoring saved transform:', savedTransform);
-      transformRef.current = savedTransform;
-      setTransform(savedTransform);
-      // Update d3 zoom without triggering events
-      const selection = selectionRef.current;
-      const zoomBehavior = zoomBehaviorRef.current;
-      if (selection && zoomBehavior) {
-        // Temporarily disable the zoom handler to prevent saving
-        zoomBehavior.on('zoom', null);
-        selection.call(zoomBehavior.transform, asZoomTransform(savedTransform));
-        // Re-enable zoom handler
-        zoomBehavior.on('zoom', zoomHandlerRef.current);
-      }
-    } else {
-      // First time viewing this session - center it
-      // Account for floating UI: header at top (~80px), prompt at bottom (~80px)
-      // Visual center is between these elements
-      const headerHeight = 80; // Approximate height of floating header + margin
-      const promptHeight = 80; // Approximate height of prompt bubble + margin
-      const visualHeight = stage.height - headerHeight - promptHeight;
-
-      const centerTransform: TransformState = {
-        x: stage.width / 2,
-        y: headerHeight + (visualHeight / 2),
-        k: 1
-      };
-      console.log('🎯 Centering new session with transform:', centerTransform);
-      transformRef.current = centerTransform;
-      setTransform(centerTransform);
-      // Update d3 zoom without triggering events
-      const selection = selectionRef.current;
-      const zoomBehavior = zoomBehaviorRef.current;
-      if (selection && zoomBehavior) {
-        // Temporarily disable the zoom handler to prevent double-save
-        zoomBehavior.on('zoom', null);
-        selection.call(zoomBehavior.transform, asZoomTransform(centerTransform));
-        // Re-enable zoom handler
-        zoomBehavior.on('zoom', zoomHandlerRef.current);
-      }
-      // Save the initial centered position
-      setCanvasView(activeSessionId, { transform: centerTransform, stageSize: stage });
-    }
-
-    lastLoadedSessionRef.current = activeSessionId;
-    setIsInitialized(true); // Mark as initialized after transform is set
-    console.log('✅ Initialization complete, isInitialized =', true);
-  }, [activeSessionId, stageSize, setCanvasView]);
+    setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
+  }, [transform, setCanvasView]);
 
   useEffect(() => {
     if (!focusTarget) {
@@ -352,37 +276,36 @@ const initialPinCenteredRef = useRef<string | null>(null);
     clearFocus();
   }, [focusTarget, applyTransform, clearFocus]);
 
-  // Disabled: Don't auto-center on first pin
-  // useEffect(() => {
-  //   if (!activeSessionId || !stageSize) {
-  //     return;
-  //   }
-  //   if (initialPinCenteredRef.current === activeSessionId) {
-  //     return;
-  //   }
-  //   const sessionPins = pins;
-  //   if (!sessionPins || sessionPins.length === 0) {
-  //     return;
-  //   }
-  //   const stage = stageSizeRef.current ?? stageSize;
-  //   if (!stage) {
-  //     return;
-  //   }
-  //   const pin = sessionPins[0];
-  //   const scale = transformRef.current.k;
-  //   const nextTransform: TransformState = {
-  //     k: scale,
-  //     x: stage.width / 2 - pin.x * scale,
-  //     y: stage.height / 2 - pin.y * scale
-  //   };
-  //   applyTransform(nextTransform);
-  //   const selection = selectionRef.current;
-  //   const zoomBehavior = zoomBehaviorRef.current;
-  //   if (selection && zoomBehavior) {
-  //     selection.call(zoomBehavior.transform, asZoomTransform(nextTransform));
-  //   }
-  //   initialPinCenteredRef.current = activeSessionId;
-  // }, [activeSessionId, stageSize, pins, applyTransform]);
+  useEffect(() => {
+    if (!activeSessionId || !stageSize) {
+      return;
+    }
+    if (initialPinCenteredRef.current === activeSessionId) {
+      return;
+    }
+    const sessionPins = pins;
+    if (!sessionPins || sessionPins.length === 0) {
+      return;
+    }
+    const stage = stageSizeRef.current ?? stageSize;
+    if (!stage) {
+      return;
+    }
+    const pin = sessionPins[0];
+    const scale = transformRef.current.k;
+    const nextTransform: TransformState = {
+      k: scale,
+      x: stage.width / 2 - pin.x * scale,
+      y: stage.height / 2 - pin.y * scale
+    };
+    applyTransform(nextTransform);
+    const selection = selectionRef.current;
+    const zoomBehavior = zoomBehaviorRef.current;
+    if (selection && zoomBehavior) {
+      selection.call(zoomBehavior.transform, asZoomTransform(nextTransform));
+    }
+    initialPinCenteredRef.current = activeSessionId;
+  }, [activeSessionId, stageSize, pins, applyTransform]);
 
   useEffect(() => {
     return () => {
@@ -415,9 +338,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   const handlePinFocus = useCallback(
     (pin: Pin) => {
-      // Don't auto-focus on pin click - keep canvas where it is
+      requestFocus({ id: pin.id, x: pin.x, y: pin.y });
     },
-    []
+    [requestFocus]
   );
 
   const getScreenPoint = useCallback(
@@ -524,15 +447,17 @@ const initialPinCenteredRef = useRef<string | null>(null);
       setCanvasMode("pan");
       return;
     }
-    addPin(activeSessionId, {
+    const newPin = addPin(activeSessionId, {
       x: pinDraft.world.x,
       y: pinDraft.world.y,
       label: pinDraft.label.trim() || undefined
     });
-    // Don't requestFocus - keep canvas where it is
+    if (newPin) {
+      requestFocus({ id: newPin.id, x: newPin.x, y: newPin.y });
+    }
     setPinDraft(null);
     setCanvasMode("pan");
-  }, [pinDraft, activeSessionId, addPin, setCanvasMode]);
+  }, [pinDraft, activeSessionId, addPin, requestFocus, setCanvasMode]);
 
   const cancelPinDraft = useCallback(() => {
     setPinDraft(null);
@@ -619,7 +544,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
   const canvasCursor = canvasMode === "pan" ? "grab" : "crosshair";
 
   return (
-    <div className="absolute inset-0 overflow-hidden bg-slate-950">
+    <div className="relative h-full w-full overflow-hidden bg-slate-950">
       <div
         className="absolute inset-0"
         ref={containerRef}
@@ -628,26 +553,21 @@ const initialPinCenteredRef = useRef<string | null>(null);
         style={{ cursor: canvasCursor }}
       >
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
-        {isInitialized && (
-          <>
-            <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
-            <PinLayer
-              pins={pins}
-              transform={transform}
-              interactive={canvasMode !== "pin"}
-              onFocus={handlePinFocus}
-            />
-          </>
-        )}
+        <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
+        <PinLayer
+          pins={pins}
+          transform={transform}
+          interactive={canvasMode !== "pin"}
+          onFocus={handlePinFocus}
+        />
         {pinDraft ? (
           <div className="pointer-events-none absolute inset-0 z-30">
             <div
-              className="pointer-events-auto absolute w-56 -translate-x-1/2"
-              style={{ left: pinDraft.screen.x, top: pinDraft.screen.y - 40, transform: 'translate(-50%, -100%)' }}
+              className="pointer-events-auto absolute w-56 -translate-x-1/2 -translate-y-full rounded-lg border border-border bg-slate-950/95 p-3 shadow-xl"
+              style={{ left: pinDraft.screen.x, top: pinDraft.screen.y }}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="rounded-lg border border-border bg-slate-950/95 p-3 shadow-xl">
               <form
                 className="flex flex-col gap-3"
                 onSubmit={(event) => {
@@ -680,18 +600,10 @@ const initialPinCenteredRef = useRef<string | null>(null);
                   </Button>
                 </div>
               </form>
-              </div>
-            </div>
-            {/* Pin preview icon */}
-            <div
-              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
-              style={{ left: pinDraft.screen.x, top: pinDraft.screen.y }}
-            >
-              <MapPin className="h-6 w-6 text-sky-400 drop-shadow-lg" fill="currentColor" />
             </div>
           </div>
         ) : null}
-        {isInitialized && <SelectionLayer objects={canvasObjects} transform={transform} />}
+        <SelectionLayer objects={canvasObjects} transform={transform} />
         {canvasMode === "lasso" ? (
           <div
             className="absolute inset-0 z-20 select-none"

@@ -2,15 +2,6 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { nanoid } from "@/lib/utils";
 import {
-  mockCanvasObjects,
-  mockMessages,
-  mockPins,
-  mockSessions,
-  mockSources,
-  mockTimeline,
-  mockTranscripts
-} from "@/lib/mock-data";
-import {
   CanvasObject,
   Message,
   Pin,
@@ -45,14 +36,14 @@ type SessionState = {
   timeline: Record<string, TimelineEvent[]>;
   transcripts: Record<string, string>;
   pins: Record<string, Pin[]>;
-  canvasViews: Record<string, CanvasView>;
   voiceActive: boolean;
   sourcesDrawerOpen: boolean;
   captionsEnabled: boolean;
   canvasMode: "pan" | "lasso" | "pin";
+  canvasView: CanvasView;
   focusTarget: FocusTarget;
   setActiveSession: (sessionId: string) => void;
-  createSession: (payload: { title: string }) => string;
+  createSession: (payload: { title: string }) => Promise<string>;
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   toggleObjectSelection: (sessionId: string, objectId: string) => void;
@@ -66,7 +57,7 @@ type SessionState = {
   setCanvasMode: (mode: "pan" | "lasso" | "pin") => void;
   addPin: (sessionId: string, payload: { x: number; y: number; label?: string }) => Pin | null;
   removePin: (sessionId: string, pinId: string) => void;
-  setCanvasView: (sessionId: string, view: CanvasView) => void;
+  setCanvasView: (view: CanvasView) => void;
   requestFocus: (target: { x: number; y: number; id?: string }) => void;
   clearFocus: () => void;
 };
@@ -74,31 +65,21 @@ type SessionState = {
 const withImmer = immer<SessionState>;
 
 export const useSessionStore = create<SessionState>()(
-  withImmer((set, get) => {
-    // Force clear any cached canvas views on initialization
-    if (typeof window !== 'undefined') {
-      console.log('🔄 Clearing cached canvas views');
-    }
-
-    return {
-      sessions: mockSessions,
-      activeSessionId: mockSessions[0]?.id ?? null,
-      messages: mockMessages,
-      canvasObjects: mockCanvasObjects,
-      sources: mockSources,
-      timeline: mockTimeline,
-      transcripts: mockTranscripts,
-      pins: mockSessions.reduce<Record<string, Pin[]>>((acc, session) => {
-        const source = mockPins[session.id] ?? [];
-        acc[session.id] = source.map((pin) => ({ ...pin }));
-        return acc;
-      }, {}),
-      canvasViews: {}, // No saved views - let canvas center on first load
-      voiceActive: false,
-      sourcesDrawerOpen: false,
-      captionsEnabled: true,
-      canvasMode: "pan",
-      focusTarget: null,
+  withImmer((set, get) => ({
+    sessions: [],
+    activeSessionId: null,
+    messages: {},
+    canvasObjects: {},
+    sources: {},
+    timeline: {},
+    transcripts: {},
+    pins: {},
+    voiceActive: false,
+    sourcesDrawerOpen: false,
+    captionsEnabled: true,
+    canvasMode: "pan",
+    canvasView: { transform: { x: 0, y: 0, k: 1 }, stageSize: null },
+    focusTarget: null,
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -107,26 +88,60 @@ export const useSessionStore = create<SessionState>()(
         state.activeSessionId = sessionId;
       });
     },
-    createSession: ({ title }) => {
-      const id = `session-${nanoid(6)}`;
-      const now = new Date().toISOString();
-      const newSession: Session = {
-        id,
-        title,
-        createdAt: now
-      };
-      set((state) => {
-        state.sessions.unshift(newSession);
-        state.activeSessionId = id;
-        state.messages[id] = [];
-        state.canvasObjects[id] = [];
-        state.sources[id] = [];
-        state.timeline[id] = [];
-        state.transcripts[id] = "";
-        state.pins[id] = [];
-        // Don't initialize canvasViews - let canvas-stage center it on first load
-      });
-      return id;
+    createSession: async ({ title }) => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        const response = await fetch(`${apiUrl}/api/sessions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            title,
+            subject: "general"
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error("Failed to create session");
+        }
+        
+        const data = await response.json();
+        const newSession = data.session;
+        
+        set((state) => {
+          state.sessions.unshift(newSession);
+          state.activeSessionId = newSession.id;
+          state.messages[newSession.id] = [];
+          state.canvasObjects[newSession.id] = [];
+          state.sources[newSession.id] = [];
+          state.timeline[newSession.id] = [];
+          state.transcripts[newSession.id] = "";
+          state.pins[newSession.id] = [];
+        });
+        
+        return newSession.id;
+      } catch (error) {
+        // Fallback to local session creation if backend fails
+        const id = `session-${nanoid(6)}`;
+        const now = new Date().toISOString();
+        const newSession: Session = {
+          id,
+          title,
+          createdAt: now
+        };
+        set((state) => {
+          state.sessions.unshift(newSession);
+          state.activeSessionId = id;
+          state.messages[id] = [];
+          state.canvasObjects[id] = [];
+          state.sources[id] = [];
+          state.timeline[id] = [];
+          state.transcripts[id] = "";
+          state.pins[id] = [];
+        });
+        return id;
+      }
     },
     addMessage: (sessionId, message) => {
       set((state) => {
@@ -255,9 +270,9 @@ export const useSessionStore = create<SessionState>()(
         state.pins[sessionId] = list.filter((pin) => pin.id !== pinId);
       });
     },
-    setCanvasView: (sessionId, view) => {
+    setCanvasView: (view) => {
       set((state) => {
-        state.canvasViews[sessionId] = {
+        state.canvasView = {
           transform: { ...view.transform },
           stageSize: view.stageSize ? { ...view.stageSize } : null
         };
@@ -273,6 +288,5 @@ export const useSessionStore = create<SessionState>()(
         state.focusTarget = null;
       });
     }
-    };
-  })
+  }))
 );

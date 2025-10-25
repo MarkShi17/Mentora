@@ -3,6 +3,7 @@
 import { Fragment, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { VoiceControls } from "@/components/voice-controls";
 import { formatTime } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
@@ -15,7 +16,7 @@ export function SidebarHistory() {
   const createSession = useSessionStore((state) => state.createSession);
   const messages = useSessionStore((state) => state.messages);
 
-  const handleCreateSession = () => {
+  const handleCreateSession = async () => {
     const now = new Date();
     const hours = now.getHours();
     const minutes = now.getMinutes();
@@ -24,7 +25,7 @@ export function SidebarHistory() {
     const displayMinutes = minutes.toString().padStart(2, '0');
     const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
     const title = `New Lesson ${timeString}`;
-    createSession({ title });
+    await createSession({ title });
   };
 
   return (
@@ -116,6 +117,12 @@ export function SidebarHistory() {
                     </span>
                   </p>
                   <p className="mt-1 text-sm text-slate-300">{message.content}</p>
+                  {message.role === "assistant" && (
+                    <VoiceControls 
+                      text={message.content} 
+                      className="mt-2" 
+                    />
+                  )}
                 </div>
               </Fragment>
             ))}

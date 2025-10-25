@@ -80,7 +80,8 @@ export class MentorAgent {
       const canvasObjects = this.generateCanvasObjects(
         agentResponse.objects,
         session.canvasObjects,
-        turnId
+        turnId,
+        question
       );
 
       // Generate object placements
@@ -142,6 +143,16 @@ VISUAL CREATION:
 - Reference existing canvas objects naturally in your explanation
 - Position new objects spatially relative to existing ones
 - Use directional language: "as shown in the equation above", "let's place this below"
+- Make text objects detailed and well-formatted with bullet points and clear structure
+- Ensure content is comprehensive but concise - avoid overly short explanations
+- Use proper line breaks and formatting in text content
+- For diagrams: Create meaningful visualizations that demonstrate the concept being discussed
+- Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms
+- Make diagrams contextually relevant to the specific question or concept being explained
+- When creating diagrams, provide specific descriptions that relate to the user's question
+- For tree recursion: describe the actual tree structure being discussed
+- For algorithms: describe the specific steps or data flow
+- For processes: describe the actual workflow or decision points
 
 RESPONSE FORMAT:
 You must respond with a JSON object in the following format:
@@ -156,7 +167,8 @@ You must respond with a JSON object in the following format:
       "metadata": {
         "language": "python" (for code),
         "equation": "y = x^2" (for graphs),
-        "fontSize": 16 (for text)
+        "fontSize": 16 (for text),
+        "description": "Detailed description of what the diagram shows" (for diagrams)
       }
     }
   ],
@@ -220,7 +232,8 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
   private generateCanvasObjects(
     objectRequests: AgentResponse['objects'],
     existingObjects: CanvasObject[],
-    turnId: string
+    turnId: string,
+    userQuestion: string
   ): CanvasObject[] {
     const objects: CanvasObject[] = [];
 
@@ -239,11 +252,17 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         { width: 400, height: 200 }
       );
 
-      // Generate object
+      // Generate object with enhanced content for diagrams
+      let enhancedContent = request.content;
+      if (request.type === 'diagram') {
+        // For diagrams, combine the AI's description with the user's question context
+        enhancedContent = `${request.content} - Context: ${userQuestion}`;
+      }
+      
       const obj = objectGenerator.generateObject(
         {
           type: request.type,
-          content: request.content,
+          content: enhancedContent,
           referenceName: request.referenceName,
           metadata: request.metadata,
         },

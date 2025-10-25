@@ -48,7 +48,7 @@ export function VoiceToggle({ onTranscript }: VoiceToggleProps) {
       </Button>
       <div className="min-w-[120px] text-right">
         <p className="text-xs font-medium text-slate-400">
-          {supported ? (voiceActive ? "Listening..." : "Voice idle") : "Voice unavailable"}
+          {supported ? (listening ? "Listening continuously..." : "Voice idle") : "Voice unavailable"}
         </p>
         {error ? <p className="text-[10px] text-red-400">{error}</p> : null}
       </div>
