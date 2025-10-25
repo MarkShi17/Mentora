@@ -877,12 +877,10 @@ const initialPinCenteredRef = useRef<string | null>(null);
     const scaledGrid = Math.max(GRID_SIZE * transform.k, 6);
     const offsetX = ((transform.x % scaledGrid) + scaledGrid) % scaledGrid;
     const offsetY = ((transform.y % scaledGrid) + scaledGrid) % scaledGrid;
+    const dotSize = Math.max(1, Math.min(2, transform.k * 1.5));
 
     return {
-      backgroundImage: `
-        linear-gradient(90deg, rgba(56, 68, 90, 0.2) 1px, transparent 1px),
-        linear-gradient(rgba(56, 68, 90, 0.2) 1px, transparent 1px)
-      `,
+      backgroundImage: `radial-gradient(circle, rgba(203, 213, 225, 0.7) ${dotSize}px, transparent ${dotSize}px)`,
       backgroundSize: `${scaledGrid}px ${scaledGrid}px`,
       backgroundPosition: `${offsetX}px ${offsetY}px`
     };
@@ -891,7 +889,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
   const canvasCursor = canvasMode === "pan" ? "grab" : "crosshair";
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-slate-950">
+    <div className="relative h-full w-full overflow-hidden bg-white">
       <div
         className="absolute inset-0"
         ref={containerRef}

@@ -150,7 +150,7 @@ export function ContinuousAI() {
     setQuestionCallback(handleQuestionDetected);
   }, [setQuestionCallback, activeSessionId, createSession, addMessage, appendTimelineEvent, updateCanvasObject, conversationContext]);
 
-  const toggleAI = () => {
+  const toggleAI = useCallback(() => {
     if (isActive) {
       stopListening();
       setIsActive(false);
@@ -158,7 +158,30 @@ export function ContinuousAI() {
       startListening();
       setIsActive(true);
     }
-  };
+  }, [isActive, stopListening, startListening]);
+
+  // Add spacebar keyboard shortcut for toggling Live Tutor
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only trigger if spacebar is pressed and not in an input/textarea/contenteditable
+      if (event.code === 'Space' && event.target instanceof HTMLElement) {
+        const isInInputField =
+          event.target.tagName === 'INPUT' ||
+          event.target.tagName === 'TEXTAREA' ||
+          event.target.isContentEditable;
+
+        if (!isInInputField) {
+          event.preventDefault(); // Prevent page scroll
+          toggleAI();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [toggleAI]);
 
   const isQuestionDetected = currentTranscript &&
     currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor)/);
@@ -173,11 +196,11 @@ export function ContinuousAI() {
       {/* Live Transcript Panel */}
       {isActive && (
         <div className="pointer-events-auto animate-in slide-in-from-right-5 fade-in duration-300 mb-2">
-          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/30 bg-slate-900/95 backdrop-blur-xl shadow-2xl max-w-md">
+          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/30 bg-white/95 backdrop-blur-xl shadow-2xl max-w-md">
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400/5 to-transparent animate-shimmer" />
 
             <div className="relative p-4 space-y-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-700/50">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
                 <div className={cn(
                   "h-2 w-2 rounded-full",
                   isListening ? "bg-cyan-400 animate-pulse" : "bg-slate-600"
@@ -193,9 +216,9 @@ export function ContinuousAI() {
                     "rounded-xl p-3 transition-all duration-300",
                     isQuestionDetected
                       ? "bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30"
-                      : "bg-slate-800/50 border border-slate-700/30"
+                      : "bg-slate-50 border border-slate-200"
                   )}>
-                    <p className="text-sm text-slate-100 leading-relaxed">
+                    <p className="text-sm text-slate-900 leading-relaxed">
                       {currentTranscript}
                     </p>
                   </div>
@@ -244,16 +267,16 @@ export function ContinuousAI() {
               )}
 
               {conversationContext.topics.length > 0 && (
-                <div className="pt-2 border-t border-slate-700/50">
+                <div className="pt-2 border-t border-slate-200">
                   <div className="flex items-center gap-1.5 mb-2">
-                    <Brain className="h-3 w-3 text-purple-400" />
-                    <span className="text-xs font-semibold text-slate-400">Active Topics</span>
+                    <Brain className="h-3 w-3 text-purple-600" />
+                    <span className="text-xs font-semibold text-slate-600">Active Topics</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {conversationContext.topics.slice(-3).map((topic, index) => (
                       <span
                         key={index}
-                        className="text-xs px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20"
+                        className="text-xs px-2 py-1 rounded-full bg-purple-500/10 text-purple-700 border border-purple-500/20"
                       >
                         {topic}
                       </span>
@@ -269,11 +292,11 @@ export function ContinuousAI() {
       {/* AI Response Display (Streaming) */}
       {(streamingQA.isStreaming || streamingQA.currentText) && (
         <div className="pointer-events-auto animate-in slide-in-from-left-5 fade-in duration-300 mb-2">
-          <div className="relative overflow-hidden rounded-2xl border border-blue-400/30 bg-slate-900/95 backdrop-blur-xl shadow-2xl max-w-md">
+          <div className="relative overflow-hidden rounded-2xl border border-blue-400/30 bg-white/95 backdrop-blur-xl shadow-2xl max-w-md">
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/5 to-transparent animate-shimmer" />
 
             <div className="relative p-4 space-y-3">
-              <div className="flex items-center gap-2 pb-2 border-b border-slate-700/50">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
                 <div className={cn(
                   "h-2 w-2 rounded-full",
                   speaking ? "bg-green-400 animate-pulse" : isGenerating ? "bg-blue-400 animate-pulse" : "bg-slate-600"
@@ -285,8 +308,8 @@ export function ContinuousAI() {
 
               {/* Live Transcript */}
               {streamingQA.currentText && (
-                <div className="rounded-xl p-3 bg-slate-800/50 border border-slate-700/30 max-h-48 overflow-y-auto">
-                  <p className="text-sm text-slate-100 leading-relaxed">
+                <div className="rounded-xl p-3 bg-slate-50 border border-slate-200 max-h-48 overflow-y-auto">
+                  <p className="text-sm text-slate-900 leading-relaxed">
                     {streamingQA.currentText}
                   </p>
                 </div>
@@ -294,7 +317,7 @@ export function ContinuousAI() {
 
               {/* Current Speaking Text */}
               {speaking && currentSpeechText && (
-                <div className="flex items-start gap-2 pt-2 border-t border-slate-700/50">
+                <div className="flex items-start gap-2 pt-2 border-t border-slate-200">
                   <div className="flex gap-1 mt-1">
                     {[0, 1, 2].map((i) => (
                       <div
@@ -315,9 +338,9 @@ export function ContinuousAI() {
 
               {/* Audio Queue Progress */}
               {streamingQA.audioState.queueLength > 0 && (
-                <div className="pt-2 border-t border-slate-700/50">
+                <div className="pt-2 border-t border-slate-200">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+                    <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-blue-400 to-green-400 rounded-full transition-all duration-300"
                         style={{
@@ -361,14 +384,14 @@ export function ContinuousAI() {
             "hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg",
             isActive
               ? "bg-gradient-to-br from-cyan-400 to-blue-500"
-              : "bg-slate-800 hover:bg-slate-700"
+              : "bg-white hover:bg-slate-50 border border-slate-200"
           )}
         >
           <svg
             viewBox="0 0 24 24"
             className={cn(
               "h-7 w-7 transition-all duration-300",
-              isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300"
+              isActive ? "text-white" : "text-slate-600 group-hover:text-slate-900"
             )}
             fill="none"
             stroke="currentColor"

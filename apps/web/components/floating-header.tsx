@@ -44,14 +44,14 @@ export function FloatingHeader() {
   return (
     <div className="pointer-events-none absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-3">
       {/* Sources Button */}
-      <div className="pointer-events-auto rounded-full border border-sky-500/30 bg-slate-900/60 px-4 py-2 shadow-lg backdrop-blur-md hover:border-sky-400/50 hover:bg-slate-900/80 transition-all">
+      <div className="pointer-events-auto rounded-full border border-sky-500/30 bg-white/95 px-4 py-2 shadow-lg backdrop-blur-md hover:border-sky-500/50 hover:bg-slate-50 transition-all">
         <button
           type="button"
           disabled={!activeSessionId}
           onClick={() => useSessionStore.getState().setSourcesDrawerOpen(true)}
           className={cn(
             "flex items-center gap-2 text-sm font-medium transition-colors",
-            activeSessionId ? "text-sky-300 hover:text-sky-200" : "text-slate-500 cursor-not-allowed"
+            activeSessionId ? "text-sky-600 hover:text-sky-700" : "text-slate-400 cursor-not-allowed"
           )}
         >
           <ExternalLink className="h-3.5 w-3.5" />
@@ -60,14 +60,14 @@ export function FloatingHeader() {
       </div>
 
       {/* Session Title */}
-      <div className="pointer-events-auto rounded-2xl border border-slate-700/50 bg-slate-950/80 px-5 py-2.5 shadow-lg backdrop-blur-md">
-        <h1 className="text-base font-bold text-slate-100 tracking-tight">
+      <div className="pointer-events-auto rounded-2xl border border-slate-200 bg-white/95 px-5 py-2.5 shadow-lg backdrop-blur-md">
+        <h1 className="text-base font-bold text-slate-900 tracking-tight">
           {activeSession?.title ?? "Create a new lesson"}
         </h1>
       </div>
 
       {/* Tool Buttons */}
-      <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-700/50 bg-slate-950/80 px-2 py-2 shadow-lg backdrop-blur-md">
+      <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-2 py-2 shadow-lg backdrop-blur-md">
         <IconButton
           icon={MousePointer2}
           active={canvasMode === "pan"}
@@ -92,16 +92,16 @@ export function FloatingHeader() {
 
       {/* Pin Tray */}
       {pins.length > 0 && (
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-700/50 bg-slate-950/80 px-3 py-2 shadow-lg backdrop-blur-md">
-          <MapPin className="h-4 w-4 text-slate-400" />
+        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur-md">
+          <MapPin className="h-4 w-4 text-slate-600" />
           {pins.map((pin) => (
             <div
               key={pin.id}
-              className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-2 py-1"
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1"
             >
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs text-slate-200 transition-colors hover:text-sky-300"
+                className="flex items-center gap-1 text-xs text-slate-700 transition-colors hover:text-sky-600"
                 onClick={() => requestFocus({ id: pin.id, x: pin.x, y: pin.y })}
               >
                 <LocateFixed className="h-3 w-3" />
@@ -111,7 +111,7 @@ export function FloatingHeader() {
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="h-4 w-4 text-slate-500 hover:text-red-400"
+                className="h-4 w-4 text-slate-500 hover:text-red-500"
                 onClick={() => activeSessionId && removePin(activeSessionId, pin.id)}
               >
                 <Trash2 className="h-3 w-3" />
@@ -142,18 +142,18 @@ function IconButton({ icon: Icon, active, onClick, disabled, tooltip }: IconButt
         className={cn(
           "rounded-full p-2 transition-all",
           active
-            ? "bg-slate-700/80 text-sky-300 shadow-inner"
-            : "text-slate-300 hover:bg-slate-800/60 hover:text-slate-100",
+            ? "bg-slate-200 text-sky-600 shadow-inner"
+            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
           disabled && "cursor-not-allowed opacity-40"
         )}
       >
-        <Icon className="h-4 w-4" />
+        <Icon className="h-[18px] w-[18px]" />
       </button>
       {tooltip && !disabled && (
         <div className="pointer-events-none absolute left-1/2 top-full mt-2 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100">
-          <div className="whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs text-slate-200 shadow-lg ring-1 ring-slate-700">
+          <div className="whitespace-nowrap rounded-md bg-white px-2 py-1 text-xs text-slate-700 shadow-lg ring-1 ring-slate-200">
             {tooltip}
-            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rotate-45 h-2 w-2 bg-slate-900 ring-1 ring-slate-700"></div>
+            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rotate-45 h-2 w-2 bg-white ring-1 ring-slate-200"></div>
           </div>
         </div>
       )}
