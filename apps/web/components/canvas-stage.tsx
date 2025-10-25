@@ -35,10 +35,11 @@ type PinDraft = {
 };
 
 type DragState = {
-  objectId: string;
+  objectId: string; // Primary object being dragged (for pointer events)
+  selectedObjectIds: string[]; // ALL objects being moved as a group
   startWorld: { x: number; y: number };
   startScreen: { x: number; y: number };
-  startObject: { x: number; y: number };
+  startPositions: Record<string, { x: number; y: number }>; // Initial positions of ALL objects
   currentDelta: { x: number; y: number };
   wasSelectedAtStart: boolean;
 };
@@ -479,9 +480,9 @@ const initialPinCenteredRef = useRef<string | null>(null);
       // Get max zIndex once
       const maxZIndex = Math.max(...objects.map(obj => obj.zIndex || 0), 0);
 
-      // ALWAYS handle selection properly based on single vs multi-select mode
+      // Handle selection based on mode and current state
       if (isMultiSelect) {
-        // Multi-select mode: just ensure this object is selected, keep others as-is
+        // Multi-select mode (Cmd/Ctrl held): just ensure this object is selected, keep others as-is
         const freshState = useSessionStore.getState();
         const freshObject = freshState.canvasObjects[activeSessionId]?.find(obj => obj.id === objectId);
 
@@ -492,8 +493,21 @@ const initialPinCenteredRef = useRef<string | null>(null);
             zIndex: maxZIndex + 1
           });
         }
+      } else if (object.selected) {
+        // Object is already selected - keep all selections (group drag)
+        // Just bring this object to front
+        const freshState = useSessionStore.getState();
+        const freshObject = freshState.canvasObjects[activeSessionId]?.find(obj => obj.id === objectId);
+
+        if (freshObject) {
+          updateCanvasObject(activeSessionId, {
+            ...freshObject,
+            zIndex: maxZIndex + 1,
+            selected: true
+          });
+        }
       } else {
-        // Single-select mode: clear ALL other selections, select only this one
+        // Object not selected - single-select mode: clear ALL other selections, select only this one
         const freshState = useSessionStore.getState();
         const freshObjects = freshState.canvasObjects[activeSessionId] || [];
 
@@ -509,12 +523,25 @@ const initialPinCenteredRef = useRef<string | null>(null);
       const screenPoint = getScreenPoint(event);
       const worldPoint = screenToWorld(screenPoint);
 
-      // Set drag state - track that object is now selected
+      // Get ALL currently selected objects after selection updates
+      const freshState = useSessionStore.getState();
+      const freshObjects = freshState.canvasObjects[activeSessionId] || [];
+      const selectedObjects = freshObjects.filter(obj => obj.selected);
+      const selectedObjectIds = selectedObjects.map(obj => obj.id);
+
+      // Store initial positions for ALL selected objects
+      const startPositions: Record<string, { x: number; y: number }> = {};
+      selectedObjects.forEach(obj => {
+        startPositions[obj.id] = { x: obj.x, y: obj.y };
+      });
+
+      // Set drag state - track all selected objects for group dragging
       const nextDragState: DragState = {
         objectId,
+        selectedObjectIds,
         startWorld: worldPoint,
         startScreen: screenPoint,
-        startObject: { x: object.x, y: object.y },
+        startPositions,
         currentDelta: { x: 0, y: 0 },
         wasSelectedAtStart: true // Always true now since we just selected it
       };
@@ -626,31 +653,34 @@ const initialPinCenteredRef = useRef<string | null>(null);
         setSelectionMethod(activeSessionId, "click");
         setLastSelectedObject(activeSessionId, objectId);
       } else {
-        // It was a drag - update position and preserve selection
-        if (isMultiSelectEnd) {
-          // Multi-select: just update this object with new position
-          updateCanvasObject(activeSessionId, {
-            ...finalObject,
-            x: drag.startObject.x + worldDeltaX,
-            y: drag.startObject.y + worldDeltaY,
-            zIndex: maxZIndex + 1,
-            selected: true
-          });
-        } else {
-          // Single-select: update position and ensure ONLY this object is selected
-          const updatedObjects = finalObjects.map(obj =>
-            obj.id === objectId
-              ? {
-                  ...obj,
-                  x: drag.startObject.x + worldDeltaX,
-                  y: drag.startObject.y + worldDeltaY,
-                  zIndex: maxZIndex + 1,
-                  selected: true
-                }
-              : { ...obj, selected: false }
-          );
-          updateCanvasObjects(activeSessionId, updatedObjects);
-        }
+        // It was a drag - update positions for ALL objects in the drag group
+        const draggedObjectIds = drag.selectedObjectIds || [objectId];
+
+        // Calculate base zIndex for the group
+        let nextZIndex = maxZIndex + 1;
+
+        // Update all objects: move dragged group, handle selection
+        const updatedObjects = finalObjects.map(obj => {
+          if (draggedObjectIds.includes(obj.id)) {
+            // This object is part of the drag group - move it
+            const startPos = drag.startPositions[obj.id] || { x: obj.x, y: obj.y };
+            return {
+              ...obj,
+              x: startPos.x + worldDeltaX,
+              y: startPos.y + worldDeltaY,
+              zIndex: nextZIndex++, // Increment for each dragged object
+              selected: true
+            };
+          } else if (isMultiSelectEnd) {
+            // Multi-select mode: preserve other objects' selection state
+            return obj;
+          } else {
+            // Single-select mode: clear selection on other objects
+            return { ...obj, selected: false };
+          }
+        });
+
+        updateCanvasObjects(activeSessionId, updatedObjects);
 
         setSelectionMethod(activeSessionId, "click");
         setLastSelectedObject(activeSessionId, objectId);

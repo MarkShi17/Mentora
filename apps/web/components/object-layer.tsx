@@ -89,9 +89,10 @@ type ObjectLayerProps = {
   isDragging?: boolean;
   dragState?: {
     objectId: string;
+    selectedObjectIds: string[];
     startWorld: { x: number; y: number };
     startScreen: { x: number; y: number };
-    startObject: { x: number; y: number };
+    startPositions: Record<string, { x: number; y: number }>;
     currentDelta: { x: number; y: number };
     wasSelectedAtStart: boolean;
   } | null;
@@ -113,7 +114,8 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
         style={stageStyle}
       >
         {sortedObjects.map((object) => {
-          const isBeingDragged = dragState?.objectId === object.id;
+          // Check if this object is part of the group being dragged
+          const isBeingDragged = dragState?.selectedObjectIds?.includes(object.id) ?? false;
           const dragTransform = isBeingDragged && dragState
             ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
             : undefined;
