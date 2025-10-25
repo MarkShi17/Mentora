@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Backend API Service (Production)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: mentora-backend-prod
+    ports:
+      - "3000:3000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - PORT=3000
+    networks:
+      - mentora-network
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Web Application (Production)
+  frontend:
+    build:
+      context: ./mentora/apps/web
+      dockerfile: Dockerfile
+      target: runner
+    container_name: mentora-frontend-prod
+    ports:
+      - "3001:3001"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+      - NODE_ENV=production
+      - PORT=3001
+    networks:
+      - mentora-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: always
+
+networks:
+  mentora-network:
+    driver: bridge

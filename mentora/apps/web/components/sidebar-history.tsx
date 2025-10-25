@@ -14,10 +14,14 @@ export function SidebarHistory() {
   const messages = useSessionStore((state) => state.messages);
 
   const handleCreateSession = () => {
-    const title = `New Lesson ${new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit"
-    })}`;
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    const displayMinutes = minutes.toString().padStart(2, '0');
+    const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+    const title = `New Lesson ${timeString}`;
     createSession({ title });
   };
 
@@ -51,7 +55,7 @@ export function SidebarHistory() {
                   )}
                 >
                   <p className="font-medium">{session.title}</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-400" suppressHydrationWarning>
                     {new Date(session.createdAt).toLocaleDateString(undefined, {
                       month: "short",
                       day: "numeric"
