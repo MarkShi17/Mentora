@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
@@ -12,11 +12,13 @@ export function SidebarHistory() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
   const createSession = useSessionStore((state) => state.createSession);
   const updateSessionTitle = useSessionStore((state) => state.updateSessionTitle);
+  const deleteSession = useSessionStore((state) => state.deleteSession);
 
   const handleCreateSession = async () => {
     const now = new Date();
@@ -47,6 +49,22 @@ export function SidebarHistory() {
   const handleCancelEdit = () => {
     setEditingSessionId(null);
     setEditingTitle("");
+  };
+
+  const handleDeleteSession = (sessionId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setDeletingSessionId(sessionId);
+  };
+
+  const confirmDelete = () => {
+    if (deletingSessionId) {
+      deleteSession(deletingSessionId);
+      setDeletingSessionId(null);
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeletingSessionId(null);
   };
 
   return (
@@ -90,12 +108,12 @@ export function SidebarHistory() {
         </p>
         <ul className="mt-2 space-y-1">
           {sessions.map((session) => (
-            <li key={session.id}>
+            <li key={session.id} className="group relative">
               <button
                 type="button"
                 onClick={() => setActiveSession(session.id)}
                 className={cn(
-                  "w-full rounded-md px-3 py-2 text-left text-sm transition-colors",
+                  "w-full rounded-md px-3 py-2 pr-20 text-left text-sm transition-colors",
                   activeSessionId === session.id
                     ? "bg-slate-200 text-slate-900"
                     : "text-slate-700 hover:bg-slate-100"
@@ -119,10 +137,7 @@ export function SidebarHistory() {
                     className="w-full bg-white border border-sky-500 rounded px-2 py-1 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
                   />
                 ) : (
-                  <p
-                    className="font-medium"
-                    onClick={(e) => handleStartEditing(session.id, session.title, e)}
-                  >
+                  <p className="font-medium">
                     {session.title}
                   </p>
                 )}
@@ -133,6 +148,29 @@ export function SidebarHistory() {
                   })}
                 </p>
               </button>
+
+              {/* Action buttons - always visible on hover or when active */}
+              <div className={cn(
+                "absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity",
+                activeSessionId === session.id && "opacity-100"
+              )}>
+                <button
+                  type="button"
+                  onClick={(e) => handleStartEditing(session.id, session.title, e)}
+                  className="p-1.5 rounded hover:bg-slate-300 text-slate-600 hover:text-slate-900 transition-colors"
+                  title="Rename lesson"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteSession(session.id, e)}
+                  className="p-1.5 rounded hover:bg-red-100 text-slate-600 hover:text-red-600 transition-colors"
+                  title="Delete lesson"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -151,6 +189,35 @@ export function SidebarHistory() {
       </div>
       </div>
       </aside>
+
+      {/* Delete Confirmation Dialog */}
+      {deletingSessionId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-auto">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={cancelDelete} />
+          <div className="relative bg-white rounded-xl border border-slate-200 p-6 shadow-2xl w-96 max-w-[95vw]">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Delete Lesson?</h3>
+            <p className="text-sm text-slate-600 mb-6">
+              This will permanently delete this lesson and all its content. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={cancelDelete}
+                className="border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900 hover:border-slate-400"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmDelete}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>

@@ -61,6 +61,7 @@ type SessionState = {
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   updateSessionTitle: (sessionId: string, title: string) => void;
+  deleteSession: (sessionId: string) => void;
   // initializeDefaultSession: () => Promise<void>; // Removed - no longer auto-creating sessions
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => string;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Omit<Message, "id" | "timestamp">>) => void;
@@ -214,6 +215,28 @@ export const useSessionStore = create<SessionState>()(
         const session = state.sessions.find((s) => s.id === sessionId);
         if (session) {
           session.title = title;
+        }
+      });
+    },
+    deleteSession: (sessionId) => {
+      set((state) => {
+        // Remove session from sessions array
+        state.sessions = state.sessions.filter((s) => s.id !== sessionId);
+
+        // Clean up all related data
+        delete state.messages[sessionId];
+        delete state.canvasObjects[sessionId];
+        delete state.sources[sessionId];
+        delete state.timeline[sessionId];
+        delete state.transcripts[sessionId];
+        delete state.pins[sessionId];
+        delete state.canvasViews[sessionId];
+        delete state.selectionMethods[sessionId];
+        delete state.lastSelectedObjectIds[sessionId];
+
+        // If we deleted the active session, switch to another session or set to null
+        if (state.activeSessionId === sessionId) {
+          state.activeSessionId = state.sessions.length > 0 ? state.sessions[0].id : null;
         }
       });
     },
