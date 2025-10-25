@@ -45,11 +45,11 @@ type SessionState = {
   timeline: Record<string, TimelineEvent[]>;
   transcripts: Record<string, string>;
   pins: Record<string, Pin[]>;
+  canvasViews: Record<string, CanvasView>;
   voiceActive: boolean;
   sourcesDrawerOpen: boolean;
   captionsEnabled: boolean;
   canvasMode: "pan" | "lasso" | "pin";
-  canvasView: CanvasView;
   focusTarget: FocusTarget;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => string;
@@ -66,7 +66,7 @@ type SessionState = {
   setCanvasMode: (mode: "pan" | "lasso" | "pin") => void;
   addPin: (sessionId: string, payload: { x: number; y: number; label?: string }) => Pin | null;
   removePin: (sessionId: string, pinId: string) => void;
-  setCanvasView: (view: CanvasView) => void;
+  setCanvasView: (sessionId: string, view: CanvasView) => void;
   requestFocus: (target: { x: number; y: number; id?: string }) => void;
   clearFocus: () => void;
 };
@@ -87,11 +87,11 @@ export const useSessionStore = create<SessionState>()(
       acc[session.id] = source.map((pin) => ({ ...pin }));
       return acc;
     }, {}),
+    canvasViews: {},
     voiceActive: false,
     sourcesDrawerOpen: false,
     captionsEnabled: true,
     canvasMode: "pan",
-    canvasView: { transform: { x: 0, y: 0, k: 1 }, stageSize: null },
     focusTarget: null,
     setActiveSession: (sessionId) => {
       set((state) => {
@@ -118,6 +118,7 @@ export const useSessionStore = create<SessionState>()(
         state.timeline[id] = [];
         state.transcripts[id] = "";
         state.pins[id] = [];
+        state.canvasViews[id] = { transform: { x: 0, y: 0, k: 1 }, stageSize: null };
       });
       return id;
     },
@@ -248,9 +249,9 @@ export const useSessionStore = create<SessionState>()(
         state.pins[sessionId] = list.filter((pin) => pin.id !== pinId);
       });
     },
-    setCanvasView: (view) => {
+    setCanvasView: (sessionId, view) => {
       set((state) => {
-        state.canvasView = {
+        state.canvasViews[sessionId] = {
           transform: { ...view.transform },
           stageSize: view.stageSize ? { ...view.stageSize } : null
         };

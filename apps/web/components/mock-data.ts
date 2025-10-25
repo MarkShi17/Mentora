@@ -60,7 +60,7 @@ export const mockCanvasObjects: Record<string, CanvasObject[]> = {
     {
       id: "obj-2",
       type: "note",
-      label: "Traversal Steps",
+      label: "entry nodeSteps",
       x: -100,
       y: 60,
       width: 160,

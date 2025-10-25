@@ -73,7 +73,9 @@ const pins = useSessionStore((state) =>
 );
 const addPin = useSessionStore((state) => state.addPin);
 const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
-const stageSize = useSessionStore((state) => state.canvasView.stageSize);
+const savedCanvasView = useSessionStore((state) =>
+  state.activeSessionId ? state.canvasViews[state.activeSessionId] : null
+);
 
   const canvasModeRef = useRef(canvasMode);
   useEffect(() => {
@@ -119,12 +121,15 @@ const initialPinCenteredRef = useRef<string | null>(null);
   }, [pinDraft]);
 
   const applyTransform = useCallback(
-    (nextState: TransformState) => {
+    (nextState: TransformState, sessionId?: string) => {
       transformRef.current = nextState;
       flushSync(() => {
         setTransform(nextState);
       });
-      setCanvasView({ transform: nextState, stageSize: stageSizeRef.current });
+      const targetSessionId = sessionId || activeSessionIdRef.current;
+      if (targetSessionId) {
+        setCanvasView(targetSessionId, { transform: nextState, stageSize: stageSizeRef.current });
+      }
     },
     [setCanvasView]
   );
@@ -245,17 +250,66 @@ const initialPinCenteredRef = useRef<string | null>(null);
     const updateSize = () => {
       const rect = element.getBoundingClientRect();
       stageSizeRef.current = { width: rect.width, height: rect.height };
-      setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
+      if (activeSessionIdRef.current) {
+        setCanvasView(activeSessionIdRef.current, { transform: transformRef.current, stageSize: stageSizeRef.current });
+      }
     };
     updateSize();
     const observer = new ResizeObserver(updateSize);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [setCanvasView, activeSessionId]);
+  }, [setCanvasView, activeSessionId, applyTransform]);
 
+  const lastLoadedSessionRef = useRef<string | null>(null);
+
+  // Restore or initialize canvas view when switching sessions
   useEffect(() => {
-    setCanvasView({ transform: transformRef.current, stageSize: stageSizeRef.current });
-  }, [transform, setCanvasView]);
+    if (!activeSessionId) {
+      return;
+    }
+
+    // Only restore/center when switching to a different session
+    if (lastLoadedSessionRef.current === activeSessionId) {
+      return;
+    }
+
+    const stage = stageSizeRef.current;
+    if (!stage || stage.width === 0 || stage.height === 0) {
+      return;
+    }
+
+    // Check if this session has a saved canvas view
+    const saved = savedCanvasView;
+    if (saved && saved.transform) {
+      // Restore saved transform
+      const savedTransform = saved.transform;
+      transformRef.current = savedTransform;
+      setTransform(savedTransform);
+      const selection = selectionRef.current;
+      const zoomBehavior = zoomBehaviorRef.current;
+      if (selection && zoomBehavior) {
+        selection.call(zoomBehavior.transform, asZoomTransform(savedTransform));
+      }
+    } else {
+      // First time viewing this session - center it
+      const centerTransform: TransformState = {
+        x: stage.width / 2,
+        y: stage.height / 2,
+        k: 1
+      };
+      transformRef.current = centerTransform;
+      setTransform(centerTransform);
+      const selection = selectionRef.current;
+      const zoomBehavior = zoomBehaviorRef.current;
+      if (selection && zoomBehavior) {
+        selection.call(zoomBehavior.transform, asZoomTransform(centerTransform));
+      }
+      // Save the initial centered position
+      setCanvasView(activeSessionId, { transform: centerTransform, stageSize: stage });
+    }
+
+    lastLoadedSessionRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!focusTarget) {
