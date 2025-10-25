@@ -329,7 +329,7 @@ export const useSessionStore = create<SessionState>()(
         }
 
         // Clear selection method and last selected object
-        state.selectionMethods[sessionId] = undefined;
+        delete state.selectionMethods[sessionId];
         state.lastSelectedObjectIds[sessionId] = null;
       });
     },

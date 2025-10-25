@@ -95,7 +95,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       name="explanationLevel"
                       value={level}
                       checked={explanationLevel === level}
-                      onChange={(e) => setExplanationLevel(e.target.value)}
+                      onChange={(e) => setExplanationLevel(e.target.value as "beginner" | "intermediate" | "advanced")}
                       className="h-4 w-4 text-sky-600 focus:ring-sky-500"
                     />
                     <div className="flex-1">
