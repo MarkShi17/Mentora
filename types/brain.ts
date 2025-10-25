@@ -12,6 +12,7 @@ export interface Brain {
   name: string;
   description: string;
   capabilities: string[];
+  model: string; // Claude model to use (e.g., 'claude-3-5-haiku-20241022')
   mcpTools: string[]; // MCP tools this brain uses
   promptEnhancement: string; // Additional prompt instructions for this brain
 }

@@ -19,6 +19,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Step-by-step problem solving',
       'Function analysis and graphing',
     ],
+    model: 'claude-3-5-haiku-20241022', // Fast for math
     mcpTools: ['render_animation', 'sequential_thinking'],
     promptEnhancement: `You are a specialized math tutor. Focus on:
 - Breaking down complex mathematical concepts into clear steps
@@ -40,6 +41,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Scientific data visualization',
       'Laboratory simulations',
     ],
+    model: 'claude-3-5-haiku-20241022', // Fast for biology
     mcpTools: ['execute_python', 'sequential_thinking'],
     promptEnhancement: `You are a specialized biology tutor. Focus on:
 - Creating detailed scientific diagrams and illustrations
@@ -61,6 +63,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'GitHub code search',
       'Debugging assistance',
     ],
+    model: 'claude-3-5-haiku-20241022', // Fast for code
     mcpTools: ['sequential_thinking'], // github integration when available
     promptEnhancement: `You are a specialized programming tutor. Focus on:
 - Explaining code step-by-step with clear examples
@@ -82,6 +85,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Design system references',
       'Figma component integration',
     ],
+    model: 'claude-3-5-haiku-20241022', // Fast for design
     mcpTools: [], // figma integration when available
     promptEnhancement: `You are a specialized design tutor. Focus on:
 - Teaching design principles and best practices
@@ -102,6 +106,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Flexible visualization creation',
       'Comprehensive coverage',
     ],
+    model: 'claude-sonnet-4-5-20250929', // Powerful for general knowledge
     mcpTools: ['render_animation', 'execute_python', 'sequential_thinking'],
     promptEnhancement: `You are a versatile general tutor. Focus on:
 - Adapting your teaching style to the subject matter

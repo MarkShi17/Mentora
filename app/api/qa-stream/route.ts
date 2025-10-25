@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server';
 import { sessionManager } from '@/lib/agent/sessionManager';
 import { streamingOrchestrator } from '@/lib/agent/streamingOrchestrator';
 import { contextBuilder } from '@/lib/agent/contextBuilder';
+import { brainSelector } from '@/lib/agent/brainSelector';
 import { StreamingQARequest } from '@/types/api';
 import { ValidationError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
@@ -123,6 +124,32 @@ export async function POST(request: NextRequest): Promise<Response> {
           voice,
           sessionId: actualSessionId
         });
+
+        // Select appropriate brain for this question
+        const brainResult = await brainSelector.selectBrain(body.question, {
+          recentTopics: body.context?.topics,
+          canvasObjects: session.canvasObjects,
+        });
+
+        logger.info('🧠 Brain selected for streaming', {
+          brain: brainResult.selectedBrain.type,
+          model: brainResult.selectedBrain.model,
+          confidence: brainResult.confidence,
+          reasoning: brainResult.reasoning,
+        });
+
+        // Emit brain_selected event FIRST
+        const brainEvent = `data: ${JSON.stringify({
+          type: 'brain_selected',
+          timestamp: Date.now(),
+          data: {
+            brain: brainResult.selectedBrain.type,
+            model: brainResult.selectedBrain.model,
+            confidence: brainResult.confidence,
+            reasoning: brainResult.reasoning
+          }
+        })}\n\n`;
+        safeEnqueue(encoder.encode(brainEvent));
 
         // Track generated objects and references for session update
         const generatedObjects: any[] = [];
