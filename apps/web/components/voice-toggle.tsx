@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -16,7 +16,7 @@ export function VoiceToggle({ onTranscript, onAutoSubmit }: VoiceToggleProps) {
   const voiceActive = useSessionStore((state) => state.voiceActive);
   const { transcript, listening, supported, start, stop, error, setAutoSubmitCallback } = useSpeechRecognition();
 
-  const handleToggle = () => {
+  const handleToggle = useCallback(() => {
     if (!supported) {
       return;
     }
@@ -27,7 +27,7 @@ export function VoiceToggle({ onTranscript, onAutoSubmit }: VoiceToggleProps) {
     }
     setVoiceActive(true);
     start();
-  };
+  }, [supported, listening, stop, setVoiceActive, start]);
 
   useEffect(() => {
     if (transcript && onTranscript) {
@@ -40,6 +40,29 @@ export function VoiceToggle({ onTranscript, onAutoSubmit }: VoiceToggleProps) {
       setAutoSubmitCallback(onAutoSubmit);
     }
   }, [onAutoSubmit, setAutoSubmitCallback]);
+
+  // Add spacebar keyboard shortcut for toggling voice
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only trigger if spacebar is pressed and not in an input/textarea/contenteditable
+      if (event.code === 'Space' && event.target instanceof HTMLElement) {
+        const isInInputField =
+          event.target.tagName === 'INPUT' ||
+          event.target.tagName === 'TEXTAREA' ||
+          event.target.isContentEditable;
+
+        if (!isInInputField) {
+          event.preventDefault(); // Prevent page scroll
+          handleToggle();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleToggle]);
 
   return (
     <div className="flex items-center gap-2">
