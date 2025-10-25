@@ -16,6 +16,8 @@ export function ObjectLayer({ objects, transform, onSelect }: ObjectLayerProps) 
     transformOrigin: "0 0"
   };
 
+  console.log('🎨 ObjectLayer rendering with transform:', transform, 'objects:', objects.length);
+
   return (
     <div className="pointer-events-none absolute inset-0">
       <div

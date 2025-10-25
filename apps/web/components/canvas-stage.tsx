@@ -56,6 +56,8 @@ export function CanvasStage() {
   const [transform, setTransform] = useState<TransformState>(IDENTITY);
   const transformRef = useRef<TransformState>(IDENTITY);
   const stageSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
 const activeSessionId = useSessionStore((state) => state.activeSessionId);
 const canvasObjects = useSessionStore(
@@ -86,6 +88,7 @@ const savedCanvasView = useSessionStore((state) =>
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
     initialPinCenteredRef.current = null;
+    setIsInitialized(false); // Reset initialization when session changes
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -123,9 +126,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
   const applyTransform = useCallback(
     (nextState: TransformState, sessionId?: string) => {
       transformRef.current = nextState;
-      flushSync(() => {
-        setTransform(nextState);
-      });
+      setTransform(nextState);
       const targetSessionId = sessionId || activeSessionIdRef.current;
       if (targetSessionId) {
         setCanvasView(targetSessionId, { transform: nextState, stageSize: stageSizeRef.current });
@@ -249,67 +250,94 @@ const initialPinCenteredRef = useRef<string | null>(null);
     }
     const updateSize = () => {
       const rect = element.getBoundingClientRect();
-      stageSizeRef.current = { width: rect.width, height: rect.height };
-      if (activeSessionIdRef.current) {
-        setCanvasView(activeSessionIdRef.current, { transform: transformRef.current, stageSize: stageSizeRef.current });
-      }
+      const size = { width: rect.width, height: rect.height };
+      stageSizeRef.current = size;
+      setStageSize(size);
+      // Don't save to store here - let the initialization effect handle it
     };
     updateSize();
     const observer = new ResizeObserver(updateSize);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [setCanvasView, activeSessionId, applyTransform]);
+  }, [activeSessionId]);
 
   const lastLoadedSessionRef = useRef<string | null>(null);
 
   // Restore or initialize canvas view when switching sessions
   useEffect(() => {
     if (!activeSessionId) {
+      console.log('❌ No activeSessionId');
       return;
     }
 
-    // Only restore/center when switching to a different session
-    if (lastLoadedSessionRef.current === activeSessionId) {
+    // Only restore/center when switching to a different session (and already initialized)
+    if (lastLoadedSessionRef.current === activeSessionId && isInitialized) {
+      console.log('✅ Already initialized for this session');
       return;
     }
 
     const stage = stageSizeRef.current;
+    console.log('📐 Stage size:', stage);
     if (!stage || stage.width === 0 || stage.height === 0) {
+      console.log('❌ Stage not ready');
       return;
     }
 
+    // Read the current saved view from the store
+    const currentSavedView = useSessionStore.getState().canvasViews[activeSessionId];
+    console.log('💾 Saved view:', currentSavedView);
+
     // Check if this session has a saved canvas view
-    const saved = savedCanvasView;
-    if (saved && saved.transform) {
+    if (currentSavedView && currentSavedView.transform) {
       // Restore saved transform
-      const savedTransform = saved.transform;
+      const savedTransform = currentSavedView.transform;
+      console.log('🔄 Restoring saved transform:', savedTransform);
       transformRef.current = savedTransform;
       setTransform(savedTransform);
+      // Update d3 zoom without triggering events
       const selection = selectionRef.current;
       const zoomBehavior = zoomBehaviorRef.current;
       if (selection && zoomBehavior) {
+        // Temporarily disable the zoom handler to prevent saving
+        zoomBehavior.on('zoom', null);
         selection.call(zoomBehavior.transform, asZoomTransform(savedTransform));
+        // Re-enable zoom handler
+        zoomBehavior.on('zoom', zoomHandlerRef.current);
       }
     } else {
       // First time viewing this session - center it
+      // Account for floating UI: header at top (~80px), prompt at bottom (~80px)
+      // Visual center is between these elements
+      const headerHeight = 80; // Approximate height of floating header + margin
+      const promptHeight = 80; // Approximate height of prompt bubble + margin
+      const visualHeight = stage.height - headerHeight - promptHeight;
+
       const centerTransform: TransformState = {
         x: stage.width / 2,
-        y: stage.height / 2,
+        y: headerHeight + (visualHeight / 2),
         k: 1
       };
+      console.log('🎯 Centering new session with transform:', centerTransform);
       transformRef.current = centerTransform;
       setTransform(centerTransform);
+      // Update d3 zoom without triggering events
       const selection = selectionRef.current;
       const zoomBehavior = zoomBehaviorRef.current;
       if (selection && zoomBehavior) {
+        // Temporarily disable the zoom handler to prevent double-save
+        zoomBehavior.on('zoom', null);
         selection.call(zoomBehavior.transform, asZoomTransform(centerTransform));
+        // Re-enable zoom handler
+        zoomBehavior.on('zoom', zoomHandlerRef.current);
       }
       // Save the initial centered position
       setCanvasView(activeSessionId, { transform: centerTransform, stageSize: stage });
     }
 
     lastLoadedSessionRef.current = activeSessionId;
-  }, [activeSessionId]);
+    setIsInitialized(true); // Mark as initialized after transform is set
+    console.log('✅ Initialization complete, isInitialized =', true);
+  }, [activeSessionId, stageSize, setCanvasView]);
 
   useEffect(() => {
     if (!focusTarget) {
@@ -602,7 +630,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
   const canvasCursor = canvasMode === "pan" ? "grab" : "crosshair";
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-slate-950">
+    <div className="absolute inset-0 overflow-hidden bg-slate-950">
       <div
         className="absolute inset-0"
         ref={containerRef}
@@ -611,13 +639,17 @@ const initialPinCenteredRef = useRef<string | null>(null);
         style={{ cursor: canvasCursor }}
       >
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
-        <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
-        <PinLayer
-          pins={pins}
-          transform={transform}
-          interactive={canvasMode !== "pin"}
-          onFocus={handlePinFocus}
-        />
+        {isInitialized && (
+          <>
+            <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
+            <PinLayer
+              pins={pins}
+              transform={transform}
+              interactive={canvasMode !== "pin"}
+              onFocus={handlePinFocus}
+            />
+          </>
+        )}
         {pinDraft ? (
           <div className="pointer-events-none absolute inset-0 z-30">
             <div
@@ -670,7 +702,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
             </div>
           </div>
         ) : null}
-        <SelectionLayer objects={canvasObjects} transform={transform} />
+        {isInitialized && <SelectionLayer objects={canvasObjects} transform={transform} />}
         {canvasMode === "lasso" ? (
           <div
             className="absolute inset-0 z-20 select-none"

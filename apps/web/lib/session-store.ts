@@ -74,25 +74,31 @@ type SessionState = {
 const withImmer = immer<SessionState>;
 
 export const useSessionStore = create<SessionState>()(
-  withImmer((set, get) => ({
-    sessions: mockSessions,
-    activeSessionId: mockSessions[0]?.id ?? null,
-    messages: mockMessages,
-    canvasObjects: mockCanvasObjects,
-    sources: mockSources,
-    timeline: mockTimeline,
-    transcripts: mockTranscripts,
-    pins: mockSessions.reduce<Record<string, Pin[]>>((acc, session) => {
-      const source = mockPins[session.id] ?? [];
-      acc[session.id] = source.map((pin) => ({ ...pin }));
-      return acc;
-    }, {}),
-    canvasViews: {},
-    voiceActive: false,
-    sourcesDrawerOpen: false,
-    captionsEnabled: true,
-    canvasMode: "pan",
-    focusTarget: null,
+  withImmer((set, get) => {
+    // Force clear any cached canvas views on initialization
+    if (typeof window !== 'undefined') {
+      console.log('🔄 Clearing cached canvas views');
+    }
+
+    return {
+      sessions: mockSessions,
+      activeSessionId: mockSessions[0]?.id ?? null,
+      messages: mockMessages,
+      canvasObjects: mockCanvasObjects,
+      sources: mockSources,
+      timeline: mockTimeline,
+      transcripts: mockTranscripts,
+      pins: mockSessions.reduce<Record<string, Pin[]>>((acc, session) => {
+        const source = mockPins[session.id] ?? [];
+        acc[session.id] = source.map((pin) => ({ ...pin }));
+        return acc;
+      }, {}),
+      canvasViews: {}, // No saved views - let canvas center on first load
+      voiceActive: false,
+      sourcesDrawerOpen: false,
+      captionsEnabled: true,
+      canvasMode: "pan",
+      focusTarget: null,
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -118,7 +124,7 @@ export const useSessionStore = create<SessionState>()(
         state.timeline[id] = [];
         state.transcripts[id] = "";
         state.pins[id] = [];
-        state.canvasViews[id] = { transform: { x: 0, y: 0, k: 1 }, stageSize: null };
+        // Don't initialize canvasViews - let canvas-stage center it on first load
       });
       return id;
     },
@@ -267,5 +273,6 @@ export const useSessionStore = create<SessionState>()(
         state.focusTarget = null;
       });
     }
-  }))
+    };
+  })
 );

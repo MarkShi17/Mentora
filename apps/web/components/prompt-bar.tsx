@@ -98,36 +98,27 @@ export function PromptBar() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex w-full items-end gap-3 rounded-lg border border-border bg-slate-950/80 p-3 backdrop-blur"
+      className="pointer-events-auto absolute bottom-6 left-1/2 z-20 flex w-full max-w-3xl -translate-x-1/2 items-center gap-3 rounded-full border border-slate-700/50 bg-slate-950/80 px-4 py-2 shadow-lg backdrop-blur-md"
     >
-      <div className="flex-1 space-y-2">
-        <Textarea
-          placeholder={
-            activeSessionId
-              ? "Ask Mentora to guide you through your next concept..."
-              : "Create a lesson to start asking questions."
+      <input
+        type="text"
+        placeholder={
+          activeSessionId
+            ? "Ask Mentora to guide you through your next concept..."
+            : "Create a lesson to start asking questions."
+        }
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        disabled={!activeSessionId || isPending}
+        className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            void submitPromptMessage();
           }
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          disabled={!activeSessionId || isPending}
-          rows={2}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              void submitPromptMessage();
-            }
-          }}
-        />
-        <p className="text-xs text-slate-500">
-          Press <span className="rounded-sm bg-slate-900 px-1">Shift + Enter</span> for newline.
-        </p>
-      </div>
-      <div className="flex flex-col items-end gap-2">
-        <VoiceToggle onTranscript={(transcript) => setValue((prev) => `${prev} ${transcript}`.trim())} />
-        <Button type="submit" disabled={!activeSessionId || isPending || !value.trim()}>
-          {isPending ? "Thinking..." : "Send"}
-        </Button>
-      </div>
+        }}
+      />
+      <VoiceToggle onTranscript={(transcript) => setValue((prev) => `${prev} ${transcript}`.trim())} />
     </form>
   );
 }
