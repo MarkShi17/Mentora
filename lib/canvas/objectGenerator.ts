@@ -76,11 +76,24 @@ export class ObjectGenerator {
     turnId: string,
     referenceName?: string
   ): CodeObject {
+    // Calculate better dimensions based on code length
+    const lines = code.split('\n').length;
+    const maxLineLength = Math.max(...code.split('\n').map(line => line.length));
+    
+    let width, height;
+    if (code.length > 1000) {
+      width = Math.min(Math.max(maxLineLength * 8, 500), 800);
+      height = Math.max(lines * 20 + 60, 200);
+    } else {
+      width = Math.min(Math.max(maxLineLength * 8, 400), 600);
+      height = Math.max(lines * 18 + 50, 150);
+    }
+
     return {
       id: generateObjectId(),
       type: 'code',
       position,
-      size: { width: 600, height: 300 },
+      size: { width, height },
       zIndex: 1,
       data: {
         type: 'code',
@@ -104,11 +117,21 @@ export class ObjectGenerator {
     referenceName?: string
   ): TextObject {
     // Calculate better dimensions based on content
-    // const words = content.split(' ');
-    const avgCharsPerLine = 40; // Shorter lines for better readability
+    const avgCharsPerLine = 50; // Longer lines for better readability
     const lines = Math.ceil(content.length / avgCharsPerLine);
-    const estimatedWidth = Math.min(Math.max(content.length * 7, 180), 350); // More compact
-    const estimatedHeight = Math.max(lines * 22 + 50, 70); // Tighter spacing
+    
+    // More generous sizing based on content length
+    let estimatedWidth, estimatedHeight;
+    if (content.length > 500) {
+      estimatedWidth = Math.min(Math.max(content.length * 8, 400), 700);
+      estimatedHeight = Math.max(lines * 28 + 80, 120);
+    } else if (content.length > 200) {
+      estimatedWidth = Math.min(Math.max(content.length * 8, 300), 500);
+      estimatedHeight = Math.max(lines * 26 + 70, 100);
+    } else {
+      estimatedWidth = Math.min(Math.max(content.length * 8, 250), 400);
+      estimatedHeight = Math.max(lines * 24 + 60, 80);
+    }
 
     return {
       id: generateObjectId(),
@@ -142,7 +165,7 @@ export class ObjectGenerator {
       id: generateObjectId(),
       type: 'diagram',
       position,
-      size: { width: 500, height: 400 },
+      size: { width: 600, height: 450 }, // Larger default size for better visibility
       zIndex: 1,
       data: {
         type: 'diagram',

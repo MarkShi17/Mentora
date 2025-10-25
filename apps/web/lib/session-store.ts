@@ -44,6 +44,7 @@ type SessionState = {
   focusTarget: FocusTarget;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
+  // initializeDefaultSession: () => Promise<void>; // Removed - no longer auto-creating sessions
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   toggleObjectSelection: (sessionId: string, objectId: string) => void;
@@ -66,24 +67,16 @@ const withImmer = immer<SessionState>;
 
 export const useSessionStore = create<SessionState>()(
   withImmer((set, get) => {
-    // Create a default session on initialization
-    const defaultSessionId = `session-${nanoid(6)}`;
-    const now = new Date().toISOString();
-    const defaultSession: Session = {
-      id: defaultSessionId,
-      title: "Getting Started",
-      createdAt: now
-    };
-
+    // Initialize with empty state - we'll create a session when the app loads
     return {
-      sessions: [defaultSession],
-      activeSessionId: defaultSessionId,
-      messages: { [defaultSessionId]: [] },
-      canvasObjects: { [defaultSessionId]: [] },
-      sources: { [defaultSessionId]: [] },
-      timeline: { [defaultSessionId]: [] },
-      transcripts: { [defaultSessionId]: "" },
-      pins: { [defaultSessionId]: [] },
+      sessions: [],
+      activeSessionId: null,
+      messages: {},
+      canvasObjects: {},
+      sources: {},
+      timeline: {},
+      transcripts: {},
+      pins: {},
       voiceActive: false,
       sourcesDrawerOpen: false,
       captionsEnabled: true,
@@ -98,9 +91,30 @@ export const useSessionStore = create<SessionState>()(
         state.activeSessionId = sessionId;
       });
     },
+    // initializeDefaultSession: async () => {
+    //   const state = get();
+    //   // Only create a default session if we don't have any sessions
+    //   if (state.sessions.length === 0) {
+    //     const now = new Date();
+    //     const hours = now.getHours();
+    //     const minutes = now.getMinutes();
+    //     const ampm = hours >= 12 ? 'PM' : 'AM';
+    //     const displayHours = hours % 12 || 12;
+    //     const displayMinutes = minutes.toString().padStart(2, '0');
+    //     const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+    //     const title = `New Lesson ${timeString}`;
+        
+    //     try {
+    //       await get().createSession({ title });
+    //     } catch (error) {
+    //       console.error("Failed to create default session:", error);
+    //     }
+    //   }
+    // },
     createSession: async ({ title }) => {
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+        
         const response = await fetch(`${apiUrl}/api/sessions`, {
           method: "POST",
           headers: {
@@ -113,6 +127,8 @@ export const useSessionStore = create<SessionState>()(
         });
         
         if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Session creation failed:", errorText);
           throw new Error("Failed to create session");
         }
         

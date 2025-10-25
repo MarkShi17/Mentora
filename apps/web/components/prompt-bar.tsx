@@ -66,6 +66,8 @@ async function submitPrompt(payload: PromptPayload): Promise<PromptResponse> {
 export function PromptBar() {
   const [value, setValue] = useState("");
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const sessions = useSessionStore((state) => state.sessions);
+  const createSession = useSessionStore((state) => state.createSession);
   const addMessage = useSessionStore((state) => state.addMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
@@ -86,13 +88,34 @@ export function PromptBar() {
   }, []);
 
   const submitPromptMessage = useCallback(async () => {
-    const state = useSessionStore.getState();
-    const sessionId = activeSessionId;
-    if (!sessionId || !value.trim()) {
+    if (!value.trim()) {
       return;
     }
+
     const prompt = value.trim();
     setValue("");
+
+    // Auto-create session if none exists
+    let sessionId = activeSessionId;
+    if (!sessionId || sessions.length === 0) {
+      try {
+        const now = new Date();
+        const hours = now.getHours();
+        const minutes = now.getMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        const displayMinutes = minutes.toString().padStart(2, '0');
+        const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
+        const title = `New Lesson ${timeString}`;
+        
+        sessionId = await createSession({ title });
+      } catch (error) {
+        console.error("Failed to create session:", error);
+        return;
+      }
+    }
+
+    const state = useSessionStore.getState();
     addMessage(sessionId, {
       role: "user",
       content: prompt
@@ -145,7 +168,7 @@ export function PromptBar() {
             content: "I'm experiencing a momentary issue. Please try again in a bit."
           });
         }
-  }, [activeSessionId, appendTimelineEvent, mutateAsync, addMessage, value, updateCanvasObject]);
+  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, mutateAsync, addMessage, value, updateCanvasObject, speak]);
 
   const handleSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
@@ -162,14 +185,10 @@ export function PromptBar() {
     >
       <input
         type="text"
-        placeholder={
-          activeSessionId
-            ? "Ask Mentora to guide you through your next concept..."
-            : "Create a lesson to start asking questions."
-        }
+        placeholder="Ask Mentora to guide you through your next concept..."
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        disabled={!activeSessionId || isPending}
+        disabled={isPending}
         className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
@@ -178,7 +197,7 @@ export function PromptBar() {
           }
         }}
       />
-      <VoiceToggle onTranscript={handleTranscript} />
+      <VoiceToggle onTranscript={handleTranscript} onAutoSubmit={submitPromptMessage} />
     </form>
   );
 }
