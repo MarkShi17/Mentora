@@ -27,6 +27,7 @@ type SelectionLayerProps = {
     startWorld: { x: number; y: number };
     startDimensions: { x: number; y: number; width: number; height: number };
     currentDimensions: { x: number; y: number; width: number; height: number };
+    textScale?: number;
   } | null;
 };
 

@@ -51,6 +51,7 @@ type ResizeState = {
   startWorld: { x: number; y: number };
   startDimensions: { x: number; y: number; width: number; height: number };
   currentDimensions: { x: number; y: number; width: number; height: number };
+  textScale?: number; // Scale factor for text (0.7 to 1.0)
 };
 
 const IDENTITY: TransformState = { x: 0, y: 0, k: 1 };
@@ -776,6 +777,97 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     [activeSessionId, updateCanvasObject, updateCanvasObjects, setSelectionMethod, setLastSelectedObject, getScreenPoint, screenToWorld, selectionMethod]
   );
 
+  // Calculate intelligent minimum dimensions based on content
+  // Returns smaller minimums - text will scale down if needed
+  const calculateMinDimensions = useCallback((object: CanvasObject): { minWidth: number; minHeight: number } => {
+    const HEADER_HEIGHT = 50; // Space for type label + object title
+    const PADDING = 24; // Total padding (12px each side)
+    const BASE_MIN_WIDTH = 80; // Absolute minimum width (smaller!)
+    const BASE_MIN_HEIGHT = 60; // Absolute minimum height (smaller!)
+
+    let minWidth = BASE_MIN_WIDTH;
+    let minHeight = BASE_MIN_HEIGHT;
+
+    if (!object.data) {
+      return { minWidth, minHeight };
+    }
+
+    switch (object.type) {
+      case 'text':
+      case 'note': {
+        const content = object.data.content || '';
+        const lines = content.split('\n');
+        const longestLine = Math.max(...lines.map(line => line.length), 0);
+        // Reduced: ~5px per character (will scale text if needed)
+        minWidth = Math.min(BASE_MIN_WIDTH + (longestLine * 5), 280);
+        // Reduced: ~18px per line (will scale down if needed)
+        minHeight = HEADER_HEIGHT + (lines.length * 18) + PADDING;
+        break;
+      }
+
+      case 'code': {
+        const code = object.data.code || '';
+        const lines = code.split('\n');
+        const longestLine = Math.max(...lines.map(line => line.length), 0);
+        // Reduced: ~4px per character
+        minWidth = Math.min(BASE_MIN_WIDTH + (longestLine * 4), 300);
+        // Reduced: ~16px per line
+        minHeight = HEADER_HEIGHT + (lines.length * 16) + PADDING;
+        break;
+      }
+
+      case 'latex':
+      case 'formula': {
+        // LaTeX formulas - smaller minimum
+        const content = object.data.content || object.data.rendered || '';
+        const estimatedWidth = Math.max(100, content.length * 6);
+        minWidth = Math.min(estimatedWidth, 250);
+        minHeight = 90; // Reduced from 120
+        break;
+      }
+
+      case 'graph':
+      case 'diagram': {
+        // Visual content - analyze SVG if available
+        const svg = object.data.svg || '';
+        // Estimate complexity by SVG length and viewBox if present
+        const hasContent = svg.length > 100;
+        const isComplex = svg.length > 500;
+
+        if (isComplex) {
+          // Complex diagram needs more space
+          minWidth = 180;
+          minHeight = 140;
+        } else if (hasContent) {
+          // Simple diagram
+          minWidth = 140;
+          minHeight = 110;
+        } else {
+          // Placeholder or empty
+          minWidth = 100;
+          minHeight = 80;
+        }
+        break;
+      }
+
+      case 'image': {
+        minWidth = 100; // Reduced from 150
+        minHeight: 80; // Reduced from 120
+        break;
+      }
+
+      default:
+        minWidth = BASE_MIN_WIDTH;
+        minHeight = BASE_MIN_HEIGHT;
+    }
+
+    // Ensure we never go below absolute minimums
+    return {
+      minWidth: Math.max(minWidth, BASE_MIN_WIDTH),
+      minHeight: Math.max(minHeight, BASE_MIN_HEIGHT)
+    };
+  }, []);
+
   const handleResizeStart = useCallback(
     (objectId: string, corner: string, event: React.PointerEvent) => {
       if (!activeSessionId || canvasMode !== "pan") {
@@ -827,7 +919,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
   const handleResizeMove = useCallback(
     (event: React.PointerEvent) => {
       const resize = resizeStateRef.current;
-      if (!resize) {
+      if (!resize || !activeSessionId) {
         return;
       }
 
@@ -840,44 +932,78 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       const deltaX = worldPoint.x - resize.startWorld.x;
       const deltaY = worldPoint.y - resize.startWorld.y;
 
+      // Get the object to calculate content-aware minimum dimensions
+      const state = useSessionStore.getState();
+      const objects = state.canvasObjects[activeSessionId] || [];
+      const object = objects.find(obj => obj.id === resize.objectId);
+
+      if (!object) {
+        return;
+      }
+
+      // Calculate intelligent minimum dimensions based on content
+      const { minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT } = calculateMinDimensions(object);
+
       const { corner, startDimensions } = resize;
       let newX = startDimensions.x;
       let newY = startDimensions.y;
       let newWidth = startDimensions.width;
       let newHeight = startDimensions.height;
 
-      const MIN_SIZE = 50; // Minimum size for objects
+      // Calculate ideal dimensions (text scales starting at 2x minimum for earlier response)
+      const IDEAL_WIDTH = MIN_WIDTH * 2.0; // Text scaling starts at 2x minimum
+      const IDEAL_HEIGHT = MIN_HEIGHT * 2.0;
 
       // Calculate new dimensions based on corner
       if (corner === 'nw') {
         newX = startDimensions.x + deltaX;
         newY = startDimensions.y + deltaY;
-        newWidth = Math.max(MIN_SIZE, startDimensions.width - deltaX);
-        newHeight = Math.max(MIN_SIZE, startDimensions.height - deltaY);
+        newWidth = Math.max(MIN_WIDTH, startDimensions.width - deltaX);
+        newHeight = Math.max(MIN_HEIGHT, startDimensions.height - deltaY);
         // Adjust position if we hit minimum size
-        if (startDimensions.width - deltaX < MIN_SIZE) {
-          newX = startDimensions.x + startDimensions.width - MIN_SIZE;
+        if (startDimensions.width - deltaX < MIN_WIDTH) {
+          newX = startDimensions.x + startDimensions.width - MIN_WIDTH;
         }
-        if (startDimensions.height - deltaY < MIN_SIZE) {
-          newY = startDimensions.y + startDimensions.height - MIN_SIZE;
+        if (startDimensions.height - deltaY < MIN_HEIGHT) {
+          newY = startDimensions.y + startDimensions.height - MIN_HEIGHT;
         }
       } else if (corner === 'ne') {
         newY = startDimensions.y + deltaY;
-        newWidth = Math.max(MIN_SIZE, startDimensions.width + deltaX);
-        newHeight = Math.max(MIN_SIZE, startDimensions.height - deltaY);
-        if (startDimensions.height - deltaY < MIN_SIZE) {
-          newY = startDimensions.y + startDimensions.height - MIN_SIZE;
+        newWidth = Math.max(MIN_WIDTH, startDimensions.width + deltaX);
+        newHeight = Math.max(MIN_HEIGHT, startDimensions.height - deltaY);
+        if (startDimensions.height - deltaY < MIN_HEIGHT) {
+          newY = startDimensions.y + startDimensions.height - MIN_HEIGHT;
         }
       } else if (corner === 'sw') {
         newX = startDimensions.x + deltaX;
-        newWidth = Math.max(MIN_SIZE, startDimensions.width - deltaX);
-        newHeight = Math.max(MIN_SIZE, startDimensions.height + deltaY);
-        if (startDimensions.width - deltaX < MIN_SIZE) {
-          newX = startDimensions.x + startDimensions.width - MIN_SIZE;
+        newWidth = Math.max(MIN_WIDTH, startDimensions.width - deltaX);
+        newHeight = Math.max(MIN_HEIGHT, startDimensions.height + deltaY);
+        if (startDimensions.width - deltaX < MIN_WIDTH) {
+          newX = startDimensions.x + startDimensions.width - MIN_WIDTH;
         }
       } else if (corner === 'se') {
-        newWidth = Math.max(MIN_SIZE, startDimensions.width + deltaX);
-        newHeight = Math.max(MIN_SIZE, startDimensions.height + deltaY);
+        newWidth = Math.max(MIN_WIDTH, startDimensions.width + deltaX);
+        newHeight = Math.max(MIN_HEIGHT, startDimensions.height + deltaY);
+      }
+
+      // Calculate text scale based on how much smaller than ideal
+      // Scale from 1.0 (at IDEAL size) down to 0.7 (at MIN size)
+      let textScale = 1.0;
+
+      // Scale text for text-based objects and diagrams/graphs (which have labels)
+      if (object.type === 'text' || object.type === 'note' || object.type === 'code' ||
+          object.type === 'diagram' || object.type === 'graph') {
+        const widthRatio = newWidth / IDEAL_WIDTH;
+        const heightRatio = newHeight / IDEAL_HEIGHT;
+        const sizeRatio = Math.min(widthRatio, heightRatio);
+
+        if (sizeRatio < 1.0) {
+          // Object is smaller than ideal - scale content down
+          // Linear interpolation: 1.0 at IDEAL, 0.7 at MIN (30% reduction max)
+          const minRatio = MIN_WIDTH / IDEAL_WIDTH; // How small can we get
+          textScale = 0.7 + (0.3 * ((sizeRatio - minRatio) / (1.0 - minRatio)));
+          textScale = Math.max(0.7, Math.min(1.0, textScale)); // Clamp to [0.7, 1.0]
+        }
       }
 
       // Update resize state
@@ -888,12 +1014,13 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
           y: newY,
           width: newWidth,
           height: newHeight
-        }
+        },
+        textScale
       };
       resizeStateRef.current = nextResizeState;
       setResizeState(nextResizeState);
     },
-    [getScreenPoint, screenToWorld]
+    [activeSessionId, getScreenPoint, screenToWorld, calculateMinDimensions]
   );
 
   const handleResizeEnd = useCallback(
@@ -917,14 +1044,37 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         return;
       }
 
-      // Update object with new dimensions and keep it selected
+      // Calculate final text scale for the resized dimensions
+      const { minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT } = calculateMinDimensions(object);
+      const IDEAL_WIDTH = MIN_WIDTH * 2.0; // Text scales starting at 2x minimum (earlier!)
+      const IDEAL_HEIGHT = MIN_HEIGHT * 2.0;
+
+      let finalTextScale = 1.0;
+      if (object.type === 'text' || object.type === 'note' || object.type === 'code' ||
+          object.type === 'diagram' || object.type === 'graph') {
+        const widthRatio = resize.currentDimensions.width / IDEAL_WIDTH;
+        const heightRatio = resize.currentDimensions.height / IDEAL_HEIGHT;
+        const sizeRatio = Math.min(widthRatio, heightRatio);
+
+        if (sizeRatio < 1.0) {
+          const minRatio = MIN_WIDTH / IDEAL_WIDTH;
+          finalTextScale = 0.7 + (0.3 * ((sizeRatio - minRatio) / (1.0 - minRatio)));
+          finalTextScale = Math.max(0.7, Math.min(1.0, finalTextScale));
+        }
+      }
+
+      // Update object with new dimensions, text scale, and keep it selected
       updateCanvasObject(activeSessionId, {
         ...object,
         x: resize.currentDimensions.x,
         y: resize.currentDimensions.y,
         width: resize.currentDimensions.width,
         height: resize.currentDimensions.height,
-        selected: true // Explicitly preserve selection after resize
+        selected: true, // Explicitly preserve selection after resize
+        metadata: {
+          ...object.metadata,
+          textScale: finalTextScale
+        }
       });
 
       // Release pointer capture

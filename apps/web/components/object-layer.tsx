@@ -3,7 +3,6 @@
 import type { CSSProperties } from "react";
 import { CanvasObject } from "@/types";
 import { cn } from "@/lib/cn";
-import { CodeBlock } from "@/components/code-block";
 
 // Removed getObjectSizeClass - now using backend-calculated sizes directly
 
@@ -45,13 +44,9 @@ function renderObjectContent(object: CanvasObject) {
     
     case 'code':
       return (
-        <CodeBlock
-          code={object.data.code || ''}
-          language={object.data.language || 'text'}
-          theme="dark"
-          showLineNumbers={true}
-          showCopyButton={true}
-        />
+        <pre className="text-sm text-slate-800 bg-slate-100 p-4 rounded-lg overflow-auto leading-relaxed h-full">
+          <code>{object.data.code || ''}</code>
+        </pre>
       );
     
     case 'graph':
@@ -108,6 +103,7 @@ type ObjectLayerProps = {
     startWorld: { x: number; y: number };
     startDimensions: { x: number; y: number; width: number; height: number };
     currentDimensions: { x: number; y: number; width: number; height: number };
+    textScale?: number;
   } | null;
 };
 
@@ -137,8 +133,13 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
           const isBeingResized = resizeState?.objectId === object.id;
           const objectX = isBeingResized && resizeState ? resizeState.currentDimensions.x : object.x;
           const objectY = isBeingResized && resizeState ? resizeState.currentDimensions.y : object.y;
-          const objectWidth = isBeingResized && resizeState ? resizeState.currentDimensions.width : (object.width || object.size?.width || 'auto');
-          const objectHeight = isBeingResized && resizeState ? resizeState.currentDimensions.height : (object.height || object.size?.height || 'auto');
+          const objectWidth = isBeingResized && resizeState ? resizeState.currentDimensions.width : (object.width || 'auto');
+          const objectHeight = isBeingResized && resizeState ? resizeState.currentDimensions.height : (object.height || 'auto');
+
+          // Get text scale from metadata (persisted after resize) or from current resize state
+          const textScale = isBeingResized && resizeState
+            ? (resizeState.textScale || 1.0)
+            : (object.metadata?.textScale as number || 1.0);
 
           return (
           <div
@@ -151,10 +152,10 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               !isBeingDragged && !isBeingResized && "transition-all"
             )}
             style={{
-              left: object.x,
-              top: object.y,
-              width: object.width || 'auto',
-              height: object.height || 'auto',
+              left: objectX,
+              top: objectY,
+              width: objectWidth,
+              height: objectHeight,
               background: `${object.color}20`,
               zIndex: object.zIndex || 0,
               transform: dragTransform
@@ -215,7 +216,13 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                 </div>
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
               </div>
-              <div className="flex-1 min-h-0">
+              <div
+                className="flex-1 min-h-0"
+                style={{
+                  fontSize: `${textScale * 100}%`,
+                  transformOrigin: 'top left'
+                }}
+              >
                 {renderObjectContent(object)}
               </div>
               {object.metadata?.description ? (
