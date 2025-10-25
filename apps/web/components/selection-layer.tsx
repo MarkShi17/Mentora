@@ -20,6 +20,14 @@ type SelectionLayerProps = {
     currentDelta: { x: number; y: number };
     wasSelectedAtStart: boolean;
   } | null;
+  onResizeStart?: (objectId: string, corner: string, event: React.PointerEvent) => void;
+  resizeState?: {
+    objectId: string;
+    corner: string;
+    startWorld: { x: number; y: number };
+    startDimensions: { x: number; y: number; width: number; height: number };
+    currentDimensions: { x: number; y: number; width: number; height: number };
+  } | null;
 };
 
 export function SelectionLayer({
@@ -28,7 +36,9 @@ export function SelectionLayer({
   selectionMethod,
   lastSelectedObjectId,
   onDelete,
-  dragState
+  dragState,
+  onResizeStart,
+  resizeState
 }: SelectionLayerProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -59,6 +69,73 @@ export function SelectionLayer({
       };
     }
     return { x: obj.x, y: obj.y };
+  };
+
+  // Helper to get dimensions accounting for resize state
+  const getDimensions = (obj: CanvasObject) => {
+    const isBeingResized = resizeState?.objectId === obj.id;
+    if (isBeingResized && resizeState) {
+      return {
+        x: resizeState.currentDimensions.x,
+        y: resizeState.currentDimensions.y,
+        width: resizeState.currentDimensions.width,
+        height: resizeState.currentDimensions.height
+      };
+    }
+    const pos = getPosition(obj);
+    return {
+      x: pos.x,
+      y: pos.y,
+      width: obj.width,
+      height: obj.height
+    };
+  };
+
+  // Render resize handles for a single selected object
+  const renderResizeHandles = (obj: CanvasObject) => {
+    if (!onResizeStart) return null;
+
+    const dims = getDimensions(obj);
+    const handleSize = 8 / transform.k; // Scale handle size inversely with zoom
+    const handleOffset = handleSize / 2;
+
+    const corners = [
+      { name: 'nw', x: dims.x - handleOffset, y: dims.y - handleOffset, cursor: 'nw-resize' },
+      { name: 'ne', x: dims.x + dims.width - handleOffset, y: dims.y - handleOffset, cursor: 'ne-resize' },
+      { name: 'sw', x: dims.x - handleOffset, y: dims.y + dims.height - handleOffset, cursor: 'sw-resize' },
+      { name: 'se', x: dims.x + dims.width - handleOffset, y: dims.y + dims.height - handleOffset, cursor: 'se-resize' }
+    ];
+
+    return corners.map(corner => (
+      <div
+        key={corner.name}
+        className="absolute pointer-events-auto bg-white border-2 border-sky-500 rounded-sm hover:bg-sky-100 z-50"
+        style={{
+          left: corner.x,
+          top: corner.y,
+          width: handleSize,
+          height: handleSize,
+          cursor: corner.cursor
+        }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onResizeStart(obj.id, corner.name, e);
+        }}
+        onPointerMove={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+        onPointerUp={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+      />
+    ));
   };
 
   // Apply the same transform as the object layer
@@ -92,6 +169,8 @@ export function SelectionLayer({
                 </div>
               </div>
             </div>
+            {/* Resize handles */}
+            {renderResizeHandles(obj)}
           </div>
         </div>
         {menuPosition && (

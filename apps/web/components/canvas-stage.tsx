@@ -45,6 +45,14 @@ type DragState = {
   wasSelectedAtStart: boolean;
 };
 
+type ResizeState = {
+  objectId: string;
+  corner: string; // nw, ne, sw, se
+  startWorld: { x: number; y: number };
+  startDimensions: { x: number; y: number; width: number; height: number };
+  currentDimensions: { x: number; y: number; width: number; height: number };
+};
+
 const IDENTITY: TransformState = { x: 0, y: 0, k: 1 };
 
 const toState = (transform: { x: number; y: number; k: number }): TransformState => ({
@@ -143,6 +151,13 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     dragStateRef.current = dragState;
   }, [dragState]);
 
+  // Object resizing state
+  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
+  const resizeStateRef = useRef<ResizeState | null>(null);
+  useEffect(() => {
+    resizeStateRef.current = resizeState;
+  }, [resizeState]);
+
   useEffect(() => {
     if (pinDraft && pinInputRef.current) {
       pinInputRef.current.focus();
@@ -222,6 +237,11 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     const zoomBehavior = zoom<HTMLDivElement, unknown>()
       .scaleExtent([MIN_SCALE, MAX_SCALE])
       .filter((event) => {
+        // Don't allow zoom/pan if we're currently resizing
+        if (resizeStateRef.current) {
+          return false;
+        }
+
         if (event.ctrlKey && event.type === "wheel") {
           return true;
         }
@@ -250,7 +270,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     if (!zoomBehavior) {
       return;
     }
-    if (canvasMode === "pan") {
+    if (canvasMode === "pan" && zoomHandlerRef.current) {
       zoomBehavior.on("zoom", zoomHandlerRef.current);
     } else {
       zoomBehavior.on("zoom", null);
@@ -415,6 +435,11 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
   }, []);
 
   const handleCanvasClick = useCallback(() => {
+    // Don't handle if we're resizing
+    if (resizeStateRef.current) {
+      return;
+    }
+
     // Close menu on any canvas click
     setMenuPosition(null);
 
@@ -481,7 +506,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
   );
 
   const getScreenPoint = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent) => {
       if (!containerRef.current) {
         return { x: 0, y: 0 };
       }
@@ -496,6 +521,11 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
 
   const handleObjectDragStart = useCallback(
     (objectId: string, event: React.PointerEvent) => {
+      // Don't start dragging if we're currently resizing
+      if (resizeStateRef.current) {
+        return;
+      }
+
       // Close menu on drag start
       setMenuPosition(null);
 
@@ -746,8 +776,179 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     [activeSessionId, updateCanvasObject, updateCanvasObjects, setSelectionMethod, setLastSelectedObject, getScreenPoint, screenToWorld, selectionMethod]
   );
 
+  const handleResizeStart = useCallback(
+    (objectId: string, corner: string, event: React.PointerEvent) => {
+      if (!activeSessionId || canvasMode !== "pan") {
+        return;
+      }
+      event.stopPropagation();
+
+      // Get the object
+      const state = useSessionStore.getState();
+      const objects = state.canvasObjects[activeSessionId] || [];
+      const object = objects.find(obj => obj.id === objectId);
+
+      if (!object) {
+        return;
+      }
+
+      const screenPoint = getScreenPoint(event);
+      const worldPoint = screenToWorld(screenPoint);
+
+      // Set resize state
+      const nextResizeState: ResizeState = {
+        objectId,
+        corner,
+        startWorld: worldPoint,
+        startDimensions: {
+          x: object.x,
+          y: object.y,
+          width: object.width,
+          height: object.height
+        },
+        currentDimensions: {
+          x: object.x,
+          y: object.y,
+          width: object.width,
+          height: object.height
+        }
+      };
+      resizeStateRef.current = nextResizeState;
+      setResizeState(nextResizeState);
+
+      // Capture pointer on the container
+      if (containerRef.current) {
+        containerRef.current.setPointerCapture(event.pointerId);
+      }
+    },
+    [activeSessionId, canvasMode, getScreenPoint, screenToWorld]
+  );
+
+  const handleResizeMove = useCallback(
+    (event: React.PointerEvent) => {
+      const resize = resizeStateRef.current;
+      if (!resize) {
+        return;
+      }
+
+      event.stopPropagation();
+
+      const screenPoint = getScreenPoint(event);
+      const worldPoint = screenToWorld(screenPoint);
+
+      // Calculate delta in world coordinates
+      const deltaX = worldPoint.x - resize.startWorld.x;
+      const deltaY = worldPoint.y - resize.startWorld.y;
+
+      const { corner, startDimensions } = resize;
+      let newX = startDimensions.x;
+      let newY = startDimensions.y;
+      let newWidth = startDimensions.width;
+      let newHeight = startDimensions.height;
+
+      const MIN_SIZE = 50; // Minimum size for objects
+
+      // Calculate new dimensions based on corner
+      if (corner === 'nw') {
+        newX = startDimensions.x + deltaX;
+        newY = startDimensions.y + deltaY;
+        newWidth = Math.max(MIN_SIZE, startDimensions.width - deltaX);
+        newHeight = Math.max(MIN_SIZE, startDimensions.height - deltaY);
+        // Adjust position if we hit minimum size
+        if (startDimensions.width - deltaX < MIN_SIZE) {
+          newX = startDimensions.x + startDimensions.width - MIN_SIZE;
+        }
+        if (startDimensions.height - deltaY < MIN_SIZE) {
+          newY = startDimensions.y + startDimensions.height - MIN_SIZE;
+        }
+      } else if (corner === 'ne') {
+        newY = startDimensions.y + deltaY;
+        newWidth = Math.max(MIN_SIZE, startDimensions.width + deltaX);
+        newHeight = Math.max(MIN_SIZE, startDimensions.height - deltaY);
+        if (startDimensions.height - deltaY < MIN_SIZE) {
+          newY = startDimensions.y + startDimensions.height - MIN_SIZE;
+        }
+      } else if (corner === 'sw') {
+        newX = startDimensions.x + deltaX;
+        newWidth = Math.max(MIN_SIZE, startDimensions.width - deltaX);
+        newHeight = Math.max(MIN_SIZE, startDimensions.height + deltaY);
+        if (startDimensions.width - deltaX < MIN_SIZE) {
+          newX = startDimensions.x + startDimensions.width - MIN_SIZE;
+        }
+      } else if (corner === 'se') {
+        newWidth = Math.max(MIN_SIZE, startDimensions.width + deltaX);
+        newHeight = Math.max(MIN_SIZE, startDimensions.height + deltaY);
+      }
+
+      // Update resize state
+      const nextResizeState: ResizeState = {
+        ...resize,
+        currentDimensions: {
+          x: newX,
+          y: newY,
+          width: newWidth,
+          height: newHeight
+        }
+      };
+      resizeStateRef.current = nextResizeState;
+      setResizeState(nextResizeState);
+    },
+    [getScreenPoint, screenToWorld]
+  );
+
+  const handleResizeEnd = useCallback(
+    (event: React.PointerEvent) => {
+      const resize = resizeStateRef.current;
+      if (!resize || !activeSessionId) {
+        return;
+      }
+
+      event.stopPropagation();
+
+      // Get fresh state from store
+      const state = useSessionStore.getState();
+      const objects = state.canvasObjects[activeSessionId] || [];
+      const object = objects.find(obj => obj.id === resize.objectId);
+
+      if (!object) {
+        console.error('[ResizeEnd] Object not found in store:', resize.objectId);
+        resizeStateRef.current = null;
+        setResizeState(null);
+        return;
+      }
+
+      // Update object with new dimensions and keep it selected
+      updateCanvasObject(activeSessionId, {
+        ...object,
+        x: resize.currentDimensions.x,
+        y: resize.currentDimensions.y,
+        width: resize.currentDimensions.width,
+        height: resize.currentDimensions.height,
+        selected: true // Explicitly preserve selection after resize
+      });
+
+      // Release pointer capture
+      if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
+        containerRef.current.releasePointerCapture(event.pointerId);
+      }
+
+      // Delay clearing resize state to prevent click handlers from firing
+      // This ensures the selection stays intact
+      setTimeout(() => {
+        resizeStateRef.current = null;
+        setResizeState(null);
+      }, 10);
+    },
+    [activeSessionId, updateCanvasObject]
+  );
+
   const startPinPlacement = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      // Don't handle if we're resizing
+      if (resizeStateRef.current) {
+        return;
+      }
+
       // Close menu on pin placement
       setMenuPosition(null);
 
@@ -775,6 +976,11 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
 
   const startLasso = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      // Don't handle if we're resizing
+      if (resizeStateRef.current) {
+        return;
+      }
+
       // Close menu on lasso start
       setMenuPosition(null);
 
@@ -939,7 +1145,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     };
   }, [transform.x, transform.y, transform.k]);
 
-  const canvasCursor = canvasMode === "pan" ? "grab" : "crosshair";
+  const canvasCursor = resizeState ? "default" : (canvasMode === "pan" ? "grab" : "crosshair");
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-white">
@@ -948,6 +1154,16 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         ref={containerRef}
         onClick={handleCanvasClick}
         onPointerDown={startPinPlacement}
+        onPointerMove={(e) => {
+          if (resizeState) {
+            handleResizeMove(e);
+          }
+        }}
+        onPointerUp={(e) => {
+          if (resizeState) {
+            handleResizeEnd(e);
+          }
+        }}
         style={{ cursor: canvasCursor }}
       >
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
@@ -963,6 +1179,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
               onContextMenu={handleObjectContextMenu}
               isDragging={!!dragState}
               dragState={dragState}
+              resizeState={resizeState}
             />
             <PinLayer
               pins={pins}
@@ -1022,6 +1239,8 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
           lastSelectedObjectId={lastSelectedObjectId}
           onDelete={handleDeleteObjects}
           dragState={dragState}
+          onResizeStart={handleResizeStart}
+          resizeState={resizeState}
         />
         {canvasMode === "lasso" ? (
           <div

@@ -97,9 +97,16 @@ type ObjectLayerProps = {
     currentDelta: { x: number; y: number };
     wasSelectedAtStart: boolean;
   } | null;
+  resizeState?: {
+    objectId: string;
+    corner: string;
+    startWorld: { x: number; y: number };
+    startDimensions: { x: number; y: number; width: number; height: number };
+    currentDimensions: { x: number; y: number; width: number; height: number };
+  } | null;
 };
 
-export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragMove, onDragEnd, onContextMenu, isDragging, dragState }: ObjectLayerProps) {
+export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragMove, onDragEnd, onContextMenu, isDragging, dragState, resizeState }: ObjectLayerProps) {
   const stageStyle: CSSProperties = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
     transformOrigin: "0 0"
@@ -121,6 +128,13 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
             ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
             : undefined;
 
+          // Check if this object is being resized
+          const isBeingResized = resizeState?.objectId === object.id;
+          const objectX = isBeingResized && resizeState ? resizeState.currentDimensions.x : object.x;
+          const objectY = isBeingResized && resizeState ? resizeState.currentDimensions.y : object.y;
+          const objectWidth = isBeingResized && resizeState ? resizeState.currentDimensions.width : (object.width || object.size?.width || 'auto');
+          const objectHeight = isBeingResized && resizeState ? resizeState.currentDimensions.height : (object.height || object.size?.height || 'auto');
+
           return (
           <div
             key={object.id}
@@ -128,19 +142,23 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
             className={cn(
               "pointer-events-auto absolute rounded-lg border-2 border-transparent shadow-lg transition-colors",
               object.selected ? "border-sky-400" : "border-transparent",
-              isDragging ? "cursor-grabbing" : "cursor-grab",
-              !isBeingDragged && "transition-all"
+              resizeState ? "cursor-default" : (isDragging ? "cursor-grabbing" : "cursor-grab"),
+              !isBeingDragged && !isBeingResized && "transition-all"
             )}
             style={{
-              left: object.x,
-              top: object.y,
-              width: object.width || object.size?.width || 'auto',
-              height: object.height || object.size?.height || 'auto',
+              left: objectX,
+              top: objectY,
+              width: objectWidth,
+              height: objectHeight,
               background: `${object.color}20`,
               zIndex: object.zIndex || 0,
               transform: dragTransform
             }}
             onPointerDown={(event) => {
+              // Don't handle if we're currently resizing
+              if (resizeState) {
+                return;
+              }
               event.stopPropagation();
               event.preventDefault();
               if (onDragStart) {
@@ -148,6 +166,10 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               }
             }}
             onPointerMove={(event) => {
+              // Don't handle if we're currently resizing
+              if (resizeState) {
+                return;
+              }
               event.stopPropagation();
               event.preventDefault();
               if (onDragMove) {
@@ -155,6 +177,10 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               }
             }}
             onPointerUp={(event) => {
+              // Don't handle if we're currently resizing
+              if (resizeState) {
+                return;
+              }
               event.stopPropagation();
               event.preventDefault();
               if (onDragEnd) {
