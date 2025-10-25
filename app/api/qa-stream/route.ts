@@ -34,6 +34,31 @@ export async function POST(request: NextRequest): Promise<Response> {
   // Create ReadableStream for SSE
   const stream = new ReadableStream({
     async start(controller) {
+      let isClosed = false;
+
+      const safeEnqueue = (data: Uint8Array) => {
+        if (!isClosed) {
+          try {
+            controller.enqueue(data);
+          } catch (error) {
+            logger.warn('Failed to enqueue data, stream may be closed', { error });
+            isClosed = true;
+          }
+        }
+      };
+
+      const safeClose = () => {
+        if (!isClosed) {
+          try {
+            controller.close();
+            isClosed = true;
+          } catch (error) {
+            logger.warn('Failed to close stream, may already be closed', { error });
+            isClosed = true;
+          }
+        }
+      };
+
       try {
         const body = (await request.json()) as StreamingQARequest;
 
@@ -46,9 +71,12 @@ export async function POST(request: NextRequest): Promise<Response> {
           throw new ValidationError('Question is required');
         }
 
-        logger.info('Processing streaming QA request', {
+        logger.info('📥 Processing streaming QA request', {
           sessionId: body.sessionId,
+          question: body.question,
           mode: body.mode || 'guided',
+          highlightedObjects: body.highlightedObjects?.length || 0,
+          hasContext: !!body.context
         });
 
         // Get session
@@ -64,6 +92,11 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         // Add user turn
         const userTurnId = generateTurnId();
+        logger.info('👤 User question', {
+          turnId: userTurnId,
+          question: body.question
+        });
+
         sessionManager.addTurn(actualSessionId, {
           role: 'user',
           content: body.question,
@@ -85,6 +118,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         // Voice selection (use nova for warmer teaching tone)
         const voice = 'nova';
 
+        logger.info('🤖 Starting AI response generation', {
+          assistantTurnId,
+          voice,
+          sessionId: actualSessionId
+        });
+
         // Track generated objects and references for session update
         const generatedObjects: any[] = [];
         const generatedReferences: any[] = [];
@@ -104,21 +143,39 @@ export async function POST(request: NextRequest): Promise<Response> {
         for await (const event of responseStream) {
           // Track objects and references
           if (event.type === 'canvas_object') {
+            logger.info('🎨 Canvas object created', {
+              type: event.data.object.type,
+              label: event.data.object.metadata?.referenceName || event.data.object.id
+            });
             generatedObjects.push(event.data.object);
             sessionManager.addCanvasObjects(actualSessionId, [event.data.object]);
           }
 
           if (event.type === 'reference') {
+            logger.debug('🔗 Reference created', {
+              mention: event.data.mention
+            });
             generatedReferences.push(event.data);
           }
 
           if (event.type === 'text_chunk') {
+            logger.debug('📝 Text chunk', {
+              sentenceIndex: event.data.sentenceIndex,
+              text: event.data.text.substring(0, 50) + '...'
+            });
             fullText += event.data.text + ' ';
+          }
+
+          if (event.type === 'audio_chunk') {
+            logger.debug('🔊 Audio chunk generated', {
+              sentenceIndex: event.data.sentenceIndex,
+              audioLength: event.data.audio.length
+            });
           }
 
           // Format as SSE and send
           const sseData = `data: ${JSON.stringify(event)}\n\n`;
-          controller.enqueue(encoder.encode(sseData));
+          safeEnqueue(encoder.encode(sseData));
         }
 
         // Add assistant turn to session
@@ -130,13 +187,15 @@ export async function POST(request: NextRequest): Promise<Response> {
           objectsReferenced: generatedReferences.map(ref => ref.objectId),
         });
 
-        logger.info('Streaming QA request completed', {
+        logger.info('✅ Streaming QA request completed', {
           turnId: assistantTurnId,
           objectsCreated: generatedObjects.length,
+          references: generatedReferences.length,
+          responseLength: fullText.length
         });
 
         // Close stream
-        controller.close();
+        safeClose();
       } catch (error) {
         logger.error('Streaming QA request failed', { error });
 
@@ -151,8 +210,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         };
 
         const sseData = `data: ${JSON.stringify(errorEvent)}\n\n`;
-        controller.enqueue(encoder.encode(sseData));
-        controller.close();
+        safeEnqueue(encoder.encode(sseData));
+        safeClose();
       }
     },
 

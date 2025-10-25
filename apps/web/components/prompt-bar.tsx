@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { VoiceToggle } from "@/components/voice-toggle";
 import { useSessionStore } from "@/lib/session-store";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
@@ -25,6 +25,8 @@ export function PromptBar() {
   const addMessage = useSessionStore((state) => state.addMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+  const voiceInputState = useSessionStore((state) => state.voiceInputState);
+  const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
 
   // Streaming QA hook - always enabled
   const streamingQA = useStreamingQA({
@@ -137,6 +139,25 @@ export function PromptBar() {
     }
   }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, addMessage, value, updateCanvasObject, streamingQA]);
 
+  // Watch for spacebar transcript (push-to-talk mode) and auto-submit
+  useEffect(() => {
+    if (voiceInputState.spacebarTranscript && !voiceInputState.isPushToTalkActive) {
+      // Spacebar was just released, transcript is ready
+      const transcript = voiceInputState.spacebarTranscript.trim();
+
+      if (transcript) {
+        console.log('📝 Auto-submitting spacebar transcript:', transcript);
+        setValue(transcript);
+        setSpacebarTranscript(''); // Clear from store
+
+        // Auto-submit after a brief delay to let the input update
+        setTimeout(() => {
+          void submitPromptMessage();
+        }, 100);
+      }
+    }
+  }, [voiceInputState.spacebarTranscript, voiceInputState.isPushToTalkActive, setSpacebarTranscript, submitPromptMessage]);
+
   const handleSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -152,10 +173,10 @@ export function PromptBar() {
     >
       <input
         type="text"
-        placeholder="Ask Mentora to guide you through your next concept..."
-        value={value}
+        placeholder={voiceInputState.isPushToTalkActive ? "Listening..." : "Ask Mentora or hold spacebar to speak..."}
+        value={voiceInputState.isPushToTalkActive ? voiceInputState.spacebarTranscript : value}
         onChange={(event) => setValue(event.target.value)}
-        disabled={streamingQA.isStreaming}
+        disabled={streamingQA.isStreaming || voiceInputState.isPushToTalkActive}
         className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {

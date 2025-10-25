@@ -33,6 +33,12 @@ type Settings = {
   explanationLevel: "beginner" | "intermediate" | "advanced";
 };
 
+type VoiceInputState = {
+  isLiveTutorOn: boolean;
+  spacebarTranscript: string;
+  isPushToTalkActive: boolean;
+};
+
 type SessionState = {
   sessions: Session[];
   activeSessionId: string | null;
@@ -51,11 +57,14 @@ type SessionState = {
   lastSelectedObjectIds: Record<string, string | null>;
   focusTarget: FocusTarget;
   settings: Settings;
+  voiceInputState: VoiceInputState;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   updateSessionTitle: (sessionId: string, title: string) => void;
   // initializeDefaultSession: () => Promise<void>; // Removed - no longer auto-creating sessions
-  addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => void;
+  addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => string;
+  updateMessage: (sessionId: string, messageId: string, updates: Partial<Omit<Message, "id" | "timestamp">>) => void;
+  removeMessage: (sessionId: string, messageId: string) => void;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   updateCanvasObjects: (sessionId: string, objects: CanvasObject[]) => void;
   deleteCanvasObjects: (sessionId: string, objectIds: string[]) => void;
@@ -77,6 +86,9 @@ type SessionState = {
   requestFocus: (target: { x: number; y: number; id?: string }) => void;
   clearFocus: () => void;
   updateSettings: (settings: Partial<Settings>) => void;
+  setLiveTutorOn: (on: boolean) => void;
+  setSpacebarTranscript: (transcript: string) => void;
+  setIsPushToTalkActive: (active: boolean) => void;
 };
 
 const withImmer = immer<SessionState>;
@@ -105,6 +117,11 @@ export const useSessionStore = create<SessionState>()(
         preferredName: "",
         voice: "alloy",
         explanationLevel: "intermediate"
+      },
+      voiceInputState: {
+        isLiveTutorOn: false,
+        spacebarTranscript: "",
+        isPushToTalkActive: false
       },
     setActiveSession: (sessionId) => {
       set((state) => {
@@ -201,16 +218,39 @@ export const useSessionStore = create<SessionState>()(
       });
     },
     addMessage: (sessionId, message) => {
+      const msg: Message = {
+        id: `msg-${nanoid(8)}`,
+        timestamp: new Date().toISOString(),
+        ...message
+      };
       set((state) => {
-        const msg: Message = {
-          id: `msg-${nanoid(8)}`,
-          timestamp: new Date().toISOString(),
-          ...message
-        };
         if (!state.messages[sessionId]) {
           state.messages[sessionId] = [];
         }
         state.messages[sessionId].push(msg);
+      });
+      return msg.id;
+    },
+    updateMessage: (sessionId, messageId, updates) => {
+      set((state) => {
+        const messages = state.messages[sessionId];
+        if (!messages) return;
+
+        const msgIndex = messages.findIndex(m => m.id === messageId);
+        if (msgIndex >= 0) {
+          state.messages[sessionId][msgIndex] = {
+            ...messages[msgIndex],
+            ...updates
+          };
+        }
+      });
+    },
+    removeMessage: (sessionId, messageId) => {
+      set((state) => {
+        const messages = state.messages[sessionId];
+        if (!messages) return;
+
+        state.messages[sessionId] = messages.filter(m => m.id !== messageId);
       });
     },
     updateCanvasObject: (sessionId, object) => {
@@ -400,6 +440,21 @@ export const useSessionStore = create<SessionState>()(
     updateSettings: (settings) => {
       set((state) => {
         state.settings = { ...state.settings, ...settings };
+      });
+    },
+    setLiveTutorOn: (on) => {
+      set((state) => {
+        state.voiceInputState.isLiveTutorOn = on;
+      });
+    },
+    setSpacebarTranscript: (transcript) => {
+      set((state) => {
+        state.voiceInputState.spacebarTranscript = transcript;
+      });
+    },
+    setIsPushToTalkActive: (active) => {
+      set((state) => {
+        state.voiceInputState.isPushToTalkActive = active;
       });
     }
     };

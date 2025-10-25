@@ -3,7 +3,6 @@
 import { Fragment, useState, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, MessageSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { VoiceControls } from "@/components/voice-controls";
 import { formatTime } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
@@ -247,7 +246,18 @@ export function TimelinePanel() {
                   {formatTime(message.timestamp)}
                 </span>
               </p>
-              <p className="mt-1 text-sm text-slate-700 leading-relaxed">{message.content}</p>
+              {message.content === "Thinking..." ? (
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-sm text-slate-600">Thinking</span>
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                    <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-slate-700 leading-relaxed">{message.content}</p>
+              )}
               {message.canvasObjectIds && message.canvasObjectIds.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {message.canvasObjectIds.map(objId => {
@@ -266,12 +276,6 @@ export function TimelinePanel() {
                     );
                   })}
                 </div>
-              )}
-              {message.role === "assistant" && (
-                <VoiceControls
-                  text={message.content}
-                  className="mt-2"
-                />
               )}
             </div>
           </Fragment>

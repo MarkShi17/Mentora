@@ -500,8 +500,54 @@ export function useContinuousAI() {
     }
   }, [isListening, createRecognition, updateContext, detectQuestion]);
 
+  const forceProcessTranscript = useCallback(() => {
+    const transcript = currentTranscript.trim();
+
+    if (!transcript) {
+      console.log('⚠️ No transcript to process');
+      return;
+    }
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('⚡ FORCE PROCESSING TRANSCRIPT (Push-to-talk released)');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('Transcript:', transcript);
+
+    // Update context with the utterance
+    updateContext(transcript);
+
+    // Detect if this is a question
+    const questionResult = detectQuestion(transcript);
+    const isEducational = isEducationalCommand(transcript);
+
+    console.log('Force analysis:', {
+      transcript,
+      confidence: questionResult.confidence,
+      isQuestion: questionResult.isQuestion,
+      isEducational
+    });
+
+    if ((questionResult.isQuestion || questionResult.confidence > 0.3) && isEducational) {
+      console.log('✅ Forcing question processing');
+
+      if (onQuestionDetectedRef.current) {
+        const cleanedQuestion = cleanQuestion(transcript);
+        console.log('Processing forced question:', cleanedQuestion, questionResult.context);
+        onQuestionDetectedRef.current(cleanedQuestion, questionResult.context);
+      }
+    } else {
+      console.log('❌ Transcript did not qualify as question');
+    }
+
+    // Reset transcript
+    setCurrentTranscript("");
+  }, [currentTranscript, updateContext, detectQuestion, isEducationalCommand, cleanQuestion]);
+
   const stopListening = useCallback(() => {
     if (!isListening || !recognitionRef.current) return;
+
+    // Force process any pending transcript before stopping
+    forceProcessTranscript();
 
     // Clear any pending timeouts
     if (silenceTimeoutRef.current) {
@@ -517,7 +563,7 @@ export function useContinuousAI() {
     setIsListening(false);
     recognitionRef.current = null;
     isProcessingRef.current = false;
-  }, [isListening]);
+  }, [isListening, forceProcessTranscript]);
 
   const pauseListening = useCallback(() => {
     if (!isListening || !recognitionRef.current) return;
@@ -581,6 +627,7 @@ export function useContinuousAI() {
     stopListening,
     pauseListening,
     resumeListening,
-    setQuestionCallback
+    setQuestionCallback,
+    forceProcessTranscript
   };
 }

@@ -66,11 +66,14 @@ export class StreamingOrchestrator {
       conversationHistory?: string[];
     }
   ): AsyncGenerator<StreamEvent, void, unknown> {
-    logger.info('Starting streaming response', {
-      sessionId: session.id,
-      mode,
-      turnId
-    });
+    logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    logger.info('🎬 STREAMING ORCHESTRATOR STARTED');
+    logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    logger.info('Session ID', { sessionId: session.id });
+    logger.info('Question', { question });
+    logger.info('Mode', { mode });
+    logger.info('Turn ID', { turnId });
+    logger.info('Existing canvas objects', { count: session.canvasObjects.length });
 
     const streamingContext: StreamingContext = {
       sessionId: session.id,
@@ -100,6 +103,11 @@ export class StreamingOrchestrator {
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
       // Start Claude streaming
+      logger.info('🧠 Calling Claude API', {
+        model: 'claude-sonnet-4-20250514',
+        maxTokens: 4096
+      });
+
       const stream = await this.anthropic.messages.stream({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
@@ -111,6 +119,8 @@ export class StreamingOrchestrator {
           }
         ]
       });
+
+      logger.info('✅ Claude stream started');
 
       let fullResponse = '';
       const sentenceParser = new SentenceParser();
@@ -408,7 +418,10 @@ export class StreamingOrchestrator {
         }
       };
 
-      logger.info('Streaming response completed', {
+      logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.info('✅ STREAMING RESPONSE COMPLETED');
+      logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.info('Summary', {
         totalSentences: sentenceParser.getSentenceCount(),
         totalObjects,
         totalReferences
@@ -481,6 +494,12 @@ CONTEXTUAL AWARENESS:
 
 TEACHING STYLE (${mode} mode):
 ${teachingStyle}
+
+COMPREHENSION CHECKING:
+- Ask follow-up questions to ensure understanding
+- Check if the student grasps key concepts before moving on
+- Encourage the student to explain concepts back to you
+- Adjust your explanation depth based on their responses
 
 VISUAL CREATION:
 - Create visual objects to explain concepts (LaTeX equations, graphs, code blocks, diagrams, text notes)
