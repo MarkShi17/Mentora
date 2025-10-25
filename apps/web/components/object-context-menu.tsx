@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, Maximize2, Plus, Trash2 } from "lucide-react";
+import { MoreHorizontal, Maximize2, Plus, Trash2, Unlink } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 type ObjectContextMenuProps = {
@@ -8,9 +8,10 @@ type ObjectContextMenuProps = {
   onClose: () => void;
   selectedObjectIds: string[];
   onDelete: (objectIds: string[]) => void;
+  onDeleteConnections?: (objectIds: string[]) => void;
 };
 
-export function ObjectContextMenu({ position, onClose, selectedObjectIds, onDelete }: ObjectContextMenuProps) {
+export function ObjectContextMenu({ position, onClose, selectedObjectIds, onDelete, onDeleteConnections }: ObjectContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,6 +39,12 @@ export function ObjectContextMenu({ position, onClose, selectedObjectIds, onDele
   const menuItems = [
     { icon: Maximize2, label: "Expand", action: () => console.log("Expand") },
     { icon: Plus, label: "Add to Context", action: () => console.log("Add to Context") },
+    ...(onDeleteConnections ? [{
+      icon: Unlink,
+      label: "Delete Connections",
+      action: () => onDeleteConnections(selectedObjectIds),
+      danger: false
+    }] : []),
     {
       icon: Trash2,
       label: "Delete",

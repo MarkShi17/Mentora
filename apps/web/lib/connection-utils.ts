@@ -22,7 +22,8 @@ export function getAnchorPosition(
 }
 
 /**
- * Generate SVG path for a connection line with a subtle curve
+ * Generate SVG path for a connection line
+ * Uses straight lines for parallel connections, curves only when needed
  */
 export function getConnectionPath(
   sourcePos: { x: number; y: number },
@@ -32,11 +33,25 @@ export function getConnectionPath(
   const dy = targetPos.y - sourcePos.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
 
-  // Calculate control point offset (perpendicular to line)
+  // Threshold for considering a line "parallel" (within 10 degrees)
+  const parallelThreshold = 10;
+  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  const absAngle = Math.abs(angle);
+
+  // Check if line is roughly horizontal or vertical
+  const isHorizontal = absAngle < parallelThreshold || absAngle > (180 - parallelThreshold);
+  const isVertical = Math.abs(absAngle - 90) < parallelThreshold || Math.abs(absAngle + 90) < parallelThreshold;
+
+  // Use straight line for parallel connections
+  if (isHorizontal || isVertical) {
+    return `M ${sourcePos.x} ${sourcePos.y} L ${targetPos.x} ${targetPos.y}`;
+  }
+
+  // Use curve for diagonal connections to avoid overlapping objects
   const offsetAmount = Math.min(distance * 0.2, 50); // Max 50px offset
-  const angle = Math.atan2(dy, dx) + Math.PI / 2; // Perpendicular angle
-  const controlX = (sourcePos.x + targetPos.x) / 2 + Math.cos(angle) * offsetAmount;
-  const controlY = (sourcePos.y + targetPos.y) / 2 + Math.sin(angle) * offsetAmount;
+  const perpAngle = Math.atan2(dy, dx) + Math.PI / 2; // Perpendicular angle
+  const controlX = (sourcePos.x + targetPos.x) / 2 + Math.cos(perpAngle) * offsetAmount;
+  const controlY = (sourcePos.y + targetPos.y) / 2 + Math.sin(perpAngle) * offsetAmount;
 
   // Quadratic bezier curve
   return `M ${sourcePos.x} ${sourcePos.y} Q ${controlX} ${controlY} ${targetPos.x} ${targetPos.y}`;
@@ -95,7 +110,7 @@ export function isPointNearLine(
 export function getHoveredAnchor(
   object: CanvasObject,
   worldPos: { x: number; y: number },
-  anchorRadius: number = 10
+  anchorRadius: number = 12
 ): ConnectionAnchor | null {
   const anchors: ConnectionAnchor[] = ['north', 'east', 'south', 'west'];
 

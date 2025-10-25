@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import type { CanvasObject, ConnectionAnchor as AnchorType } from "@/types";
+import type { CanvasObject, ConnectionAnchor as AnchorType, ObjectConnection } from "@/types";
 import { ObjectContextMenu, ObjectMenuButton } from "@/components/object-context-menu";
 import { ConnectionAnchor } from "@/components/connection-anchor";
 import { getAnchorPosition } from "@/lib/connection-utils";
@@ -13,6 +13,8 @@ type SelectionLayerProps = {
   selectionMethod?: "click" | "lasso";
   lastSelectedObjectId?: string | null;
   onDelete: (objectIds: string[]) => void;
+  onDeleteConnections?: (objectIds: string[]) => void;
+  connections?: ObjectConnection[];
   dragState?: {
     objectId: string;
     selectedObjectIds: string[];
@@ -37,6 +39,7 @@ type SelectionLayerProps = {
     sourceAnchor: AnchorType;
   } | null;
   hoveredAnchor?: { objectId: string; anchor: AnchorType } | null;
+  onAnchorHover?: (objectId: string, anchor: AnchorType | null) => void;
 };
 
 export function SelectionLayer({
@@ -45,12 +48,15 @@ export function SelectionLayer({
   selectionMethod,
   lastSelectedObjectId,
   onDelete,
+  onDeleteConnections,
+  connections = [],
   dragState,
   onResizeStart,
   resizeState,
   onConnectionStart,
   connectionDragState,
-  hoveredAnchor
+  hoveredAnchor,
+  onAnchorHover
 }: SelectionLayerProps) {
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -166,6 +172,12 @@ export function SelectionLayer({
       const isActive = connectionDragState?.sourceObjectId === obj.id && connectionDragState?.sourceAnchor === anchor;
       const isHovered = hoveredAnchor?.objectId === obj.id && hoveredAnchor?.anchor === anchor;
 
+      // Check if this anchor has a connection
+      const hasConnection = connections.some(conn =>
+        (conn.sourceObjectId === obj.id && conn.sourceAnchor === anchor) ||
+        (conn.targetObjectId === obj.id && conn.targetAnchor === anchor)
+      );
+
       return (
         <ConnectionAnchor
           key={anchor}
@@ -175,7 +187,10 @@ export function SelectionLayer({
           scale={transform.k}
           isActive={isActive}
           isHovered={isHovered}
+          hasConnection={hasConnection}
           onPointerDown={(e) => onConnectionStart(obj.id, anchor, e)}
+          onPointerEnter={() => onAnchorHover?.(obj.id, anchor)}
+          onPointerLeave={() => onAnchorHover?.(obj.id, null)}
         />
       );
     });
@@ -206,6 +221,12 @@ export function SelectionLayer({
               const isHovered = hoveredAnchor?.objectId === obj.id && hoveredAnchor?.anchor === anchor;
               const isSourceObject = connectionDragState.sourceObjectId === obj.id;
 
+              // Check if this anchor has a connection
+              const hasConnection = connections.some(conn =>
+                (conn.sourceObjectId === obj.id && conn.sourceAnchor === anchor) ||
+                (conn.targetObjectId === obj.id && conn.targetAnchor === anchor)
+              );
+
               // Don't show other anchors on the source object
               if (isSourceObject && !isSourceAnchor) {
                 return null;
@@ -220,6 +241,7 @@ export function SelectionLayer({
                   scale={transform.k}
                   isActive={isSourceAnchor}
                   isHovered={isHovered}
+                  hasConnection={hasConnection}
                   onPointerDown={(e) => {
                     if (!isSourceAnchor) {
                       e.stopPropagation();
@@ -272,6 +294,7 @@ export function SelectionLayer({
             onClose={handleCloseMenu}
             selectedObjectIds={selectedObjects.map((obj) => obj.id)}
             onDelete={onDelete}
+            onDeleteConnections={onDeleteConnections}
           />
         )}
       </>
@@ -340,6 +363,7 @@ export function SelectionLayer({
             onClose={handleCloseMenu}
             selectedObjectIds={selectedObjects.map((obj) => obj.id)}
             onDelete={onDelete}
+            onDeleteConnections={onDeleteConnections}
           />
         )}
       </>

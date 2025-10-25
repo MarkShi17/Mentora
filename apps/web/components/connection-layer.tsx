@@ -214,18 +214,6 @@ export function ConnectionLayer({
                     repeatCount="indefinite"
                   />
                 </path>
-
-                {/* Endpoint circle at cursor/target */}
-                <circle
-                  cx={targetPos.x}
-                  cy={targetPos.y}
-                  r={isSnapping ? 6 / transform.k : 4 / transform.k}
-                  fill="#0ea5e9"
-                  className="pointer-events-none transition-all"
-                  style={{
-                    filter: isSnapping ? 'drop-shadow(0 0 4px rgba(14, 165, 233, 0.8))' : 'none'
-                  }}
-                />
               </g>
             );
           })()}

@@ -122,6 +122,7 @@ const connections = useSessionStore((state) =>
 );
 const createConnection = useSessionStore((state) => state.createConnection);
 const deleteConnection = useSessionStore((state) => state.deleteConnection);
+const deleteConnectionsByObjectId = useSessionStore((state) => state.deleteConnectionsByObjectId);
 
   const canvasModeRef = useRef(canvasMode);
   useEffect(() => {
@@ -522,11 +523,35 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     [activeSessionId, deleteCanvasObjects]
   );
 
+  const handleDeleteConnections = useCallback(
+    (objectIds: string[]) => {
+      if (!activeSessionId) {
+        return;
+      }
+      objectIds.forEach(objectId => {
+        deleteConnectionsByObjectId(activeSessionId, objectId);
+      });
+      setMenuPosition(null);
+    },
+    [activeSessionId, deleteConnectionsByObjectId]
+  );
+
   const handlePinFocus = useCallback(
     (pin: Pin) => {
       requestFocus({ id: pin.id, x: pin.x, y: pin.y });
     },
     [requestFocus]
+  );
+
+  const handleAnchorHover = useCallback(
+    (objectId: string, anchor: ConnectionAnchor | null) => {
+      if (anchor) {
+        setHoveredAnchor({ objectId, anchor });
+      } else {
+        setHoveredAnchor(null);
+      }
+    },
+    []
   );
 
   const getScreenPoint = useCallback(
@@ -1123,6 +1148,18 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       event.stopPropagation();
       event.preventDefault();
 
+      // Check if this anchor already has a connection
+      const existingConnection = connections.find(conn =>
+        (conn.sourceObjectId === objectId && conn.sourceAnchor === anchor) ||
+        (conn.targetObjectId === objectId && conn.targetAnchor === anchor)
+      );
+
+      // If anchor already has a connection, delete it instead of starting a new one
+      if (existingConnection) {
+        deleteConnection(activeSessionId, existingConnection.id);
+        return;
+      }
+
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
 
@@ -1140,7 +1177,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         containerRef.current.setPointerCapture(event.pointerId);
       }
     },
-    [activeSessionId]
+    [activeSessionId, connections, deleteConnection]
   );
 
   const handleConnectionMove = useCallback(
@@ -1163,12 +1200,12 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       // Check if hovering over an anchor
       const hoveredObject = canvasObjects.find(obj => {
         if (obj.id === connDrag.sourceObjectId) return false; // Can't connect to self
-        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, 10);
+        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, 12);
         return anchor !== null;
       });
 
       if (hoveredObject) {
-        const anchor = getHoveredAnchor(hoveredObject, { x: worldX, y: worldY }, 10);
+        const anchor = getHoveredAnchor(hoveredObject, { x: worldX, y: worldY }, 12);
         if (anchor) {
           setHoveredAnchor({ objectId: hoveredObject.id, anchor });
         } else {
@@ -1195,21 +1232,33 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       // Check if we're over a valid target anchor
       const targetObject = canvasObjects.find(obj => {
         if (obj.id === connDrag.sourceObjectId) return false;
-        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, 10);
+        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, 12);
         return anchor !== null;
       });
 
       if (targetObject) {
-        const targetAnchor = getHoveredAnchor(targetObject, { x: worldX, y: worldY }, 10);
+        const targetAnchor = getHoveredAnchor(targetObject, { x: worldX, y: worldY }, 12);
         if (targetAnchor) {
-          // Check if connection already exists between these two objects (in either direction)
-          const connectionExists = connections.some(conn =>
+          // Check if source anchor already has a connection
+          const sourceAnchorHasConnection = connections.some(conn =>
+            (conn.sourceObjectId === connDrag.sourceObjectId && conn.sourceAnchor === connDrag.sourceAnchor) ||
+            (conn.targetObjectId === connDrag.sourceObjectId && conn.targetAnchor === connDrag.sourceAnchor)
+          );
+
+          // Check if target anchor already has a connection
+          const targetAnchorHasConnection = connections.some(conn =>
+            (conn.sourceObjectId === targetObject.id && conn.sourceAnchor === targetAnchor) ||
+            (conn.targetObjectId === targetObject.id && conn.targetAnchor === targetAnchor)
+          );
+
+          // Check if these two objects already have ANY connection between them
+          const objectsAlreadyConnected = connections.some(conn =>
             (conn.sourceObjectId === connDrag.sourceObjectId && conn.targetObjectId === targetObject.id) ||
             (conn.sourceObjectId === targetObject.id && conn.targetObjectId === connDrag.sourceObjectId)
           );
 
-          if (!connectionExists) {
-            // Create the connection
+          // Only create connection if both anchors are free AND objects aren't already connected
+          if (!sourceAnchorHasConnection && !targetAnchorHasConnection && !objectsAlreadyConnected) {
             createConnection(
               activeSessionId,
               connDrag.sourceObjectId,
@@ -1545,12 +1594,15 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
           selectionMethod={selectionMethod}
           lastSelectedObjectId={lastSelectedObjectId}
           onDelete={handleDeleteObjects}
+          onDeleteConnections={handleDeleteConnections}
+          connections={connections}
           dragState={dragState}
           onResizeStart={handleResizeStart}
           resizeState={resizeState}
           onConnectionStart={handleConnectionStart}
           connectionDragState={connectionDragState}
           hoveredAnchor={hoveredAnchor}
+          onAnchorHover={handleAnchorHover}
         />
         {canvasMode === "lasso" ? (
           <div
