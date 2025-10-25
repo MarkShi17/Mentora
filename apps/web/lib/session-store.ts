@@ -53,6 +53,7 @@ type SessionState = {
   setSelectedObjects: (sessionId: string, ids: string[]) => void;
   setSelectionMethod: (sessionId: string, method: "click" | "lasso") => void;
   setLastSelectedObject: (sessionId: string, objectId: string | null) => void;
+  bringToFront: (sessionId: string, objectId: string) => void;
   setSources: (sessionId: string, sources: SourceLink[]) => void;
   setVoiceActive: (value: boolean) => void;
   appendTimelineEvent: (sessionId: string, event: Omit<TimelineEvent, "id" | "timestamp">) => void;
@@ -90,6 +91,7 @@ export const useSessionStore = create<SessionState>()(
       height: 100,
       color: "#3b82f6",
       selected: false,
+      zIndex: 1,
       data: {
         content: "This object is at (0,0)\nIt should appear in the visual center of the canvas."
       },
@@ -109,6 +111,7 @@ export const useSessionStore = create<SessionState>()(
       height: 150,
       color: "#10b981",
       selected: false,
+      zIndex: 2,
       data: {
         svg: '<svg viewBox="0 0 200 100"><rect x="10" y="10" width="180" height="80" fill="#10b981" opacity="0.3" rx="8"/><text x="100" y="55" text-anchor="middle" fill="#059669" font-size="16">Diagram</text></svg>'
       },
@@ -348,6 +351,20 @@ export const useSessionStore = create<SessionState>()(
     setLastSelectedObject: (sessionId, objectId) => {
       set((state) => {
         state.lastSelectedObjectIds[sessionId] = objectId;
+      });
+    },
+    bringToFront: (sessionId, objectId) => {
+      set((state) => {
+        const list = state.canvasObjects[sessionId];
+        if (!list) {
+          return;
+        }
+        // Find the highest current zIndex
+        const maxZIndex = Math.max(...list.map(obj => obj.zIndex || 0), 0);
+        // Update the object's zIndex to be highest + 1
+        state.canvasObjects[sessionId] = list.map((item) =>
+          item.id === objectId ? { ...item, zIndex: maxZIndex + 1 } : item
+        );
       });
     },
     requestFocus: (target) => {

@@ -82,6 +82,8 @@ const pins = useSessionStore((state) =>
 const requestFocus = useSessionStore((state) => state.requestFocus);
 const addPin = useSessionStore((state) => state.addPin);
 const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
+const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+const bringToFront = useSessionStore((state) => state.bringToFront);
 const stageSize = useSessionStore((state) =>
   state.activeSessionId ? state.canvasViews[state.activeSessionId]?.stageSize : null
 );
@@ -119,6 +121,18 @@ const initialPinCenteredRef = useRef<string | null>(null);
   useEffect(() => {
     lassoRef.current = lasso;
   }, [lasso]);
+
+  // Object dragging state
+  const [dragState, setDragState] = useState<{
+    objectId: string;
+    startWorld: { x: number; y: number };
+    startObject: { x: number; y: number };
+    currentDelta: { x: number; y: number };
+  } | null>(null);
+  const dragStateRef = useRef<typeof dragState>(null);
+  useEffect(() => {
+    dragStateRef.current = dragState;
+  }, [dragState]);
 
   useEffect(() => {
     if (pinDraft && pinInputRef.current) {
@@ -201,6 +215,14 @@ const initialPinCenteredRef = useRef<string | null>(null);
         if (event.ctrlKey && event.type === "wheel") {
           return true;
         }
+
+        // Don't activate zoom if clicking on a canvas object
+        const target = event.target as HTMLElement;
+        const isObjectClick = target.closest('[data-canvas-object="true"]');
+        if (isObjectClick) {
+          return false;
+        }
+
         return !event.button && event.type !== "dblclick";
       })
       .on("zoom", handleZoom);
@@ -408,13 +430,16 @@ const initialPinCenteredRef = useRef<string | null>(null);
       if (!activeSessionId) {
         return;
       }
+      // Bring object to front when selected
+      bringToFront(activeSessionId, objectId);
+
       // Check for Cmd (Mac) or Ctrl (Windows/Linux) for multi-select
       const isMultiSelect = event.ctrlKey || event.metaKey;
       toggleObjectSelection(activeSessionId, objectId, isMultiSelect);
       setSelectionMethod(activeSessionId, "click");
       setLastSelectedObject(activeSessionId, objectId);
     },
-    [activeSessionId, toggleObjectSelection, setSelectionMethod, setLastSelectedObject]
+    [activeSessionId, toggleObjectSelection, setSelectionMethod, setLastSelectedObject, bringToFront]
   );
 
   const handlePinFocus = useCallback(
@@ -436,6 +461,96 @@ const initialPinCenteredRef = useRef<string | null>(null);
       };
     },
     []
+  );
+
+  const handleObjectDragStart = useCallback(
+    (objectId: string, event: React.PointerEvent) => {
+      if (!activeSessionId || canvasMode !== "pan") {
+        return;
+      }
+      event.stopPropagation();
+
+      // Find the object
+      const object = canvasObjectsRef.current.find(obj => obj.id === objectId);
+      if (!object) {
+        return;
+      }
+
+      // Bring to front
+      bringToFront(activeSessionId, objectId);
+
+      // Get screen point and convert to world coordinates
+      const screenPoint = getScreenPoint(event);
+      const worldPoint = screenToWorld(screenPoint);
+
+      // Set drag state
+      setDragState({
+        objectId,
+        startWorld: worldPoint,
+        startObject: { x: object.x, y: object.y },
+        currentDelta: { x: 0, y: 0 }
+      });
+
+      // Capture pointer
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [activeSessionId, canvasMode, bringToFront, getScreenPoint, screenToWorld]
+  );
+
+  const handleObjectDragMove = useCallback(
+    (objectId: string, event: React.PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag || drag.objectId !== objectId) {
+        return;
+      }
+
+      event.stopPropagation();
+
+      // Get current world position
+      const screenPoint = getScreenPoint(event);
+      const worldPoint = screenToWorld(screenPoint);
+
+      // Calculate delta in world coordinates
+      const deltaX = worldPoint.x - drag.startWorld.x;
+      const deltaY = worldPoint.y - drag.startWorld.y;
+
+      // Update drag state with current delta (for visual transform)
+      setDragState({
+        ...drag,
+        currentDelta: { x: deltaX, y: deltaY }
+      });
+    },
+    [getScreenPoint, screenToWorld]
+  );
+
+  const handleObjectDragEnd = useCallback(
+    (objectId: string, event: React.PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag || drag.objectId !== objectId || !activeSessionId) {
+        return;
+      }
+
+      event.stopPropagation();
+
+      // Commit final position to store
+      const object = canvasObjectsRef.current.find(obj => obj.id === objectId);
+      if (object) {
+        updateCanvasObject(activeSessionId, {
+          ...object,
+          x: drag.startObject.x + drag.currentDelta.x,
+          y: drag.startObject.y + drag.currentDelta.y
+        });
+      }
+
+      // Release pointer capture
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+
+      // Clear drag state
+      setDragState(null);
+    },
+    [activeSessionId, updateCanvasObject]
   );
 
   const startPinPlacement = useCallback(
@@ -636,7 +751,16 @@ const initialPinCenteredRef = useRef<string | null>(null);
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
         {isInitialized && (
           <>
-            <ObjectLayer objects={canvasObjects} transform={transform} onSelect={handleSelect} />
+            <ObjectLayer
+              objects={canvasObjects}
+              transform={transform}
+              onSelect={handleSelect}
+              onDragStart={handleObjectDragStart}
+              onDragMove={handleObjectDragMove}
+              onDragEnd={handleObjectDragEnd}
+              isDragging={!!dragState}
+              dragState={dragState}
+            />
             <PinLayer
               pins={pins}
               transform={transform}

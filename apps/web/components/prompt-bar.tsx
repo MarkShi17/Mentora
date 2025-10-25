@@ -120,7 +120,12 @@ export function PromptBar() {
             }
           // Add canvas objects from backend response
           if (data.canvasObjects) {
-            data.canvasObjects.forEach((obj: any) => {
+            // Get current max zIndex to ensure new objects are on top
+            const { canvasObjects: existingObjects } = useSessionStore.getState();
+            const currentObjects = existingObjects[sessionId] || [];
+            const maxZIndex = Math.max(...currentObjects.map(o => o.zIndex || 0), 0);
+
+            data.canvasObjects.forEach((obj: any, index: number) => {
               // Transform backend object structure to frontend structure
               const transformedObj = {
                 id: obj.id,
@@ -129,7 +134,7 @@ export function PromptBar() {
                 y: obj.position.y,
                 width: obj.size.width, // Keep for reference but CSS will override
                 height: obj.size.height, // Keep for reference but CSS will override
-                zIndex: obj.zIndex || 1,
+                zIndex: maxZIndex + index + 1, // Ensure new objects are on top
                 selected: false,
                 color: getColorForType(obj.type),
                 label: obj.metadata?.referenceName || obj.type,
