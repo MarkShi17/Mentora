@@ -63,3 +63,14 @@ export type Pin = {
   y: number;
   createdAt: string;
 };
+
+export type ConnectionAnchor = 'north' | 'east' | 'south' | 'west';
+
+export type ObjectConnection = {
+  id: string;
+  sourceObjectId: string;
+  targetObjectId: string;
+  sourceAnchor: ConnectionAnchor;
+  targetAnchor: ConnectionAnchor;
+  createdAt: string;
+};
