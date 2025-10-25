@@ -1,0 +1,31 @@
+# Node / Next.js artifacts
+node_modules/
+.next/
+dist/
+out/
+
+# Temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor directories and files
+.DS_Store
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Testing outputs
+coverage/
+playwright-report/
+
+# Misc build caches
+.turbo/
+.cache/
+*.lock-wscript
