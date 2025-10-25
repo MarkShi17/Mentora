@@ -459,6 +459,52 @@ docker-compose -f docker-compose.prod.yml up
 
 ---
 
+## 🔧 Docker Build Fix (2025-10-25)
+
+### Issue Encountered
+
+**Problem**: Docker build failed with error:
+```
+npm error The `npm ci` command can only install with an existing package-lock.json
+```
+
+**Root Cause**: Backend `package-lock.json` was not generated during initial setup.
+
+### Changes Made
+
+**Fix Applied:**
+1. Generated `package-lock.json` for backend:
+   ```bash
+   npm install
+   ```
+
+2. Verified both lock files exist:
+   - ✅ Backend: `package-lock.json` (33KB)
+   - ✅ Frontend: `mentora/apps/web/package-lock.json` (245KB)
+
+3. Tested Docker builds:
+   ```bash
+   docker-compose build backend   # ✅ Success
+   docker-compose build frontend  # ✅ Success
+   ```
+
+### Why This Happened
+
+The backend `package.json` was created manually, but `npm install` was never run to generate the corresponding `package-lock.json` file. Docker's `npm ci` command requires an existing lock file for reproducible builds.
+
+### Resolution
+
+Both services now build successfully:
+- Backend image: `mentora-backend:latest`
+- Frontend image: `mentora-frontend:latest`
+
+Full stack can be started with:
+```bash
+docker-compose up
+```
+
+---
+
 ## 📋 TODO / Future Enhancements
 
 ### High Priority
