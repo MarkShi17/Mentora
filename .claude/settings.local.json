@@ -16,7 +16,15 @@
       "Bash(test:*)",
       "Bash(python3:*)",
       "Bash(docker-compose:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(brew search:*)",
+      "Bash(brew install:*)",
+      "WebFetch(domain:help.biorender.com)",
+      "WebFetch(domain:support.claude.com)",
+      "Bash(brew unlink:*)",
+      "Bash(ping:*)",
+      "Bash(nslookup:*)",
+      "Bash(docker restart:*)"
     ],
     "deny": [],
     "ask": []

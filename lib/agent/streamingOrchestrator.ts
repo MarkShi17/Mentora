@@ -15,6 +15,8 @@ import { layoutEngine } from '@/lib/canvas/layoutEngine';
 import { ttsService } from '@/lib/voice/ttsService';
 import { SentenceParser } from '@/lib/utils/sentenceParser';
 import { logger } from '@/lib/utils/logger';
+import { MCP_TOOLS_FOR_CLAUDE } from './mcpTools';
+import { Brain } from '@/types/brain';
 
 interface StreamingContext {
   sessionId: string;
@@ -51,6 +53,20 @@ export class StreamingOrchestrator {
   }
 
   /**
+   * Get tools appropriate for the selected brain
+   */
+  private getToolsForBrain(brain: Brain): typeof MCP_TOOLS_FOR_CLAUDE {
+    if (!brain.mcpTools || brain.mcpTools.length === 0) {
+      return MCP_TOOLS_FOR_CLAUDE; // Fallback to all tools for brains without specific tools
+    }
+
+    // Filter tools to only those appropriate for this brain
+    return MCP_TOOLS_FOR_CLAUDE.filter(tool =>
+      brain.mcpTools!.includes(tool.name)
+    );
+  }
+
+  /**
    * Stream a teaching response with real-time TTS
    */
   async *streamResponse(
@@ -68,7 +84,8 @@ export class StreamingOrchestrator {
     userSettings?: {
       userName?: string;
       explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
-    }
+    },
+    selectedBrain?: Brain
   ): AsyncGenerator<StreamEvent, void, unknown> {
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logger.info('🎬 STREAMING ORCHESTRATOR STARTED');
@@ -103,17 +120,29 @@ export class StreamingOrchestrator {
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system and user prompts with user settings
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings);
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, selectedBrain);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
+
+      // Get model from selected brain
+      const model = selectedBrain?.model || 'claude-sonnet-4-5-20250929';
+
+      // NOTE: Tools parameter is commented out for now because:
+      // 1. The streaming orchestrator doesn't handle tool_use blocks yet
+      // 2. MCP servers need to be running to execute tool calls
+      // 3. The brain's promptEnhancement is sufficient to guide JSON responses
+      // TODO: Add tool execution handling to streaming orchestrator
+      // const tools = selectedBrain ? this.getToolsForBrain(selectedBrain) : MCP_TOOLS_FOR_CLAUDE;
 
       // Start Claude streaming
       logger.info('🧠 Calling Claude API', {
-        model: 'claude-sonnet-4-5-20250929',
-        maxTokens: 4096
+        model,
+        maxTokens: 4096,
+        brainType: selectedBrain?.type || 'general',
+        usingPromptEnhancement: !!selectedBrain?.promptEnhancement
       });
 
       const stream = await this.anthropic.messages.stream({
-        model: 'claude-sonnet-4-5-20250929',
+        model,
         max_tokens: 4096,
         system: systemPrompt,
         messages: [
@@ -122,6 +151,7 @@ export class StreamingOrchestrator {
             content: userPrompt
           }
         ]
+        // tools parameter omitted - see note above
       });
 
       logger.info('✅ Claude stream started');
@@ -137,10 +167,17 @@ export class StreamingOrchestrator {
       const streamedObjects = new Set<number>();
 
       // Process Claude's streaming response with incremental JSON parsing
+      let chunkCount = 0;
       for await (const chunk of stream) {
+        chunkCount++;
         if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
           const textChunk = chunk.delta.text;
           fullResponse += textChunk;
+
+          // DEBUG: Log first few chunks
+          if (chunkCount <= 5) {
+            logger.info(`📦 Chunk ${chunkCount}`, { text: textChunk.substring(0, 100) });
+          }
 
           // Try to parse JSON incrementally
           try {
@@ -356,6 +393,13 @@ export class StreamingOrchestrator {
         }
       }
 
+      // DEBUG: Log what Claude actually returned
+      logger.info('📄 Full Claude response', {
+        length: fullResponse.length,
+        preview: fullResponse.substring(0, 500),
+        hasJSON: fullResponse.includes('{') && fullResponse.includes('}')
+      });
+
       // Final parse to catch any remaining objects/references
       const finalResponse = this.parseResponse(fullResponse);
 
@@ -459,7 +503,8 @@ export class StreamingOrchestrator {
     userSettings?: {
       userName?: string;
       explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
-    }
+    },
+    selectedBrain?: Brain
   ): string {
     const teachingStyle =
       mode === 'guided'
@@ -562,7 +607,9 @@ You must respond with a JSON object in the following format:
 
 Subject: ${session.subject}
 
-Be canvas-aware and create appropriate visuals for the subject area.`;
+Be canvas-aware and create appropriate visuals for the subject area.
+
+${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${selectedBrain.promptEnhancement}` : ''}`;
   }
 
   private buildUserPrompt(question: string, context: any): string {

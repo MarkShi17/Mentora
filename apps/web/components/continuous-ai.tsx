@@ -73,6 +73,16 @@ export function ContinuousAI() {
         return;
       }
 
+      // Helper function to convert to Title Case
+      const toTitleCase = (str: string) => {
+        return str.replace(/\w\S*/g, (txt) => {
+          return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+        });
+      };
+
+      const rawLabel = object.metadata?.referenceName || object.type;
+      const titleCaseLabel = toTitleCase(rawLabel);
+
       const canvasObject = {
         id: object.id,
         type: object.type,
@@ -83,7 +93,7 @@ export function ContinuousAI() {
         zIndex: object.zIndex || 1,
         selected: false,
         color: getColorForType(object.type),
-        label: object.metadata?.referenceName || object.type,
+        label: titleCaseLabel,
         metadata: {
           ...object.metadata,
           animated: true,

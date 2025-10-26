@@ -10,6 +10,9 @@ services:
     container_name: mentora-backend
     ports:
       - "3000:3000"
+    dns:
+      - 8.8.8.8       # Google DNS
+      - 1.1.1.1       # Cloudflare DNS
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
@@ -17,8 +20,15 @@ services:
       - FIGMA_TOKEN=${FIGMA_TOKEN}
       - ENABLE_MANIM=${ENABLE_MANIM:-false}
       - ENABLE_PYTHON=${ENABLE_PYTHON:-false}
+      - ENABLE_MERMAID=${ENABLE_MERMAID:-false}
+      - ENABLE_CHATMOL=${ENABLE_CHATMOL:-false}
+      - ENABLE_BIORENDER=${ENABLE_BIORENDER:-false}
       - MANIM_MCP_URL=${MANIM_MCP_URL:-http://manim-mcp:8000}
       - PYTHON_MCP_URL=${PYTHON_MCP_URL:-http://python-mcp:8000}
+      - CHATMOL_MCP_URL=${CHATMOL_MCP_URL:-http://chatmol-mcp:8000}
+      - BIORENDER_MCP_URL=${BIORENDER_MCP_URL:-http://biorender-mcp:8000}
+      - BIORENDER_API_KEY=${BIORENDER_API_KEY}
+      - PYMOL_PATH=${PYMOL_PATH:-/usr/bin/pymol}
       - NODE_ENV=development
       - LOG_LEVEL=info
       - PORT=3000
@@ -111,6 +121,56 @@ services:
       - mcp
       - manim-mcp
 
+  # ChatMol MCP Service (optional, controlled by ENABLE_CHATMOL)
+  chatmol-mcp:
+    build:
+      context: ./docker/chatmol-mcp
+      dockerfile: Dockerfile
+    container_name: mentora-chatmol-mcp
+    ports:
+      - "8003:8000"
+    environment:
+      - PYMOL_PATH=/usr/bin/pymol
+      - MCP_MODE=http
+    volumes:
+      - chatmol-media:/app/media
+    networks:
+      - mentora-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - mcp
+      - chatmol-mcp
+
+  # BioRender MCP Service (optional, controlled by ENABLE_BIORENDER)
+  biorender-mcp:
+    build:
+      context: ./docker/biorender-mcp
+      dockerfile: Dockerfile
+    container_name: mentora-biorender-mcp
+    ports:
+      - "8004:8000"
+    environment:
+      - BIORENDER_API_KEY=${BIORENDER_API_KEY}
+      - MCP_MODE=http
+    networks:
+      - mentora-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    profiles:
+      - mcp
+      - biorender-mcp
+
 networks:
   mentora-network:
     driver: bridge
@@ -118,3 +178,5 @@ networks:
 volumes:
   python-mcp-media:
   manim-mcp-media:
+  chatmol-media:
+  biorender-media:

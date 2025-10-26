@@ -167,7 +167,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           assistantTurnId,
           voice,
           body.context,
-          { userName, explanationLevel } // Pass user settings
+          { userName, explanationLevel }, // Pass user settings
+          brainResult.selectedBrain // Pass selected brain for tool filtering
         );
 
         for await (const event of responseStream) {

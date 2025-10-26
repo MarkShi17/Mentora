@@ -76,17 +76,23 @@ export class ObjectGenerator {
     turnId: string,
     referenceName?: string
   ): CodeObject {
-    // Calculate better dimensions based on code length
+    // Calculate generous dimensions to show all code without scrolling
     const lines = code.split('\n').length;
     const maxLineLength = Math.max(...code.split('\n').map(line => line.length));
-    
+
     let width, height;
     if (code.length > 1000) {
-      width = Math.min(Math.max(maxLineLength * 8, 500), 800);
-      height = Math.max(lines * 20 + 60, 200);
+      // Very long code - make it very wide and tall
+      width = Math.max(maxLineLength * 9, 900);
+      height = Math.max(lines * 22 + 80, 500);
+    } else if (code.length > 500) {
+      // Long code
+      width = Math.max(maxLineLength * 9, 750);
+      height = Math.max(lines * 20 + 70, 350);
     } else {
-      width = Math.min(Math.max(maxLineLength * 8, 400), 600);
-      height = Math.max(lines * 18 + 50, 150);
+      // Medium/short code
+      width = Math.max(maxLineLength * 8, 600);
+      height = Math.max(lines * 20 + 60, 200);
     }
 
     return {
@@ -116,21 +122,28 @@ export class ObjectGenerator {
     fontSize: number = 16,
     referenceName?: string
   ): TextObject {
-    // Calculate better dimensions based on content
-    const avgCharsPerLine = 50; // Longer lines for better readability
+    // Calculate generous dimensions to minimize scrolling
+    const avgCharsPerLine = 80; // Wide text boxes for better readability
     const lines = Math.ceil(content.length / avgCharsPerLine);
-    
-    // More generous sizing based on content length
+
+    // Very generous sizing - prioritize showing all content without scrolling
     let estimatedWidth, estimatedHeight;
-    if (content.length > 500) {
-      estimatedWidth = Math.min(Math.max(content.length * 8, 400), 700);
-      estimatedHeight = Math.max(lines * 28 + 80, 120);
+    if (content.length > 1000) {
+      // Very long text - make it wide and tall
+      estimatedWidth = 900;
+      estimatedHeight = Math.max(lines * 30 + 120, 600);
+    } else if (content.length > 500) {
+      // Long text
+      estimatedWidth = 800;
+      estimatedHeight = Math.max(lines * 28 + 100, 400);
     } else if (content.length > 200) {
-      estimatedWidth = Math.min(Math.max(content.length * 8, 300), 500);
-      estimatedHeight = Math.max(lines * 26 + 70, 100);
+      // Medium text
+      estimatedWidth = 600;
+      estimatedHeight = Math.max(lines * 26 + 80, 250);
     } else {
-      estimatedWidth = Math.min(Math.max(content.length * 8, 250), 400);
-      estimatedHeight = Math.max(lines * 24 + 60, 80);
+      // Short text
+      estimatedWidth = 450;
+      estimatedHeight = Math.max(lines * 24 + 70, 150);
     }
 
     return {
@@ -165,7 +178,7 @@ export class ObjectGenerator {
       id: generateObjectId(),
       type: 'diagram',
       position,
-      size: { width: 600, height: 450 }, // Larger default size for better visibility
+      size: { width: 600, height: 450 }, // Large size for detailed diagrams
       zIndex: 1,
       data: {
         type: 'diagram',
