@@ -193,6 +193,7 @@ type ObjectLayerProps = {
   onAnchorHover?: (id: string, anchor: ConnectionAnchor | null) => void;
   hoveredAnchor?: { objectId: string; anchor: ConnectionAnchor } | null;
   isDragging?: boolean;
+  isConnectionMode?: boolean; // New prop to show/hide anchors
   dragState?: {
     objectId: string;
     selectedObjectIds: string[];
@@ -217,11 +218,13 @@ function CanvasObjectItem({
   onDimensionsMeasured,
   onConnectionStart,
   onAnchorHover,
-  hoveredAnchor
+  hoveredAnchor,
+  isConnectionMode
 }: {
   object: CanvasObject;
   transform: { x: number; y: number; k: number };
   isDragging?: boolean;
+  isConnectionMode?: boolean;
   dragState?: ObjectLayerProps['dragState'];
   onDragStart?: (id: string, event: React.PointerEvent) => void;
   onDragMove?: (id: string, event: React.PointerEvent) => void;
@@ -280,8 +283,7 @@ function CanvasObjectItem({
       data-object-id={object.id}
       className={cn(
         "pointer-events-auto absolute transition-shadow duration-200",
-        isDragging ? "cursor-grabbing" : "cursor-grab",
-        object.selected ? "shadow-xl" : ""
+        isDragging ? "cursor-grabbing" : "cursor-grab"
       )}
       style={{
         left: dimensions.x,
@@ -322,7 +324,10 @@ function CanvasObjectItem({
       }}
     >
       <div
-        className="flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl border border-slate-200 relative"
+        className={cn(
+          "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl border relative",
+          object.selected ? "border-blue-400" : "border-slate-200"
+        )}
       >
         <div className="px-4 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
           <div>
@@ -350,12 +355,12 @@ function CanvasObjectItem({
           </div>
         ) : null}
         
-        {/* Connection anchors - positioned at the outer border of the component */}
-        {onConnectionStart && (
+        {/* Connection anchors - only show when in connection mode */}
+        {onConnectionStart && isConnectionMode && (
           <>
             {/* North anchor - at the top border */}
             <div
-              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95"
               style={{
                 left: '50%',
                 top: '0px'
@@ -370,7 +375,7 @@ function CanvasObjectItem({
             
             {/* East anchor - at the right border */}
             <div
-              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95"
               style={{
                 left: '100%',
                 top: '50%'
@@ -385,7 +390,7 @@ function CanvasObjectItem({
             
             {/* South anchor - at the bottom border */}
             <div
-              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95"
               style={{
                 left: '50%',
                 top: '100%'
@@ -400,7 +405,7 @@ function CanvasObjectItem({
             
             {/* West anchor - at the left border */}
             <div
-              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95"
               style={{
                 left: '0px',
                 top: '50%'
@@ -431,6 +436,7 @@ export function ObjectLayer({
   onAnchorHover,
   hoveredAnchor,
   isDragging,
+  isConnectionMode,
   dragState
 }: ObjectLayerProps) {
   const stageStyle: CSSProperties = {
@@ -453,6 +459,7 @@ export function ObjectLayer({
             object={object}
             transform={transform}
             isDragging={isDragging}
+            isConnectionMode={isConnectionMode}
             dragState={dragState}
             onDragStart={onDragStart}
             onDragMove={onDragMove}

@@ -110,7 +110,7 @@ export function isPointNearLine(
 export function getHoveredAnchor(
   object: CanvasObject,
   worldPos: { x: number; y: number },
-  anchorRadius: number = 12
+  anchorRadius: number = 16
 ): ConnectionAnchor | null {
   const anchors: ConnectionAnchor[] = ['north', 'east', 'south', 'west'];
 
