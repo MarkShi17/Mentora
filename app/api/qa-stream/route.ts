@@ -240,6 +240,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           body.question,
           session,
           body.highlightedObjects || [],
+          body.highlightedObjectsData || [],  // Pass full object data for RAG
           body.mode || 'guided',
           assistantTurnId,
           voice,

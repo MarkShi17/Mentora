@@ -15,14 +15,21 @@ export interface TeachingContext {
 export class ContextBuilder {
   async buildContext(
     session: Session,
+    currentQuestion: string,
     highlightedObjectIds?: string[],
+    highlightedObjectsData?: CanvasObject[],  // Direct object data from frontend
     maxTurns: number = 10
   ): Promise<TeachingContext> {
     const recentTurns = session.turns.slice(-maxTurns);
     const conversationHistory = this.formatConversationHistory(recentTurns);
 
-    const highlightedObjects = highlightedObjectIds
-      ? this.formatHighlightedObjects(session.canvasObjects, highlightedObjectIds)
+    // Use provided highlighted objects data from frontend, or fall back to session objects
+    const objectsToFormat = highlightedObjectsData && highlightedObjectsData.length > 0
+      ? highlightedObjectsData
+      : session.canvasObjects;
+
+    const highlightedObjects = highlightedObjectIds && highlightedObjectIds.length > 0
+      ? this.formatHighlightedObjects(objectsToFormat, highlightedObjectIds)
       : '';
 
     const canvasState = this.formatCanvasState(session.canvasObjects);
@@ -33,11 +40,11 @@ export class ContextBuilder {
     let retrievedObjects: string[] | undefined;
 
     if (process.env.ENABLE_RAG === 'true') {
-      const currentMessage = recentTurns[recentTurns.length - 1]?.content || '';
       const ragResult = await this.buildRAGContext(
         session,
-        currentMessage,
-        highlightedObjectIds || []
+        currentQuestion,
+        highlightedObjectIds || [],
+        highlightedObjectsData || []
       );
       ragContext = ragResult.context;
       retrievedObjects = ragResult.objectIds;
@@ -160,14 +167,15 @@ export class ContextBuilder {
    */
   private async buildRAGContext(
     session: Session,
-    currentMessage: string,
-    highlightedObjectIds: string[]
+    currentQuestion: string,
+    highlightedObjectIds: string[],
+    highlightedObjectsData: CanvasObject[]
   ): Promise<{ context: string; objectIds: string[] }> {
     try {
-      // Get highlighted objects
-      const highlightedObjects = session.canvasObjects.filter(
-        obj => highlightedObjectIds.includes(obj.id)
-      );
+      // Use provided object data from frontend, or fall back to session objects
+      const highlightedObjects = highlightedObjectsData.length > 0
+        ? highlightedObjectsData
+        : session.canvasObjects.filter(obj => highlightedObjectIds.includes(obj.id));
 
       // Create summary of recent conversation
       const recentTurns = session.turns.slice(-3);
@@ -178,11 +186,18 @@ export class ContextBuilder {
         })
         .join('\n');
 
+      logger.info('📋 RAG RETRIEVAL REQUEST', {
+        query: currentQuestion,
+        sessionId: session.id,
+        highlightedObjectCount: highlightedObjects.length,
+        chatHistorySummaryLength: chatHistorySummary.length
+      });
+
       // Use safe RAG service that doesn't cause build errors
       const { safeRetrieveContext } = await import('@/lib/rag/safeRagService');
 
       const result = await safeRetrieveContext(
-        currentMessage,
+        currentQuestion,
         highlightedObjects,
         chatHistorySummary,
         session.id,

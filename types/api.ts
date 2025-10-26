@@ -15,6 +15,7 @@ export interface QARequest {
   sessionId: string;
   question: string;
   highlightedObjects?: string[];
+  highlightedObjectsData?: CanvasObject[];  // Full object data for RAG (from frontend state)
   mode?: TeachingMode;
   images?: ImageInput[];  // Image attachments for vision analysis
   context?: {

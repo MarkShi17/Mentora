@@ -86,6 +86,7 @@ export class StreamingOrchestrator {
     question: string,
     session: Session,
     highlightedObjectIds: string[] = [],
+    highlightedObjectsData: CanvasObject[] = [],  // Full object data from frontend
     mode: TeachingMode = 'guided',
     turnId: string,
     voice: VoiceOption = 'alloy',
@@ -125,6 +126,9 @@ export class StreamingOrchestrator {
       userQuestion: question
     };
 
+    // Track last generated object for simple chain connection
+    let lastGeneratedObjectId: string | null = null;
+
     try {
       // Initialize MCP system
       await initializeMCP();
@@ -151,7 +155,23 @@ export class StreamingOrchestrator {
       });
 
       // Build context from session (now async due to RAG)
-      const sessionContext = await contextBuilder.buildContext(session, highlightedObjectIds);
+      const sessionContext = await contextBuilder.buildContext(
+        session,
+        question,
+        highlightedObjectIds,
+        highlightedObjectsData  // Pass full object data for RAG
+      );
+
+      // Log RAG context for debugging
+      if (sessionContext.ragContext) {
+        logger.info('🤖 CLAUDE PROMPT CONTEXT', {
+          hasRAGContext: true,
+          ragContextLength: sessionContext.ragContext.length,
+          ragContextPreview: sessionContext.ragContext.substring(0, 200) + '...',
+          conversationHistoryLength: sessionContext.conversationHistory.length,
+          highlightedObjectsCount: highlightedObjectIds.length
+        });
+      }
 
       // Generate system and user prompts with user settings (include RAG context)
       const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
@@ -562,16 +582,25 @@ export class StreamingOrchestrator {
               { width: 900, height: 400 }
             );
 
+            // Determine parent connections for simple chain
+            const parentIds = lastGeneratedObjectId
+              ? [lastGeneratedObjectId]    // Chain to previous object
+              : highlightedObjectIds;       // First object connects to highlighted
+
             const canvasObject = objectGenerator.generateObject(
               {
                 type: request.type,
                 content: request.content,
                 referenceName: request.referenceName,
+                parentObjectIds: parentIds,
                 metadata: request.metadata
               },
               position,
               turnId
             );
+
+            // Track this object for next iteration (chain)
+            lastGeneratedObjectId = canvasObject.id;
 
             streamingContext.existingObjects.push(canvasObject);
 
@@ -698,16 +727,25 @@ export class StreamingOrchestrator {
               { width: 900, height: 400 }
             );
 
+            // Determine parent connections for simple chain
+            const parentIds = lastGeneratedObjectId
+              ? [lastGeneratedObjectId]    // Chain to previous object
+              : highlightedObjectIds;       // First object connects to highlighted
+
             const canvasObject = objectGenerator.generateObject(
               {
                 type: request.type,
                 content: request.content,
                 referenceName: request.referenceName,
+                parentObjectIds: parentIds,
                 metadata: request.metadata
               },
               position,
               turnId
             );
+
+            // Track this object for next iteration (chain)
+            lastGeneratedObjectId = canvasObject.id;
 
             streamingContext.existingObjects.push(canvasObject);
 
@@ -850,16 +888,25 @@ export class StreamingOrchestrator {
             enhancedContent = `${request.content} - Context: ${question}`;
           }
 
+          // Determine parent connections for simple chain
+          const parentIds = lastGeneratedObjectId
+            ? [lastGeneratedObjectId]    // Chain to previous object
+            : highlightedObjectIds;       // First object connects to highlighted
+
           const canvasObject = objectGenerator.generateObject(
             {
               type: request.type,
               content: enhancedContent,
               referenceName: request.referenceName,
+              parentObjectIds: parentIds,
               metadata: request.metadata
             },
             position,
             turnId
           );
+
+          // Track this object for next iteration (chain)
+          lastGeneratedObjectId = canvasObject.id;
 
           streamingContext.existingObjects.push(canvasObject);
 
@@ -1481,8 +1528,24 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             source: 'mcp',
             toolName,
             mimeType: content.mimeType,
+            ...(highlightedObjectIds && highlightedObjectIds.length > 0 ? {
+              parentObjectIds: lastGeneratedObjectId
+                ? [lastGeneratedObjectId]
+                : highlightedObjectIds,
+              connections: (lastGeneratedObjectId
+                ? [lastGeneratedObjectId]
+                : highlightedObjectIds
+              ).map(id => ({
+                targetId: id,
+                type: 'parent' as const,
+                label: 'derived from'
+              }))
+            } : {}),
           },
         };
+
+        // Track this object for next iteration (chain)
+        lastGeneratedObjectId = imageObject.id;
 
         objects.push(imageObject);
       }
@@ -1572,8 +1635,25 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 mimeType: resource.mimeType,
                 uri: resource.uri,
                 usedBase64: !!resource.text,  // Track if we used base64
+                ...(highlightedObjectIds && highlightedObjectIds.length > 0 ? {
+                  parentObjectIds: lastGeneratedObjectId
+                    ? [lastGeneratedObjectId]
+                    : highlightedObjectIds,
+                  connections: (lastGeneratedObjectId
+                    ? [lastGeneratedObjectId]
+                    : highlightedObjectIds
+                  ).map(id => ({
+                    targetId: id,
+                    type: 'parent' as const,
+                    label: 'derived from'
+                  }))
+                } : {}),
               },
             };
+
+            // Track this object for next iteration (chain)
+            lastGeneratedObjectId = videoObject.id;
+
             objects.push(videoObject);
           } else {
             const imageObject: CanvasObject = {
@@ -1596,8 +1676,27 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 toolName,
                 mimeType: resource.mimeType,
                 uri: resource.uri,
+                ...(highlightedObjectIds && highlightedObjectIds.length > 0 ? {
+                  parentObjectIds: firstGeneratedObjectId
+                    ? [firstGeneratedObjectId]
+                    : highlightedObjectIds,
+                  connections: (firstGeneratedObjectId
+                    ? [firstGeneratedObjectId]
+                    : highlightedObjectIds
+                  ).map(id => ({
+                    targetId: id,
+                    type: 'parent' as const,
+                    label: 'derived from'
+                  }))
+                } : {}),
               },
             };
+
+            // Track first object for clean connection tree
+            if (!firstGeneratedObjectId) {
+              firstGeneratedObjectId = imageObject.id;
+            }
+
             objects.push(imageObject);
           }
         }

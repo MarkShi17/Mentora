@@ -43,6 +43,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
     question: string,
     options?: {
       highlightedObjects?: string[];
+      highlightedObjectsData?: any[];  // Full object data for RAG
       mode?: 'guided' | 'direct';
       images?: Array<{ base64: string; mimeType: string }>;
       context?: {
@@ -95,6 +96,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
           sessionId,
           question,
           highlightedObjects: options?.highlightedObjects || [],
+          highlightedObjectsData: options?.highlightedObjectsData || [],
           mode: options?.mode || 'guided',
           images: options?.images,
           context: options?.context,

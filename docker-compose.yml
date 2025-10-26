@@ -181,17 +181,16 @@ services:
       - biorender-mcp
 
   # ChromaDB Vector Database for RAG (optional, controlled by ENABLE_RAG)
+  # Note: No persistent volume - data clears on container restart
   chromadb:
     image: chromadb/chroma:0.5.23
     container_name: mentora-chromadb
     ports:
       - "8005:8000"
-    volumes:
-      - chromadb-data:/chroma/chroma
     environment:
       - ALLOW_RESET=true
       - ANONYMIZED_TELEMETRY=false
-      - PERSIST_DIRECTORY=/chroma/chroma
+      - IS_PERSISTENT=FALSE
     networks:
       - mentora-network
     restart: unless-stopped
@@ -240,4 +239,3 @@ volumes:
   manim-mcp-media:
   chatmol-media:
   biorender-media:
-  chromadb-data:

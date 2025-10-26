@@ -6,16 +6,41 @@ import {
   TextObject,
   DiagramObject,
   Position,
+  ObjectConnection,
 } from '@/types/canvas';
 import { generateObjectId } from '@/lib/utils/ids';
 import { ObjectGenerationRequest } from './types';
+
+/**
+ * Helper to create parent connections metadata
+ */
+function createParentConnections(parentObjectIds?: string[]): {
+  parentObjectIds?: string[];
+  connections?: ObjectConnection[];
+} {
+  if (!parentObjectIds || parentObjectIds.length === 0) {
+    return {};
+  }
+
+  const connections = parentObjectIds.map(id => ({
+    targetId: id,
+    type: 'parent' as const,
+    label: 'derived from'
+  }));
+
+  return {
+    parentObjectIds,
+    connections
+  };
+}
 
 export class ObjectGenerator {
   generateLatexObject(
     latex: string,
     position: Position,
     turnId: string,
-    referenceName?: string
+    referenceName?: string,
+    parentObjectIds?: string[]
   ): LatexObject {
     const encodedLatex = encodeURIComponent(latex);
     const rendered = `https://latex.codecogs.com/png.latex?\\dpi{150}\\bg_white ${encodedLatex}`;
@@ -37,6 +62,7 @@ export class ObjectGenerator {
         turnId,
         referenceName,
         tags: ['math', 'equation'],
+        ...createParentConnections(parentObjectIds),
       },
     };
   }
@@ -45,7 +71,8 @@ export class ObjectGenerator {
     equation: string,
     position: Position,
     turnId: string,
-    referenceName?: string
+    referenceName?: string,
+    parentObjectIds?: string[]
   ): GraphObject {
     const { svg, dataPoints } = this.generateSimpleGraph(equation);
 
@@ -67,6 +94,7 @@ export class ObjectGenerator {
         turnId,
         referenceName,
         tags: ['graph', 'visualization'],
+        ...createParentConnections(parentObjectIds),
       },
     };
   }
@@ -76,7 +104,8 @@ export class ObjectGenerator {
     language: string,
     position: Position,
     turnId: string,
-    referenceName?: string
+    referenceName?: string,
+    parentObjectIds?: string[]
   ): CodeObject {
     // Calculate better dimensions based on code length
     const lines = code.split('\n').length;
@@ -108,6 +137,7 @@ export class ObjectGenerator {
         turnId,
         referenceName,
         tags: ['code', language],
+        ...createParentConnections(parentObjectIds),
       },
     };
   }
@@ -117,7 +147,8 @@ export class ObjectGenerator {
     position: Position,
     turnId: string,
     fontSize: number = 16,
-    referenceName?: string
+    referenceName?: string,
+    parentObjectIds?: string[]
   ): TextObject {
     // Parse JSON if content is a JSON string
     let parsedContent = content;
@@ -177,6 +208,7 @@ export class ObjectGenerator {
         turnId,
         referenceName,
         tags: ['text', 'note'],
+        ...createParentConnections(parentObjectIds),
       },
     };
   }
@@ -185,7 +217,8 @@ export class ObjectGenerator {
     description: string,
     position: Position,
     turnId: string,
-    referenceName?: string
+    referenceName?: string,
+    parentObjectIds?: string[]
   ): DiagramObject {
     // Validate that description has meaningful content
     const trimmedDescription = description.trim();
@@ -212,6 +245,7 @@ export class ObjectGenerator {
         turnId,
         referenceName,
         tags: ['diagram', 'visualization'],
+        ...createParentConnections(parentObjectIds),
       },
     };
   }
@@ -219,10 +253,10 @@ export class ObjectGenerator {
   generateObject(request: ObjectGenerationRequest, position: Position, turnId: string): CanvasObject {
     switch (request.type) {
       case 'latex':
-        return this.generateLatexObject(request.content, position, turnId, request.referenceName);
+        return this.generateLatexObject(request.content, position, turnId, request.referenceName, request.parentObjectIds);
 
       case 'graph':
-        return this.generateGraphObject(request.content, position, turnId, request.referenceName);
+        return this.generateGraphObject(request.content, position, turnId, request.referenceName, request.parentObjectIds);
 
       case 'code':
         return this.generateCodeObject(
@@ -230,7 +264,8 @@ export class ObjectGenerator {
           request.metadata?.language || 'python',
           position,
           turnId,
-          request.referenceName
+          request.referenceName,
+          request.parentObjectIds
         );
 
       case 'text':
@@ -239,14 +274,15 @@ export class ObjectGenerator {
           position,
           turnId,
           request.metadata?.fontSize,
-          request.referenceName
+          request.referenceName,
+          request.parentObjectIds
         );
 
       case 'diagram':
-        return this.generateDiagramObject(request.content, position, turnId, request.referenceName);
+        return this.generateDiagramObject(request.content, position, turnId, request.referenceName, request.parentObjectIds);
 
       default:
-        return this.generateTextObject(request.content, position, turnId, 16, request.referenceName);
+        return this.generateTextObject(request.content, position, turnId, 16, request.referenceName, request.parentObjectIds);
     }
   }
 
