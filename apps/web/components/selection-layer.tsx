@@ -109,12 +109,21 @@ export function SelectionLayer({
     };
   };
 
-  // Render resize handles for a single selected object
+  // Check if object has valid measured dimensions
+  const hasValidDimensions = (obj: CanvasObject): boolean => {
+    return typeof obj.width === 'number' && obj.width > 0 &&
+           typeof obj.height === 'number' && obj.height > 0;
+  };
+
+  // Render Canva-style resize handles for a single selected object
   const renderResizeHandles = (obj: CanvasObject) => {
     if (!onResizeStart) return null;
 
+    // Don't render handles until object has valid measured dimensions
+    if (!hasValidDimensions(obj)) return null;
+
     const dims = getDimensions(obj);
-    const handleSize = 10 / transform.k;
+    const handleSize = 12 / transform.k; // Slightly larger for better visibility
     const handleOffset = handleSize / 2;
 
     const corners = [
@@ -124,43 +133,80 @@ export function SelectionLayer({
       { name: 'se', x: dims.x + dims.width - handleOffset, y: dims.y + dims.height - handleOffset, cursor: 'se-resize' }
     ];
 
-    return corners.map(corner => (
-      <div
-        key={corner.name}
-        className="absolute pointer-events-auto bg-white border-[3px] border-sky-500 rounded-md hover:bg-sky-100 hover:border-sky-600 z-50 shadow-lg hover:shadow-xl hover:scale-125"
-        style={{
-          left: corner.x,
-          top: corner.y,
-          width: handleSize,
-          height: handleSize,
-          cursor: corner.cursor,
-          boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)',
-          transition: 'background-color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s'
-        }}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          onResizeStart(obj.id, corner.name, e);
-        }}
-        onPointerMove={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-        }}
-        onPointerUp={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-        }}
-      />
-    ));
+    return corners.map(corner => {
+      const isBeingResized = resizeState?.objectId === obj.id && resizeState?.corner === corner.name;
+
+      return (
+        <div
+          key={corner.name}
+          className="absolute pointer-events-auto z-50 group"
+          style={{
+            left: corner.x,
+            top: corner.y,
+            width: handleSize,
+            height: handleSize,
+            cursor: corner.cursor,
+          }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onResizeStart(obj.id, corner.name, e);
+          }}
+          onPointerMove={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+        >
+          {/* Outer ring for hover effect */}
+          <div
+            className="absolute inset-0 rounded-full transition-all duration-200"
+            style={{
+              backgroundColor: 'rgba(14, 165, 233, 0.15)',
+              transform: isBeingResized ? 'scale(1.8)' : 'scale(1.2)',
+              opacity: isBeingResized ? 1 : 0,
+            }}
+          />
+          {/* Main handle - Canva-style rounded square */}
+          <div
+            className="absolute inset-0 rounded-sm transition-all duration-200 ease-out"
+            style={{
+              backgroundColor: 'white',
+              border: isBeingResized ? '3px solid #0ea5e9' : '2.5px solid #0ea5e9',
+              boxShadow: isBeingResized
+                ? '0 0 0 1px white, 0 4px 12px rgba(14, 165, 233, 0.4)'
+                : '0 0 0 1px white, 0 2px 6px rgba(14, 165, 233, 0.3)',
+              transform: isBeingResized ? 'scale(1.15)' : 'scale(1)',
+            }}
+          />
+          {/* Hover scale effect */}
+          <style jsx>{`
+            .group:hover > div:last-of-type {
+              transform: scale(1.2);
+            }
+            .group:hover > div:first-of-type {
+              opacity: 0.4;
+              transform: scale(1.6);
+            }
+          `}</style>
+        </div>
+      );
+    });
   };
 
   // Render connection anchors on N/E/S/W sides of object
   const renderConnectionAnchors = (obj: CanvasObject) => {
     if (!onConnectionStart) return null;
+
+    // Don't render anchors until object has valid measured dimensions
+    if (!hasValidDimensions(obj)) return null;
 
     const dims = getDimensions(obj);
     
@@ -211,6 +257,9 @@ export function SelectionLayer({
       <div className="pointer-events-none absolute inset-0">
         <div className="relative h-full w-full" style={stageStyle}>
           {objects.map(obj => {
+            // Skip objects without valid dimensions
+            if (!hasValidDimensions(obj)) return null;
+
             const dims = getDimensions(obj);
 
             const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];

@@ -72,15 +72,7 @@ class MainScene(Scene):
       properties: {
         diagram_type: {
           type: 'string',
-          enum: [
-            'cell_structure',
-            'dna_transcription',
-            'photosynthesis',
-            'mitosis_phases',
-            'crispr_mechanism',
-            'cell_cycle',
-            'gene_expression',
-          ],
+          enum: ['cell_structure', 'dna_transcription', 'photosynthesis'],
           description: 'Choose the built-in diagram template to render'
         },
         title: {

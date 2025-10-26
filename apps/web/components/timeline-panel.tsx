@@ -49,11 +49,10 @@ export function TimelinePanel() {
     setLayoutOffset('right', 0);
   }, [setLayoutOffset]);
 
-  // Global ESC and Spacebar handler for stopping generation
+  // Global ESC key handler for stopping generation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Check for stop keys (ESC or Spacebar) when AI is generating
-      if (stopStreamingCallback && (event.key === 'Escape' || event.code === 'Space')) {
+      if (event.key === 'Escape' && stopStreamingCallback) {
         // Don't prevent default or stop if user is in an input field
         const target = event.target as HTMLElement;
         const isInInputField =
@@ -62,13 +61,9 @@ export function TimelinePanel() {
           target.isContentEditable;
 
         if (!isInInputField) {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            console.log('⌨️ ESC pressed - stopping generation');
-            stopStreamingCallback();
-          }
-          // Note: Spacebar handling is primarily in ContinuousAI component
-          // This is just for documentation/consistency
+          event.preventDefault();
+          console.log('⌨️ ESC pressed - stopping generation');
+          stopStreamingCallback();
         }
       }
     };
@@ -379,7 +374,7 @@ export function TimelinePanel() {
                         }
                       }}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/60 hover:bg-red-50 text-slate-600 hover:text-red-600 transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-200/60 hover:border-red-200/60 shadow-sm hover:shadow-md"
-                      title="Stop generating (ESC or Spacebar)"
+                      title="Stop generating (ESC)"
                     >
                       <StopCircle className="h-3 w-3" />
                       <span>Stop</span>

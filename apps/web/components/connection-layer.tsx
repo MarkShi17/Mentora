@@ -141,17 +141,18 @@ export function ConnectionLayer({
                   onPointerEnter={() => onConnectionHover?.(connection.id)}
                   onPointerLeave={() => onConnectionHover?.(null)}
                 />
-                {/* Visible connection line */}
+                {/* Visible connection line - solid, clean design */}
                 <path
                   d={finalPathData}
                   fill="none"
-                  stroke={isHighlighted ? '#8b5cf6' : '#d1d5db'}
-                  strokeWidth={isHighlighted ? 2.5 / transform.k : 1.5 / transform.k}
+                  stroke={isHighlighted ? '#8b5cf6' : '#94a3b8'}
+                  strokeWidth={isHighlighted ? 3 / transform.k : 2 / transform.k}
                   strokeLinecap="round"
-                  strokeDasharray={isHighlighted ? 'none' : '4 4'}
-                  className="pointer-events-none"
+                  strokeLinejoin="round"
+                  className="pointer-events-none transition-all duration-200"
                   style={{
-                    filter: isHighlighted ? 'drop-shadow(0 1px 2px rgba(139, 92, 246, 0.3))' : 'none'
+                    filter: isHighlighted ? 'drop-shadow(0 2px 4px rgba(139, 92, 246, 0.4))' : 'drop-shadow(0 1px 2px rgba(148, 163, 184, 0.3))',
+                    opacity: isHighlighted ? 1 : 0.7
                   }}
                 />
               </g>
@@ -192,29 +193,48 @@ export function ConnectionLayer({
 
             return (
               <g key="preview">
-                {/* Preview line with dashed stroke */}
+                {/* Preview line - solid with animated glow when snapping */}
                 <path
                   d={previewPath}
                   fill="none"
                   stroke="#8b5cf6"
-                  strokeWidth={2 / transform.k}
+                  strokeWidth={2.5 / transform.k}
                   strokeLinecap="round"
-                  strokeDasharray={`${6 / transform.k} ${3 / transform.k}`}
-                  className="pointer-events-none"
+                  strokeLinejoin="round"
+                  className="pointer-events-none transition-all duration-150"
                   style={{
-                    filter: 'drop-shadow(0 1px 2px rgba(139, 92, 246, 0.4))',
+                    filter: isSnapping
+                      ? 'drop-shadow(0 0 6px rgba(139, 92, 246, 0.6))'
+                      : 'drop-shadow(0 1px 2px rgba(139, 92, 246, 0.4))',
                     opacity: isSnapping ? 1 : 0.6
                   }}
-                >
-                  {/* Animated dash movement */}
-                  <animate
-                    attributeName="stroke-dashoffset"
-                    from="0"
-                    to={`${-9 / transform.k}`}
-                    dur="0.5s"
-                    repeatCount="indefinite"
-                  />
-                </path>
+                />
+                {/* Animated pulse effect when snapping */}
+                {isSnapping && (
+                  <path
+                    d={previewPath}
+                    fill="none"
+                    stroke="#8b5cf6"
+                    strokeWidth={4 / transform.k}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="pointer-events-none"
+                    opacity="0"
+                  >
+                    <animate
+                      attributeName="opacity"
+                      values="0;0.3;0"
+                      dur="1s"
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="stroke-width"
+                      values={`${4 / transform.k};${6 / transform.k};${4 / transform.k}`}
+                      dur="1s"
+                      repeatCount="indefinite"
+                    />
+                  </path>
+                )}
               </g>
             );
           })()}

@@ -633,9 +633,28 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     []
   );
 
-  useEffect(() => () => {
-    stopAnimation();
-  }, [stopAnimation]);
+  // Handle dimension measurement from ResizeObserver
+  const handleDimensionsMeasured = useCallback(
+    (objectId: string, width: number, height: number) => {
+      if (!activeSessionId) return;
+
+      const state = useSessionStore.getState();
+      const objects = state.canvasObjects[activeSessionId] || [];
+      const object = objects.find(obj => obj.id === objectId);
+
+      if (!object) return;
+
+      // Only update if dimensions actually changed to avoid infinite loops
+      if (object.width !== width || object.height !== height) {
+        updateCanvasObject(activeSessionId, {
+          ...object,
+          width,
+          height
+        });
+      }
+    },
+    [activeSessionId, updateCanvasObject]
+  );
 
   const handleObjectDragStart = useCallback(
     (objectId: string, event: React.PointerEvent) => {
@@ -1071,12 +1090,16 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       const IDEAL_WIDTH = MIN_WIDTH * 2.0; // Text scaling starts at 2x minimum
       const IDEAL_HEIGHT = MIN_HEIGHT * 2.0;
 
-      // Calculate new dimensions based on corner
+      // Calculate maximum dimensions (prevent infinite expansion)
+      const MAX_WIDTH = IDEAL_WIDTH * 3.0; // Allow up to 6x minimum (3x ideal)
+      const MAX_HEIGHT = IDEAL_HEIGHT * 3.0;
+
+      // Calculate new dimensions based on corner with min/max constraints
       if (corner === 'nw') {
         newX = startDimensions.x + deltaX;
         newY = startDimensions.y + deltaY;
-        newWidth = Math.max(MIN_WIDTH, startDimensions.width - deltaX);
-        newHeight = Math.max(MIN_HEIGHT, startDimensions.height - deltaY);
+        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startDimensions.width - deltaX));
+        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startDimensions.height - deltaY));
         // Adjust position if we hit minimum size
         if (startDimensions.width - deltaX < MIN_WIDTH) {
           newX = startDimensions.x + startDimensions.width - MIN_WIDTH;
@@ -1084,23 +1107,36 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         if (startDimensions.height - deltaY < MIN_HEIGHT) {
           newY = startDimensions.y + startDimensions.height - MIN_HEIGHT;
         }
+        // Adjust position if we hit maximum size
+        if (startDimensions.width - deltaX > MAX_WIDTH) {
+          newX = startDimensions.x + startDimensions.width - MAX_WIDTH;
+        }
+        if (startDimensions.height - deltaY > MAX_HEIGHT) {
+          newY = startDimensions.y + startDimensions.height - MAX_HEIGHT;
+        }
       } else if (corner === 'ne') {
         newY = startDimensions.y + deltaY;
-        newWidth = Math.max(MIN_WIDTH, startDimensions.width + deltaX);
-        newHeight = Math.max(MIN_HEIGHT, startDimensions.height - deltaY);
+        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startDimensions.width + deltaX));
+        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startDimensions.height - deltaY));
         if (startDimensions.height - deltaY < MIN_HEIGHT) {
           newY = startDimensions.y + startDimensions.height - MIN_HEIGHT;
         }
+        if (startDimensions.height - deltaY > MAX_HEIGHT) {
+          newY = startDimensions.y + startDimensions.height - MAX_HEIGHT;
+        }
       } else if (corner === 'sw') {
         newX = startDimensions.x + deltaX;
-        newWidth = Math.max(MIN_WIDTH, startDimensions.width - deltaX);
-        newHeight = Math.max(MIN_HEIGHT, startDimensions.height + deltaY);
+        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startDimensions.width - deltaX));
+        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startDimensions.height + deltaY));
         if (startDimensions.width - deltaX < MIN_WIDTH) {
           newX = startDimensions.x + startDimensions.width - MIN_WIDTH;
         }
+        if (startDimensions.width - deltaX > MAX_WIDTH) {
+          newX = startDimensions.x + startDimensions.width - MAX_WIDTH;
+        }
       } else if (corner === 'se') {
-        newWidth = Math.max(MIN_WIDTH, startDimensions.width + deltaX);
-        newHeight = Math.max(MIN_HEIGHT, startDimensions.height + deltaY);
+        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startDimensions.width + deltaX));
+        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startDimensions.height + deltaY));
       }
 
       // Calculate text scale based on how much smaller than ideal
@@ -1603,6 +1639,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
               onDragMove={handleObjectDragMove}
               onDragEnd={handleObjectDragEnd}
               onContextMenu={handleObjectContextMenu}
+              onDimensionsMeasured={handleDimensionsMeasured}
               isDragging={!!dragState}
               dragState={dragState}
               resizeState={resizeState}

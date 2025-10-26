@@ -12,10 +12,11 @@ import { Brain } from "lucide-react";
 export function ContinuousAI() {
   const [isActive, setIsActive] = useState(false);
   const [wasListeningBeforeSpeech, setWasListeningBeforeSpeech] = useState(false);
-  const [, setInterrupted] = useState(false);  // Used for visual feedback
+  const [interrupted, setInterrupted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const sessions = useSessionStore((state) => state.sessions);
   const allMessages = useSessionStore((state) => state.messages);
   const voiceInputState = useSessionStore((state) => state.voiceInputState);
 
@@ -50,8 +51,8 @@ export function ContinuousAI() {
   const setLiveTutorOn = useSessionStore((state) => state.setLiveTutorOn);
   const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
   const setIsPushToTalkActive = useSessionStore((state) => state.setIsPushToTalkActive);
+  const setStopStreamingCallback = useSessionStore((state) => state.setStopStreamingCallback);
   const setRerunQuestionCallback = useSessionStore((state) => state.setRerunQuestionCallback);
-  const stopStreamingCallback = useSessionStore((state) => state.stopStreamingCallback);
   const { startSequence, addObjectToSequence, endSequence } = useSequentialConnections();
 
   // Get messages for active session
@@ -101,16 +102,6 @@ export function ContinuousAI() {
         return;
       }
 
-      // Helper function to convert to Title Case
-      const toTitleCase = (str: string) => {
-        return str.replace(/\w\S*/g, (txt) => {
-          return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
-        });
-      };
-
-      const rawLabel = object.metadata?.referenceName || object.type;
-      const titleCaseLabel = toTitleCase(rawLabel);
-
       const canvasObject = {
         id: object.id,
         type: object.type,
@@ -121,7 +112,7 @@ export function ContinuousAI() {
         zIndex: object.zIndex || 1,
         selected: false,
         color: getColorForType(object.type),
-        label: titleCaseLabel,
+        label: object.metadata?.referenceName || object.type,
         metadata: {
           ...object.metadata,
           animated: true,
@@ -220,17 +211,12 @@ export function ContinuousAI() {
     const isAIActive = streamingQA.isStreaming || streamingQA.audioState.isPlaying;
 
     if (isAIActive) {
-      console.log('🛑 Live Tutor detected new question - stopping current response');
+      console.log('🛑 User interrupted AI - stopping current response');
 
-      // Use the stop callback for proper cleanup
-      if (stopStreamingCallback) {
-        stopStreamingCallback();
-      } else {
-        // Fallback to direct stop
-        streamingQA.stopStreaming();
-        endSequence();
-        sequenceKeyRef.current = null;
-      }
+      // Stop streaming immediately
+      streamingQA.stopStreaming();
+      endSequence();
+      sequenceKeyRef.current = null;
 
       // Show interrupt feedback briefly
       setInterrupted(true);
@@ -318,14 +304,63 @@ export function ContinuousAI() {
         type: "response"
       });
     }
-  }, [activeSessionId, createSession, addMessage, appendTimelineEvent, conversationContext, streamingQA, stopStreamingCallback, setInterrupted, startSequence, endSequence]);
+  }, [activeSessionId, createSession, addMessage, appendTimelineEvent, conversationContext, streamingQA, setInterrupted, startSequence, endSequence]);
 
   useEffect(() => {
     setQuestionCallback(handleQuestionDetected);
   }, [setQuestionCallback, handleQuestionDetected]);
 
-  // Note: Stop callback is managed by prompt-bar.tsx to avoid conflicts
-  // This component can still use stopStreamingCallback when needed
+  // Register stop streaming callback
+  useEffect(() => {
+    setStopStreamingCallback(() => {
+      console.log('🛑 Stop callback invoked - completely stopping AI');
+
+      // Get current state before stopping
+      const partialText = completeTextRef.current;
+      const thinkingMessageId = thinkingMessageIdRef.current;
+      const sessionId = currentSessionRef.current;
+
+      // Stop streaming and audio IMMEDIATELY
+      streamingQA.stopStreaming();
+      endSequence();
+      sequenceKeyRef.current = null;
+
+      // Update the message to show it was interrupted (if it had content)
+      if (sessionId && thinkingMessageId) {
+        if (partialText && partialText.trim()) {
+          console.log('⚠️ Marking message as interrupted with partial content');
+          updateMessage(sessionId, thinkingMessageId, {
+            content: partialText,
+            interrupted: true,
+            interruptedAt: new Date().toISOString(),
+            isStreaming: false,
+            isPlayingAudio: false
+          });
+        } else {
+          console.log('🗑️ Removing empty thinking message');
+          removeMessage(sessionId, thinkingMessageId);
+        }
+        thinkingMessageIdRef.current = null;
+
+        appendTimelineEvent(sessionId, {
+          description: "AI response stopped by user",
+          type: "response"
+        });
+      }
+
+      // Reset ALL refs to allow new questions immediately
+      currentSessionRef.current = null;
+      completeTextRef.current = '';
+      objectsInCurrentResponse.current = [];
+
+      console.log('✅ Stop complete - ready for new questions');
+    });
+
+    // Cleanup on unmount
+    return () => {
+      setStopStreamingCallback(null);
+    };
+  }, [streamingQA, setStopStreamingCallback, removeMessage, updateMessage, appendTimelineEvent, endSequence]);
 
   // Register rerun question callback
   useEffect(() => {
@@ -429,29 +464,21 @@ export function ContinuousAI() {
 
           event.preventDefault(); // Prevent page scroll
 
-          // ALWAYS stop AI if it's currently active (streaming or speaking)
-          const isAIActive = streamingQA.isStreaming || streamingQA.audioState.isPlaying;
+          // Check if AI is currently speaking - allow interrupt
+          const isAISpeaking = streamingQA.isStreaming || streamingQA.audioState.isPlaying;
 
-          if (isAIActive) {
-            console.log('🛑 Spacebar pressed - interrupting AI');
-
-            // Stop using the registered callback if available (for proper cleanup)
-            if (stopStreamingCallback) {
-              stopStreamingCallback();
-            } else {
-              // Fallback to direct stop
-              streamingQA.stopStreaming();
-              endSequence();
-              sequenceKeyRef.current = null;
-            }
-
-            // Show interrupt feedback
+          if (isAISpeaking) {
+            // User is interrupting AI
+            console.log('🛑 User interrupting AI via spacebar hold');
+            streamingQA.stopStreaming();
+            endSequence();
+            sequenceKeyRef.current = null;
             setInterrupted(true);
             setTimeout(() => setInterrupted(false), 1500);
           }
 
-          // Start push-to-talk for new prompt input
-          console.log('🎤 Push-to-talk activated (spacebar mode)');
+          // Start push-to-talk for prompt input (simple mode, no question detection)
+          console.log('🎤 Push-to-talk activated (spacebar mode only)');
           setIsPushToTalkActive(true);
           setSpacebarTranscript(''); // Clear previous
           spacebarRecognition.start();
@@ -492,7 +519,7 @@ export function ContinuousAI() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, spacebarRecognition, streamingQA, stopStreamingCallback, setIsPushToTalkActive, setSpacebarTranscript, setInterrupted, endSequence]);
+  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, spacebarRecognition, streamingQA, setIsPushToTalkActive, setSpacebarTranscript, setInterrupted, endSequence]);
 
   const isQuestionDetected = currentTranscript &&
     currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor|generate)/);

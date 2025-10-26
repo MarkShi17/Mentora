@@ -40,8 +40,6 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Biological processes and cycles',
       'Scientific data visualization',
       'Laboratory simulations',
-      'Professional illustration sourcing',
-      '3D molecular visualization',
     ],
     model: 'claude-3-5-haiku-20241022', // Fast for biology
     mcpTools: [

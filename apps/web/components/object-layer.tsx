@@ -1,6 +1,7 @@
 'use client';
 
 import type { CSSProperties } from "react";
+import { useEffect, useRef } from "react";
 import { CanvasObject } from "@/types";
 import { cn } from "@/lib/cn";
 import ReactMarkdown from 'react-markdown';
@@ -187,6 +188,7 @@ type ObjectLayerProps = {
   onDragMove?: (id: string, event: React.PointerEvent) => void;
   onDragEnd?: (id: string, event: React.PointerEvent) => void;
   onContextMenu?: (id: string, event: React.MouseEvent) => void;
+  onDimensionsMeasured?: (id: string, width: number, height: number) => void;
   isDragging?: boolean;
   dragState?: {
     objectId: string;
@@ -207,7 +209,182 @@ type ObjectLayerProps = {
   } | null;
 };
 
-export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragMove, onDragEnd, onContextMenu, isDragging, dragState, resizeState }: ObjectLayerProps) {
+// Component for individual canvas object with dimension measurement
+function CanvasObjectItem({
+  object,
+  transform,
+  isDragging,
+  dragState,
+  resizeState,
+  onSelect,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onContextMenu,
+  onDimensionsMeasured
+}: {
+  object: CanvasObject;
+  transform: { x: number; y: number; k: number };
+  isDragging?: boolean;
+  dragState?: ObjectLayerProps['dragState'];
+  resizeState?: ObjectLayerProps['resizeState'];
+  onSelect: (id: string, event: React.MouseEvent) => void;
+  onDragStart?: (id: string, event: React.PointerEvent) => void;
+  onDragMove?: (id: string, event: React.PointerEvent) => void;
+  onDragEnd?: (id: string, event: React.PointerEvent) => void;
+  onContextMenu?: (id: string, event: React.MouseEvent) => void;
+  onDimensionsMeasured?: (id: string, width: number, height: number) => void;
+}) {
+  const objectRef = useRef<HTMLDivElement>(null);
+
+  // Measure actual DOM dimensions and report back
+  useEffect(() => {
+    if (!objectRef.current || !onDimensionsMeasured) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        // Only update if dimensions actually changed and are valid
+        if (width > 0 && height > 0 && (width !== object.width || height !== object.height)) {
+          onDimensionsMeasured(object.id, width, height);
+        }
+      }
+    });
+
+    resizeObserver.observe(objectRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [object.id, object.width, object.height, onDimensionsMeasured]);
+
+  // Check if this object is part of the group being dragged
+  const isBeingDragged = dragState?.selectedObjectIds?.includes(object.id) ?? false;
+  const dragTransform = isBeingDragged && dragState
+    ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
+    : undefined;
+
+  // Check if this object is being resized
+  const isBeingResized = resizeState?.objectId === object.id;
+  const dimensions = isBeingResized && resizeState
+    ? {
+        x: resizeState.currentDimensions.x,
+        y: resizeState.currentDimensions.y,
+        width: resizeState.currentDimensions.width,
+        height: resizeState.currentDimensions.height
+      }
+    : {
+        x: object.x,
+        y: object.y,
+        width: object.width,
+        height: object.height
+      };
+
+  // Use auto sizing if dimensions not yet measured, otherwise use measured/resized dimensions
+  const objectWidth = typeof dimensions.width === 'number' && dimensions.width > 0 ? dimensions.width : 'auto';
+  const objectHeight = typeof dimensions.height === 'number' && dimensions.height > 0 ? dimensions.height : 'auto';
+
+  return (
+    <div
+      ref={objectRef}
+      key={object.id}
+      data-canvas-object="true"
+      className={cn(
+        "pointer-events-auto absolute transition-shadow duration-200",
+        isDragging ? "cursor-grabbing" : "cursor-grab",
+        object.selected ? "shadow-xl" : ""
+      )}
+      style={{
+        left: dimensions.x,
+        top: dimensions.y,
+        width: objectWidth,
+        height: objectHeight,
+        zIndex: object.zIndex || 0,
+        transform: dragTransform,
+        transition: isBeingResized ? 'none' : 'box-shadow 0.2s ease'
+      }}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (onDragStart) {
+          onDragStart(object.id, event);
+        }
+      }}
+      onPointerMove={(event) => {
+        // Only call drag move if we're actually dragging
+        if (isDragging && onDragMove) {
+          event.stopPropagation();
+          event.preventDefault();
+          onDragMove(object.id, event);
+        }
+      }}
+      onPointerUp={(event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (onDragEnd) {
+          onDragEnd(object.id, event);
+        }
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (onContextMenu) {
+          onContextMenu(object.id, event);
+        }
+      }}
+    >
+      <div
+        className={cn(
+          "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl",
+          object.selected ? "border-2 border-sky-400" : "border border-slate-200"
+        )}
+      >
+        <div className="px-4 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-600 font-medium">
+              {object.type}
+            </p>
+            <h3 className="mt-1 text-base font-semibold text-slate-900">
+              {object.label}
+            </h3>
+          </div>
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
+        </div>
+        <div className="px-4 pb-4">
+          {object.generationState === 'generating' || object.placeholder ? (
+            <ObjectLoadingState type={object.type} />
+          ) : (
+            renderObjectContent(object)
+          )}
+        </div>
+        {object.metadata?.description ? (
+          <div className="px-4 pb-4 pt-2 border-t border-slate-200">
+            <p className="text-sm text-slate-600">
+              {String(object.metadata.description)}
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function ObjectLayer({
+  objects,
+  transform,
+  onSelect,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onContextMenu,
+  onDimensionsMeasured,
+  isDragging,
+  dragState,
+  resizeState
+}: ObjectLayerProps) {
   const stageStyle: CSSProperties = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
     transformOrigin: "0 0"
@@ -222,104 +399,22 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
         className="relative h-full w-full"
         style={stageStyle}
       >
-        {sortedObjects.map((object) => {
-          // Check if this object is part of the group being dragged
-          const isBeingDragged = dragState?.selectedObjectIds?.includes(object.id) ?? false;
-          const dragTransform = isBeingDragged && dragState
-            ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
-            : undefined;
-
-          // Objects now auto-fit their content with no manual resizing
-          const objectX = object.x;
-          const objectY = object.y;
-
-          // All objects use auto dimensions to fit content snugly
-          const objectWidth = 'auto';
-          const objectHeight = 'auto';
-
-          return (
-          <div
+        {sortedObjects.map((object) => (
+          <CanvasObjectItem
             key={object.id}
-            data-canvas-object="true"
-            className={cn(
-              "pointer-events-auto absolute rounded-lg shadow-lg transition-colors",
-              isDragging ? "cursor-grabbing" : "cursor-grab"
-            )}
-            style={{
-              left: objectX,
-              top: objectY,
-              width: objectWidth,
-              height: objectHeight,
-              background: `${object.color}20`,
-              zIndex: object.zIndex || 0,
-              transform: dragTransform
-            }}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              event.preventDefault();
-              if (onDragStart) {
-                onDragStart(object.id, event);
-              }
-            }}
-            onPointerMove={(event) => {
-              // Only call drag move if we're actually dragging
-              if (isDragging && onDragMove) {
-                event.stopPropagation();
-                event.preventDefault();
-                onDragMove(object.id, event);
-              }
-            }}
-            onPointerUp={(event) => {
-              event.stopPropagation();
-              event.preventDefault();
-              if (onDragEnd) {
-                onDragEnd(object.id, event);
-              }
-            }}
-            onClick={(event) => {
-              event.stopPropagation();
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (onContextMenu) {
-                onContextMenu(object.id, event);
-              }
-            }}
-          >
-            <div className={cn(
-              "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl transition-colors",
-              object.selected ? "border-2 border-sky-400" : "border border-slate-200"
-            )}>
-              <div className="px-4 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-600 font-medium">
-                    {object.type}
-                  </p>
-                  <h3 className="mt-1 text-base font-semibold text-slate-900">
-                    {object.label}
-                  </h3>
-                </div>
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
-              </div>
-              <div className="px-4 pb-4">
-                {object.generationState === 'generating' || object.placeholder ? (
-                  <ObjectLoadingState type={object.type} />
-                ) : (
-                  renderObjectContent(object)
-                )}
-              </div>
-              {object.metadata?.description ? (
-                <div className="px-4 pb-4 pt-2 border-t border-slate-200">
-                  <p className="text-sm text-slate-600">
-                    {String(object.metadata.description)}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          </div>
-          );
-        })}
+            object={object}
+            transform={transform}
+            isDragging={isDragging}
+            dragState={dragState}
+            resizeState={resizeState}
+            onSelect={onSelect}
+            onDragStart={onDragStart}
+            onDragMove={onDragMove}
+            onDragEnd={onDragEnd}
+            onContextMenu={onContextMenu}
+            onDimensionsMeasured={onDimensionsMeasured}
+          />
+        ))}
       </div>
     </div>
   );
