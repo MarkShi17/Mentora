@@ -139,16 +139,37 @@ async def ingest_documents(request: IngestRequest):
     - Metadata (session info, object types, timestamps)
     """
     try:
+        import json
         collection = get_collection()
 
         if not request.documents and not request.images:
             raise HTTPException(status_code=400, detail="Must provide either documents or images")
+
+        logger.info(f"Ingesting {len(request.ids)} documents")
+        logger.info(f"Original metadatas: {request.metadatas}")
 
         # Prepare data for ingestion
         add_kwargs = {
             "ids": request.ids,
             "metadatas": request.metadatas or [{} for _ in request.ids]
         }
+
+        # Clean metadata: ChromaDB only accepts str, int, float, bool
+        # Convert arrays and objects to JSON strings
+        cleaned_metadatas = []
+        for metadata in add_kwargs["metadatas"]:
+            cleaned_metadata = {}
+            for key, value in metadata.items():
+                if isinstance(value, (list, dict)):
+                    # Convert to JSON string
+                    cleaned_metadata[key] = json.dumps(value)
+                    logger.info(f"Converted {key}: {type(value).__name__} -> string")
+                elif value is not None:
+                    cleaned_metadata[key] = value
+            cleaned_metadatas.append(cleaned_metadata)
+
+        add_kwargs["metadatas"] = cleaned_metadatas
+        logger.info(f"Cleaned metadatas: {add_kwargs['metadatas']}")
 
         if request.documents:
             add_kwargs["documents"] = request.documents
@@ -201,8 +222,18 @@ async def search_documents(request: SearchRequest):
         if request.query_texts:
             query_kwargs["query_texts"] = request.query_texts
 
+        # Transform where clause for ChromaDB compatibility
         if request.where:
-            query_kwargs["where"] = request.where
+            where_conditions = []
+            for key, value in request.where.items():
+                where_conditions.append({key: {"$eq": value}})
+
+            # Use $and operator if multiple conditions
+            if len(where_conditions) > 1:
+                query_kwargs["where"] = {"$and": where_conditions}
+            elif len(where_conditions) == 1:
+                # Single condition can be passed directly
+                query_kwargs["where"] = where_conditions[0]
 
         # Query collection
         results = collection.query(**query_kwargs)
