@@ -7,6 +7,7 @@ import { SourcesDrawer } from "@/components/sources-drawer";
 import { TimelinePanel } from "@/components/timeline-panel";
 import { SessionInitializer } from "@/components/session-initializer";
 import { ContinuousAI } from "@/components/continuous-ai";
+import { MCPStatus } from "@/components/mcp-status";
 
 export default function HomePage() {
   return (
@@ -22,6 +23,7 @@ export default function HomePage() {
       <SourcesDrawer />
       <CaptionsOverlay />
       <ContinuousAI />
+      <MCPStatus />
     </div>
   );
 }

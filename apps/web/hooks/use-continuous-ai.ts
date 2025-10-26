@@ -130,7 +130,10 @@ export function useContinuousAI() {
       'mentora', 'ai', 'assistant', 'tutor', 'you', 'hey mentora', 'ok mentora',
       
       // Additional question patterns
-      'mentor', 'can you please', 'give me an example', 'how do i', "explain more", "what does that mean"
+      'mentor', 'can you please', 'give me an example', 'how do i', "explain more", "what does that mean",
+      
+      // Generation requests
+      'generate', 'generate me', 'generate a'
     ];
     
     // Context clues that suggest the user is talking to the AI
