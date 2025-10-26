@@ -799,10 +799,12 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
       // Handle image content (from Python MCP matplotlib)
       if (content.type === 'image' && content.data && content.mimeType) {
-        // Use dimensions from MCP response if available (Python MCP sends actual dimensions)
-        // Otherwise use larger default: 1600×1200 (4:3 aspect ratio for graphs)
-        const imageWidth = content.width || 1600;
-        const imageHeight = content.height || 1200;
+        // Use dimensions from MCP response if available (Python MCP sends actual pixel dimensions)
+        // Add padding to account for component chrome (header ~50px + padding 32px)
+        const HEADER_HEIGHT = 50;
+        const PADDING = 32;
+        const imageWidth = (content.width || 1600) + PADDING;
+        const imageHeight = (content.height || 1200) + HEADER_HEIGHT + PADDING;
 
         const position = layoutEngine.calculatePosition(
           {
@@ -853,15 +855,22 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
         if (isVideo || isImage) {
           // Use proper dimensions based on content type
-          // Videos (Manim): Default 1280×720 (medium quality default)
-          // Images: Use content dimensions if available, otherwise larger default
-          let resourceWidth = 1280;
-          let resourceHeight = 720;
+          // Add padding to account for component chrome (header ~50px + padding 32px)
+          const HEADER_HEIGHT = 50;
+          const PADDING = 32;
+
+          let resourceWidth: number;
+          let resourceHeight: number;
 
           if (isImage) {
-            // For images, prefer 1600×1200 default (4:3 aspect ratio for graphs)
-            resourceWidth = content.width || 1600;
-            resourceHeight = content.height || 1200;
+            // For images from content (Python MCP sends actual dimensions)
+            // Add padding to the actual content dimensions
+            resourceWidth = (content.width || 1600) + PADDING;
+            resourceHeight = (content.height || 1200) + HEADER_HEIGHT + PADDING;
+          } else {
+            // Videos (Manim): Default 1280×720 + padding
+            resourceWidth = 1280 + PADDING;
+            resourceHeight = 720 + HEADER_HEIGHT + PADDING;
           }
 
           const position = layoutEngine.calculatePosition(
