@@ -84,6 +84,8 @@ export interface MCPToolCallResponse {
     data?: string;
     mimeType?: string;
     uri?: string;
+    width?: number;   // Image dimensions from Python MCP
+    height?: number;  // Image dimensions from Python MCP
   }>;
   error?: string;
   isError?: boolean;
