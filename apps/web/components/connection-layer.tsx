@@ -8,7 +8,8 @@ import { getAnchorPosition, getConnectionPath } from '@/lib/connection-utils';
 type ConnectionDragState = {
   sourceObjectId: string;
   sourceAnchor: ConnectionAnchor;
-  currentWorld: { x: number; y: number };
+  sourcePosition: { x: number; y: number }; // Fixed source position
+  currentWorld: { x: number; y: number }; // Current mouse position
 };
 
 type DragState = {
@@ -141,18 +142,16 @@ export function ConnectionLayer({
                   onPointerEnter={() => onConnectionHover?.(connection.id)}
                   onPointerLeave={() => onConnectionHover?.(null)}
                 />
-                {/* Visible connection line - solid, clean design */}
+                {/* Visible connection line */}
                 <path
                   d={finalPathData}
                   fill="none"
-                  stroke={isHighlighted ? '#8b5cf6' : '#94a3b8'}
+                  stroke={isHighlighted ? '#0ea5e9' : '#94a3b8'}
                   strokeWidth={isHighlighted ? 3 / transform.k : 2 / transform.k}
                   strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="pointer-events-none transition-all duration-200"
+                  className="pointer-events-none"
                   style={{
-                    filter: isHighlighted ? 'drop-shadow(0 2px 4px rgba(139, 92, 246, 0.4))' : 'drop-shadow(0 1px 2px rgba(148, 163, 184, 0.3))',
-                    opacity: isHighlighted ? 1 : 0.7
+                    filter: isHighlighted ? 'drop-shadow(0 0 4px rgba(14, 165, 233, 0.5))' : 'none'
                   }}
                 />
               </g>
@@ -164,14 +163,8 @@ export function ConnectionLayer({
             const sourceObj = objectMap.get(connectionDragState.sourceObjectId);
             if (!sourceObj) return null;
 
-            // Calculate base position
-            const baseSourcePos = getAnchorPosition(sourceObj, connectionDragState.sourceAnchor);
-
-            // Apply drag delta if source object is being dragged
-            const isSourceDragged = dragState?.selectedObjectIds?.includes(sourceObj.id) ?? false;
-            const sourcePos = isSourceDragged && dragState
-              ? { x: baseSourcePos.x + dragState.currentDelta.x, y: baseSourcePos.y + dragState.currentDelta.y }
-              : baseSourcePos;
+            // Use the fixed source position from when connection started
+            const sourcePos = connectionDragState.sourcePosition;
 
             // If hovering over a valid target anchor, snap to it; otherwise follow cursor
             let targetPos = connectionDragState.currentWorld;
@@ -193,48 +186,29 @@ export function ConnectionLayer({
 
             return (
               <g key="preview">
-                {/* Preview line - solid with animated glow when snapping */}
+                {/* Preview line with dashed stroke */}
                 <path
                   d={previewPath}
                   fill="none"
-                  stroke="#8b5cf6"
+                  stroke="#0ea5e9"
                   strokeWidth={2.5 / transform.k}
                   strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="pointer-events-none transition-all duration-150"
+                  strokeDasharray={`${8 / transform.k} ${4 / transform.k}`}
+                  className="pointer-events-none"
                   style={{
-                    filter: isSnapping
-                      ? 'drop-shadow(0 0 6px rgba(139, 92, 246, 0.6))'
-                      : 'drop-shadow(0 1px 2px rgba(139, 92, 246, 0.4))',
-                    opacity: isSnapping ? 1 : 0.6
+                    filter: 'drop-shadow(0 0 6px rgba(14, 165, 233, 0.6))',
+                    opacity: isSnapping ? 1 : 0.7
                   }}
-                />
-                {/* Animated pulse effect when snapping */}
-                {isSnapping && (
-                  <path
-                    d={previewPath}
-                    fill="none"
-                    stroke="#8b5cf6"
-                    strokeWidth={4 / transform.k}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="pointer-events-none"
-                    opacity="0"
-                  >
-                    <animate
-                      attributeName="opacity"
-                      values="0;0.3;0"
-                      dur="1s"
-                      repeatCount="indefinite"
-                    />
-                    <animate
-                      attributeName="stroke-width"
-                      values={`${4 / transform.k};${6 / transform.k};${4 / transform.k}`}
-                      dur="1s"
-                      repeatCount="indefinite"
-                    />
-                  </path>
-                )}
+                >
+                  {/* Animated dash movement */}
+                  <animate
+                    attributeName="stroke-dashoffset"
+                    from="0"
+                    to={`${-12 / transform.k}`}
+                    dur="0.5s"
+                    repeatCount="indefinite"
+                  />
+                </path>
               </g>
             );
           })()}

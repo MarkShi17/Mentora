@@ -157,6 +157,16 @@ export class StreamingOrchestrator {
       const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
+      // Get model from selected brain
+      const model = selectedBrain?.model || 'claude-sonnet-4-5-20250929';
+
+      // NOTE: Tools parameter is commented out for now because:
+      // 1. The streaming orchestrator doesn't handle tool_use blocks yet
+      // 2. MCP servers need to be running to execute tool calls
+      // 3. The brain's promptEnhancement is sufficient to guide JSON responses
+      // TODO: Add tool execution handling to streaming orchestrator
+      // const tools = selectedBrain ? this.getToolsForBrain(selectedBrain) : MCP_TOOLS_FOR_CLAUDE;
+
       // MCP tool execution loop
       let messages: Anthropic.MessageParam[] = [
         {
@@ -167,6 +177,7 @@ export class StreamingOrchestrator {
 
       let finalResponseText = '';
       const toolGeneratedObjects: CanvasObject[] = [];
+      let preToolComponents: any[] = []; // Components from initial response before tool execution
       const maxIterations = 5; // Prevent infinite tool use loops
       let iteration = 0;
 
@@ -183,7 +194,7 @@ export class StreamingOrchestrator {
 
         const response = await this.anthropic.messages.create({
           model: 'claude-sonnet-4-5-20250929',
-          max_tokens: 4096,
+          max_tokens: selectedBrain?.type === 'math' ? 2048 : 4096, // Reduce tokens for Math brain to enforce conciseness
           system: systemPrompt,
           tools: availableTools.length > 0 ? availableTools : undefined,
           messages
@@ -200,9 +211,99 @@ export class StreamingOrchestrator {
           const toolUses = response.content.filter(block => block.type === 'tool_use');
           const textBlocks = response.content.filter(block => block.type === 'text');
 
-          // Store any text explanation
-          if (textBlocks.length > 0 && !finalResponseText) {
-            finalResponseText = textBlocks.map((block: any) => block.text).join('\n');
+          // STREAM NARRATION IMMEDIATELY BEFORE EXECUTING TOOLS
+          // This allows user to hear response while tools execute
+          // Also extract components to stream after tools complete
+          if (textBlocks.length > 0) {
+            const narrationText = textBlocks.map((block: any) => block.text).join('\n');
+
+            // Store for later use
+            if (!finalResponseText) {
+              finalResponseText = narrationText;
+            }
+
+            logger.info('🎤 Streaming narration BEFORE tool execution', {
+              narrationLength: narrationText.length,
+              toolCount: toolUses.length
+            });
+
+            // Parse and stream the narration immediately
+            // Also extract components to stream after tools
+            const agentResponse = this.parseResponse(narrationText);
+
+            // Store components for after tool execution
+            if (agentResponse.objects && agentResponse.objects.length > 0) {
+              preToolComponents = agentResponse.objects;
+              logger.info('📦 Found components in pre-tool response', {
+                componentCount: preToolComponents.length,
+                types: preToolComponents.map(c => c.type)
+              });
+            }
+
+            if (agentResponse.narration && agentResponse.narration.trim().length > 0) {
+              const sentenceParser = new SentenceParser();
+              const sentences = sentenceParser.addChunk(agentResponse.narration);
+
+              // Stream each sentence with TTS
+              for (const sentence of sentences) {
+                yield {
+                  type: 'text_chunk',
+                  timestamp: Date.now(),
+                  data: {
+                    text: sentence.text,
+                    sentenceIndex: sentence.index
+                  }
+                };
+
+                try {
+                  const audioResult = await ttsService.generateSentenceSpeech(
+                    sentence.text,
+                    voice,
+                    sentence.index
+                  );
+                  yield {
+                    type: 'audio_chunk',
+                    timestamp: Date.now(),
+                    data: audioResult
+                  };
+                } catch (error) {
+                  logger.warn('TTS generation failed during pre-tool streaming', {
+                    sentenceIndex: sentence.index,
+                    error: error instanceof Error ? error.message : 'Unknown'
+                  });
+                }
+              }
+
+              // Flush final sentence
+              const finalSentence = sentenceParser.flush();
+              if (finalSentence) {
+                yield {
+                  type: 'text_chunk',
+                  timestamp: Date.now(),
+                  data: {
+                    text: finalSentence.text,
+                    sentenceIndex: finalSentence.index
+                  }
+                };
+
+                try {
+                  const audioResult = await ttsService.generateSentenceSpeech(
+                    finalSentence.text,
+                    voice,
+                    finalSentence.index
+                  );
+                  yield {
+                    type: 'audio_chunk',
+                    timestamp: Date.now(),
+                    data: audioResult
+                  };
+                } catch (error) {
+                  logger.warn('TTS generation failed for final sentence', { error });
+                }
+              }
+            }
+
+            logger.info('✅ Narration streamed, now executing tools');
           }
 
           // Add assistant's message with tool use to conversation
@@ -230,14 +331,15 @@ export class StreamingOrchestrator {
                 throw new Error(`Unknown tool: ${toolUse.name}`);
               }
 
-              // Emit tool_start event
+              // Emit tool_start event with visual placeholder
               yield {
                 type: 'mcp_tool_start',
                 timestamp: Date.now(),
                 data: {
                   toolName: toolUse.name,
                   serverId,
-                  description: MCP_TOOLS_FOR_CLAUDE.find(t => t.name === toolUse.name)?.description || ''
+                  description: MCP_TOOLS_FOR_CLAUDE.find(t => t.name === toolUse.name)?.description || '',
+                  isGeneratingComponent: isVisualizationTool(toolUse.name)
                 }
               };
 
@@ -252,20 +354,11 @@ export class StreamingOrchestrator {
                 toolName: toolUse.name,
                 serverId,
                 success: mcpResult.success,
-                contentLength: mcpResult.content?.length || 0,
-                error: mcpResult.error,
-                isError: mcpResult.isError,
-                fullContent: mcpResult.content
+                contentLength: mcpResult.content?.length || 0
               });
 
               if (!mcpResult.success) {
-                const errorMsg = mcpResult.error || 'MCP tool call failed';
-                logger.error('MCP tool returned failure', {
-                  toolName: toolUse.name,
-                  errorMessage: errorMsg,
-                  mcpResult
-                });
-                throw new Error(errorMsg);
+                throw new Error(mcpResult.error || 'MCP tool call failed');
               }
 
               // Convert MCP result to canvas objects if it's a visualization tool
@@ -402,6 +495,63 @@ export class StreamingOrchestrator {
       // Parse the final response to get narration and additional objects
       const agentResponse = this.parseResponse(finalResponseText);
 
+      // Separate objects into priority (latex, graph) and regular for early rendering
+      const priorityObjects = agentResponse.objects.filter(obj =>
+        obj.type === 'latex' || obj.type === 'graph'
+      );
+      const regularObjects = agentResponse.objects.filter(obj =>
+        obj.type !== 'latex' && obj.type !== 'graph'
+      );
+
+      // Emit priority objects BEFORE TTS starts for immediate visual feedback
+      if (priorityObjects.length > 0) {
+        logger.info('🎯 Emitting priority objects before TTS', {
+          priorityObjectCount: priorityObjects.length,
+          types: priorityObjects.map(obj => obj.type)
+        });
+
+        for (const request of priorityObjects) {
+          const position = layoutEngine.calculatePosition(
+            {
+              existingObjects: streamingContext.existingObjects.map(obj => ({
+                id: obj.id,
+                position: obj.position,
+                size: obj.size
+              }))
+            },
+            { width: 400, height: 200 }
+          );
+
+          const canvasObject = objectGenerator.generateObject(
+            {
+              type: request.type,
+              content: request.content,
+              referenceName: request.referenceName,
+              metadata: request.metadata
+            },
+            position,
+            turnId
+          );
+
+          streamingContext.existingObjects.push(canvasObject);
+
+          const placement: ObjectPlacement = {
+            objectId: canvasObject.id,
+            position: canvasObject.position,
+            animateIn: 'fade',
+            timing: totalObjects * 300
+          };
+
+          yield {
+            type: 'canvas_object',
+            timestamp: Date.now(),
+            data: { object: canvasObject, placement }
+          };
+
+          totalObjects++;
+        }
+      }
+
       // Stream narration sentence-by-sentence with TTS
       if (agentResponse.narration && agentResponse.narration.trim().length > 0) {
         logger.info('🗣️ Streaming narration with TTS', {
@@ -486,7 +636,7 @@ export class StreamingOrchestrator {
           objectCount: agentResponse.objects.length
         });
 
-        for (const request of agentResponse.objects) {
+        for (const request of regularObjects) {
           const position = layoutEngine.calculatePosition(
             {
               existingObjects: streamingContext.existingObjects.map(obj => ({
@@ -575,28 +725,37 @@ export class StreamingOrchestrator {
       logger.info('Total objects:', totalObjects);
       logger.info('Total references:', totalReferences);
     } catch (error) {
-      // Check if this was an abort/cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
-        logger.info('Stream cancelled by client', { turnId });
-        yield {
-          type: 'interrupted',
-          timestamp: Date.now(),
-          data: {
-            message: 'Response generation was stopped',
-            code: 'USER_CANCELLED'
-          }
-        };
-      } else {
-        logger.error('Streaming error:', error);
-        yield {
-          type: 'error',
-          timestamp: Date.now(),
-          data: {
-            message: error instanceof Error ? error.message : 'Unknown error occurred'
-          }
-        };
+  let event;
+
+  if (error instanceof Error && error.name === 'AbortError') {
+    logger.info('Stream cancelled by client', { turnId });
+    event = {
+      type: 'interrupted',
+      timestamp: Date.now(),
+      data: {
+        message: 'Response generation was stopped',
+        code: 'USER_CANCELLED'
       }
-    } finally {
+    };
+  } else {
+    // Log the full error details
+    console.error('❌ STREAMING ERROR DETAILS:', {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : 'Unknown',
+      stack: error instanceof Error ? error.stack : undefined,
+      fullError: error
+    });
+    logger.error('Streaming error:', error);
+    event = {
+      type: 'error',
+      timestamp: Date.now(),
+      data: {
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      }
+    };
+  }
+}
+finally {
       // Clean up abort controller
       this.abortControllers.delete(turnId);
       logger.debug('Cleaned up abort controller for turn', { turnId });
@@ -717,19 +876,34 @@ Stream your response using these markers. Start with text immediately, then defi
 [NARRATION]: Continue with more explanation
 [REFERENCE mention="as shown above" objectId="obj_xyz"]: Reference existing objects
 
-Example:
+Example (Math):
 [NARRATION]: Let me help you understand quadratic equations.
 [NARRATION]: A quadratic equation has the general form where the highest power is 2.
-[OBJECT_START type="latex" id="eq_1"]: Starting equation
-[OBJECT_CONTENT]: ax^2 + bx + c = 0
-[OBJECT_META referenceName="general form"]:
-[OBJECT_END]:
+[OBJECT_START type="latex" id="eq_1"]
+[OBJECT_CONTENT]:
+ax^2 + bx + c = 0
+[OBJECT_META referenceName="general form"]
+[OBJECT_END]
 [NARRATION]: As you can see in the general form above, we have three coefficients.
-[OBJECT_START type="graph" id="graph_1"]: Creating visualization
-[OBJECT_CONTENT]: y = x^2 - 4x + 3
-[OBJECT_META equation="x^2 - 4x + 3"]:
-[OBJECT_END]:
-[NARRATION]: This parabola shows how the equation creates a U-shaped curve.
+
+Example (Code):
+[NARRATION]: Here's how to implement binary search in Python.
+[OBJECT_START type="code" id="code_1"]
+[OBJECT_CONTENT]:
+def binary_search(arr, target):
+    left, right = 0, len(arr) - 1
+    while left <= right:
+        mid = (left + right) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            left = mid + 1
+        else:
+            right = mid - 1
+    return -1
+[OBJECT_META language="python"]
+[OBJECT_END]
+[NARRATION]: This efficiently finds elements in sorted arrays.
 
 IMPORTANT:
 - Start with [NARRATION] immediately - don't wait to plan objects
@@ -737,7 +911,23 @@ IMPORTANT:
 - Keep narration conversational and natural
 - Objects can be defined while you continue explaining
 
+CRITICAL STREAMING PATTERN FOR TOOL USE:
+- When you want to use tools (like sequential_thinking), ALWAYS generate [NARRATION] text FIRST
+- Your response should be: [NARRATION] text + tool_use blocks
+- NOT: tool_use only without narration first
+- This ensures the user hears your explanation immediately while tools execute in the background
+- Example: Start with [NARRATION], explain the concept, THEN use sequential_thinking to deepen analysis
+
 Subject: ${session.subject}
+
+${selectedBrain && selectedBrain.promptEnhancement ? `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SPECIALIZED BRAIN INSTRUCTIONS (${selectedBrain.name.toUpperCase()}):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${selectedBrain.promptEnhancement}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : ''}
 
 Be canvas-aware and create appropriate visuals for the subject area.`;
   }
@@ -818,7 +1008,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
     // Extract objects
     const objects = [];
-    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/);
     for (const match of objectMatches) {
       const [_, type, id, content, meta] = match;
       if (type && content) {
@@ -827,11 +1017,28 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
           content: content.trim()
         };
 
-        // Parse metadata if present
+        // Parse metadata if present (can have multiple key="value" pairs)
         if (meta) {
-          const metaMatch = meta.match(/(\w+)="([^"]+)"/);
-          if (metaMatch) {
-            obj.referenceName = metaMatch[2];
+          const metaMatches = meta.matchAll(/(\w+)="([^"]+)"/g);
+          const metadataObj: Record<string, string> = {};
+          let hasReferenceName = false;
+
+          for (const metaMatch of metaMatches) {
+            const key = metaMatch[1];
+            const value = metaMatch[2];
+
+            // referenceName goes directly on obj, everything else goes in metadata
+            if (key === 'referenceName') {
+              obj.referenceName = value;
+              hasReferenceName = true;
+            } else {
+              metadataObj[key] = value;
+            }
+          }
+
+          // Only add metadata object if there's something in it
+          if (Object.keys(metadataObj).length > 0) {
+            obj.metadata = metadataObj;
           }
         }
 
@@ -1012,7 +1219,25 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             { width: 600, height: 400 }
           );
 
-          const url = resource.text ? `data:${resource.mimeType};base64,${resource.text}` : resource.uri;
+          // CRITICAL: Always prefer base64 data URLs to prevent stale file:// URI caching
+          let url: string;
+          if (resource.text && resource.text.length > 0) {
+            // Use base64 data URL - this ensures fresh content every time
+            url = `data:${resource.mimeType};base64,${resource.text}`;
+            logger.info('Using base64 data URL for video', {
+              toolName,
+              base64Length: resource.text.length,
+              mimeType: resource.mimeType
+            });
+          } else {
+            // Fallback to URI - log warning as this may cause caching issues
+            url = resource.uri;
+            logger.warn('⚠️ Using file:// URI for video - may cause caching!', {
+              toolName,
+              uri: resource.uri,
+              reason: 'base64 data missing from MCP response'
+            });
+          }
 
           if (isVideo) {
             const videoObject: CanvasObject = {
@@ -1035,6 +1260,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 toolName,
                 mimeType: resource.mimeType,
                 uri: resource.uri,
+                usedBase64: !!resource.text,  // Track if we used base64
               },
             };
             objects.push(videoObject);

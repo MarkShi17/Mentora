@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { HealthResponse } from '@/types/api';
 import { initializeMCP, isMCPInitialized } from '@/lib/mcp/init';
 
-export async function GET(): Promise<NextResponse<HealthResponse>> {
+export async function GET(): Promise<NextResponse> {
   // Initialize MCP on first health check (lazy initialization)
   if (!isMCPInitialized()) {
     // Don't await - let it initialize in background

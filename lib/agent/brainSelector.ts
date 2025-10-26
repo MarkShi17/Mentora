@@ -45,6 +45,21 @@ export class BrainSelector {
 Available brains:
 ${JSON.stringify(brainDescriptions, null, 2)}
 
+CRITICAL SELECTION RULES:
+1. If the question mentions ANY programming language by name (Python, JavaScript, Java, C++, Go, Rust, TypeScript, etc.), ALWAYS select "code"
+2. If the question mentions programming concepts (recursion, tree, algorithm, function, class, loop, array, data structure, etc.), ALWAYS select "code"
+3. Programming questions MUST go to the code brain, even if they also involve math
+
+Examples that MUST select code brain:
+- "explain tree recursion in Python" → code (mentions Python)
+- "how does recursion work" → code (programming concept)
+- "implement Fibonacci algorithm" → code (algorithm)
+- "what is a binary tree" → code (data structure)
+
+Examples that MUST select math brain:
+- "explain the sum of the first n positive integers"
+- "explain the pythagorean theorem"
+
 Respond with a JSON object containing:
 - selectedBrainType: One of "math", "biology", "code", "design", or "general"
 - confidence: A score from 0-1 indicating how confident you are in this selection
@@ -119,8 +134,8 @@ Select the most appropriate brain for this question.`;
       return BRAINS.biology;
     }
 
-    // Code keywords
-    if (/code|programming|algorithm|function|variable|debug|syntax|loop|array/.test(lowerQuestion)) {
+    // Code keywords - EXPANDED for better detection
+    if (/code|programming|algorithm|function|variable|debug|syntax|loop|array|python|javascript|java|c\+\+|rust|golang|typescript|recursion|tree|data structure|class|object|method|api|framework|library|sorting|searching|complexity|big o|stack|queue|linked list|hash|binary|implementation|compile|execute|script|program/.test(lowerQuestion)) {
       return BRAINS.code;
     }
 

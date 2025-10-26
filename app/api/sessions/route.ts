@@ -15,7 +15,7 @@ export async function OPTIONS(): Promise<NextResponse> {
   });
 }
 
-export async function GET(): Promise<NextResponse<SessionsListResponse>> {
+export async function GET(): Promise<NextResponse> {
   try {
     const sessions = sessionManager.getAllSessions();
 
@@ -47,7 +47,7 @@ export async function GET(): Promise<NextResponse<SessionsListResponse>> {
   }
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse<CreateSessionResponse>> {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = (await request.json()) as CreateSessionRequest;
 

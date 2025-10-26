@@ -19,7 +19,7 @@ export async function OPTIONS(): Promise<NextResponse> {
   });
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse<QAResponse>> {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = (await request.json()) as QARequest;
 
@@ -45,12 +45,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<QARespons
     } catch (error) {
       // Session not found, create a new one as fallback
       logger.warn(`Session ${body.sessionId} not found, creating fallback session`);
-      session = sessionManager.createSession('general', `Session ${body.sessionId}`);
+      session = sessionManager.createSession('math', `Session ${body.sessionId}`);
       actualSessionId = session.id; // Use the new session ID
     }
 
     // Add user turn
-    const userTurnId = generateTurnId();
     sessionManager.addTurn(actualSessionId, {
       role: 'user',
       content: body.question,

@@ -13,6 +13,7 @@ export function ContinuousAI() {
   const [isActive, setIsActive] = useState(false);
   const [wasListeningBeforeSpeech, setWasListeningBeforeSpeech] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
+  const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -32,7 +33,8 @@ export function ContinuousAI() {
     pauseListening,
     resumeListening,
     setQuestionCallback,
-    forceProcessTranscript
+    forceProcessTranscript,
+    setLastAIMessage
   } = useContinuousAI();
 
   // Simple spacebar push-to-talk mode (no question detection)
@@ -48,6 +50,9 @@ export function ContinuousAI() {
   const updateMessage = useSessionStore((state) => state.updateMessage);
   const removeMessage = useSessionStore((state) => state.removeMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
+  const setTimelineOpen = useSessionStore((state) => state.setTimelineOpen);
+  const markSessionAsHavingFirstInput = useSessionStore((state) => state.markSessionAsHavingFirstInput);
+  const sessionsWithFirstInput = useSessionStore((state) => state.sessionsWithFirstInput);
   const setLiveTutorOn = useSessionStore((state) => state.setLiveTutorOn);
   const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
   const setIsPushToTalkActive = useSessionStore((state) => state.setIsPushToTalkActive);
@@ -173,6 +178,9 @@ export function ContinuousAI() {
           type: "response"
         });
         console.log(`📎 Linked ${objectIds.length} canvas objects to message`);
+
+        // Update last AI message for response detection
+        setLastAIMessage(finalText);
       }
 
       // Reset refs
@@ -246,6 +254,13 @@ export function ContinuousAI() {
     // Add user message to chat history immediately
     addMessage(sessionId, { role: "user", content: question });
     appendTimelineEvent(sessionId, { description: "AI detected and processed question.", type: "prompt" });
+
+    // Check if this is the first user input for this session and auto-open timeline
+    if (!sessionsWithFirstInput[sessionId]) {
+      console.log('🎯 First user input detected - opening timeline');
+      markSessionAsHavingFirstInput(sessionId);
+      setTimelineOpen(true);
+    }
 
     console.log('✅ User message added to chat history');
 
@@ -397,22 +412,18 @@ export function ContinuousAI() {
     }
   }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
 
-  // Pause microphone when AI is speaking to prevent feedback loop (only for live tutor mode)
+  // Keep microphone ALWAYS ACTIVE in live tutor mode - allow natural voice interruption
+  // Question detection will filter out non-questions, so AI's voice won't cause false interrupts
+  // When user speaks a question while AI is speaking, it will be detected and stop AI immediately
   useEffect(() => {
-    const isAISpeaking = streamingQA.audioState.isPlaying;
+    if (!voiceInputState.isLiveTutorOn) return;
 
-    if (isAISpeaking && liveTutorListening && isActive && voiceInputState.isLiveTutorOn) {
-      // AI started speaking - pause the microphone
-      console.log('🔇 Pausing microphone (AI speaking)');
-      pauseListening();
-      setWasListeningBeforeSpeech(true);
-    } else if (!isAISpeaking && wasListeningBeforeSpeech && isActive && voiceInputState.isLiveTutorOn) {
-      // AI stopped speaking - resume the microphone
-      console.log('🎤 Resuming microphone (AI finished)');
-      resumeListening();
-      setWasListeningBeforeSpeech(false);
+    // Ensure microphone is always active when live tutor is on
+    if (!liveTutorListening && isActive) {
+      console.log('🎤 Ensuring microphone stays active - ready for voice interruption');
+      startLiveTutor();
     }
-  }, [streamingQA.audioState.isPlaying, liveTutorListening, isActive, wasListeningBeforeSpeech, pauseListening, resumeListening, voiceInputState.isLiveTutorOn]);
+  }, [voiceInputState.isLiveTutorOn, liveTutorListening, isActive, startLiveTutor]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -531,103 +542,159 @@ export function ContinuousAI() {
 
   return (
     <div className="pointer-events-none fixed bottom-6 right-6 z-30 flex items-end gap-4 flex-row">
-      {/* Live Transcript Panel - Fixed position to left of controls */}
+      {/* Live Transcript Panel - Fully collapsible */}
       {isActive && (
         <div className="pointer-events-auto animate-in fade-in duration-300">
-          <div className="relative overflow-hidden rounded-3xl glass-white shadow-[0_8px_32px_rgba(0,0,0,0.12)] max-w-md border border-white/40">
+          <div className={cn(
+            "relative overflow-hidden rounded-3xl glass-white shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-white/40 transition-all duration-300",
+            isTranscriptCollapsed ? "w-16 h-16" : "max-w-md"
+          )}>
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/10 via-transparent to-blue-400/10" />
             <div className="pointer-events-none absolute inset-0 shimmer" />
 
-            <div className="relative p-5 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-white/30">
-                <div className="flex items-center gap-2.5">
-                  <div className={cn(
-                    "h-2.5 w-2.5 rounded-full shadow-lg transition-all duration-300",
-                    isListening ? "bg-gradient-to-r from-cyan-400 to-blue-500 animate-pulse shadow-cyan-400/50" : "bg-slate-400"
-                  )} />
-                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                    {speaking ? "Speaking" : isListening ? "Listening" : "Standby"}
-                  </span>
-                </div>
+            {isTranscriptCollapsed ? (
+              /* Collapsed state - just the mic button */
+              <div className="relative w-16 h-16 flex items-center justify-center">
+                <button
+                  onClick={() => setIsTranscriptCollapsed(false)}
+                  className="p-2 rounded-full hover:bg-white/20 transition-colors duration-200 group"
+                  title="Expand transcript"
+                >
+                  <svg
+                    className="h-6 w-6 text-slate-500 group-hover:text-slate-700 transition-all duration-200"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M18 15l-6-6-6 6" />
+                  </svg>
+                </button>
+                
+                {/* Status indicator */}
+                <div className={cn(
+                  "absolute -top-1 -right-1 h-4 w-4 rounded-full border-[3px] border-white shadow-lg transition-all duration-300",
+                  error
+                    ? "bg-red-500 shadow-red-500/50"
+                    : isActive && isListening
+                    ? "bg-green-400 animate-pulse shadow-green-400/50"
+                    : isActive
+                    ? "bg-cyan-400 shadow-cyan-400/50"
+                    : "bg-slate-400"
+                )} />
               </div>
-
-              {currentTranscript ? (
-                <div className="space-y-3">
-                  <div className={cn(
-                    "rounded-2xl p-4 transition-all duration-500 backdrop-blur-sm",
-                    isQuestionDetected
-                      ? "bg-gradient-to-br from-cyan-400/15 to-blue-500/15 border border-cyan-400/40 shadow-lg shadow-cyan-400/20"
-                      : "bg-white/60 border border-slate-200/60 shadow-sm"
-                  )}>
-                    <p className="text-sm text-slate-900 leading-relaxed font-medium">
-                      {currentTranscript}
-                    </p>
-                  </div>
-
+            ) : (
+              /* Expanded state - full panel */
+              <div className="relative p-5 space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-white/30">
                   <div className="flex items-center gap-2.5">
-                    {isQuestionDetected ? (
-                      <>
-                        <Brain className="h-3.5 w-3.5 text-cyan-500 animate-pulse drop-shadow-sm" />
-                        <span className="text-xs font-bold text-cyan-600 tracking-wide">
-                          Question detected • Processing...
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="h-3.5 w-3.5 flex items-center justify-center">
-                          <div className="h-1.5 w-1.5 rounded-full bg-slate-400 shadow-sm" />
-                        </div>
-                        <span className="text-xs text-slate-500 font-medium">
-                          Listening for questions
-                        </span>
-                      </>
-                    )}
+                    <div className={cn(
+                      "h-2.5 w-2.5 rounded-full shadow-lg transition-all duration-300",
+                      isListening ? "bg-gradient-to-r from-cyan-400 to-blue-500 animate-pulse shadow-cyan-400/50" : "bg-slate-400"
+                    )} />
+                    <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
+                      {speaking ? "Speaking" : isListening ? "Listening" : "Standby"}
+                    </span>
                   </div>
+                  <button
+                    onClick={() => setIsTranscriptCollapsed(true)}
+                    className="p-1.5 rounded-full hover:bg-white/20 transition-colors duration-200 group"
+                    title="Collapse transcript"
+                  >
+                    <svg
+                      className="h-4 w-4 text-slate-500 group-hover:text-slate-700 transition-all duration-200"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
                 </div>
-              ) : (
-                <div className="flex items-center gap-4 py-3">
-                  <div className="flex gap-1.5">
-                    {[0, 1, 2].map((i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "w-1.5 rounded-full transition-all duration-300 shadow-sm",
-                          isListening
-                            ? "bg-gradient-to-t from-cyan-400 to-blue-500 animate-pulse"
-                            : "bg-slate-300 opacity-40"
-                        )}
-                        style={{
-                          height: isListening ? `${Math.random() * 16 + 10}px` : '8px',
-                          animationDelay: `${i * 150}ms`
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-xs text-slate-600 font-medium">
-                    Start speaking to ask a question...
-                  </span>
-                </div>
-              )}
 
-              {conversationContext.topics.length > 0 && (
-                <div className="pt-3 border-t border-white/30">
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <Brain className="h-3.5 w-3.5 text-purple-600 drop-shadow-sm" />
-                    <span className="text-xs font-bold text-slate-700">Active Topics</span>
+                {currentTranscript ? (
+                  <div className="space-y-3">
+                    <div className={cn(
+                      "rounded-2xl p-4 transition-all duration-500 backdrop-blur-sm",
+                      isQuestionDetected
+                        ? "bg-gradient-to-br from-cyan-400/15 to-blue-500/15 border border-cyan-400/40 shadow-lg shadow-cyan-400/20"
+                        : "bg-white/60 border border-slate-200/60 shadow-sm"
+                    )}>
+                      <p className="text-sm text-slate-900 leading-relaxed font-medium">
+                        {currentTranscript}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      {isQuestionDetected ? (
+                        <>
+                          <Brain className="h-3.5 w-3.5 text-cyan-500 animate-pulse drop-shadow-sm" />
+                          <span className="text-xs font-bold text-cyan-600 tracking-wide">
+                            Question detected • Processing...
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="h-3.5 w-3.5 flex items-center justify-center">
+                            <div className="h-1.5 w-1.5 rounded-full bg-slate-400 shadow-sm" />
+                          </div>
+                          <span className="text-xs text-slate-500 font-medium">
+                            Listening for questions
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {conversationContext.topics.slice(-3).map((topic, index) => (
-                      <span
-                        key={index}
-                        className="text-xs px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500/15 to-pink-500/15 text-purple-700 border border-purple-400/30 font-medium shadow-sm backdrop-blur-sm transition-all duration-300 hover:scale-105"
-                      >
-                        {topic}
-                      </span>
-                    ))}
+                ) : (
+                  <div className="flex items-center gap-4 py-3">
+                    <div className="flex gap-1.5">
+                      {[0, 1, 2].map((i) => (
+                        <div
+                          key={i}
+                          className={cn(
+                            "w-1.5 rounded-full transition-all duration-300 shadow-sm",
+                            isListening
+                              ? "bg-gradient-to-t from-cyan-400 to-blue-500 animate-pulse"
+                              : "bg-slate-300 opacity-40"
+                          )}
+                          style={{
+                            height: isListening ? `${Math.random() * 16 + 10}px` : '8px',
+                            animationDelay: `${i * 150}ms`
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-slate-600 font-medium">
+                      Start speaking to ask a question...
+                    </span>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+
+                {conversationContext.topics.length > 0 && (
+                  <div className="pt-3 border-t border-white/30">
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <Brain className="h-3.5 w-3.5 text-purple-600 drop-shadow-sm" />
+                      <span className="text-xs font-bold text-slate-700">Active Topics</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {conversationContext.topics.slice(-3).map((topic, index) => (
+                        <span
+                          key={index}
+                          className="text-xs px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500/15 to-pink-500/15 text-purple-700 border border-purple-400/30 font-medium shadow-sm backdrop-blur-sm transition-all duration-300 hover:scale-105"
+                        >
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

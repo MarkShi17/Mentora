@@ -8,6 +8,18 @@ export type MessageRole = "user" | "assistant";
 
 export type BrainType = 'math' | 'biology' | 'code' | 'design' | 'general';
 
+export type ImageAttachment = {
+  id: string;
+  type: 'image';
+  url?: string;  // Public URL if uploaded to server
+  base64?: string;  // Base64 data URL for client-side only
+  mimeType: string;
+  size: number;
+  width?: number;
+  height?: number;
+  extractedText?: string;  // Text extracted via OCR/Vision API
+};
+
 export type Message = {
   id: string;
   role: MessageRole;
@@ -15,6 +27,7 @@ export type Message = {
   timestamp: string;
   highlightIds?: string[];
   canvasObjectIds?: string[];  // IDs of canvas objects created during this message
+  attachments?: ImageAttachment[];  // Image attachments
   brainType?: BrainType;
   brainConfidence?: number;
   mcpToolsUsed?: string[];
@@ -97,13 +110,3 @@ export type StreamEvent =
   | { type: 'error'; data: { message: string } }
   | { type: 'interrupted'; data: { message: string; code: string } };
 
-export type ConnectionAnchor = 'north' | 'east' | 'south' | 'west';
-
-export type ObjectConnection = {
-  id: string;
-  sourceObjectId: string;
-  targetObjectId: string;
-  sourceAnchor: ConnectionAnchor;
-  targetAnchor: ConnectionAnchor;
-  createdAt: string;
-};
