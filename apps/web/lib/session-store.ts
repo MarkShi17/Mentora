@@ -10,7 +10,8 @@ import {
   Pin,
   Session,
   SourceLink,
-  TimelineEvent
+  TimelineEvent,
+  VoiceOption
 } from "@/types";
 
 type TransformState = {
@@ -39,7 +40,7 @@ type FocusTargetInput = NonNullable<FocusTarget>;
 
 type Settings = {
   preferredName: string;
-  voice: string;
+  voice: VoiceOption;
   explanationLevel: "beginner" | "intermediate" | "advanced";
 };
 
@@ -199,7 +200,7 @@ export const useSessionStore = create<SessionState>()(
       },
       settings: {
         preferredName: "",
-        voice: "alloy",
+        voice: 'alloy' as VoiceOption,
         explanationLevel: "intermediate"
       },
       voiceInputState: {

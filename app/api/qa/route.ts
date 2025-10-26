@@ -3,7 +3,7 @@ import { sessionManager } from '@/lib/agent/sessionManager';
 import { mentorAgent } from '@/lib/agent/mentorAgent';
 import { synthesizer } from '@/lib/voice/synthesizer';
 import { contextBuilder } from '@/lib/agent/contextBuilder';
-import { QARequest, QAResponse } from '@/types/api';
+import { QARequest, QAResponse, VoiceOption } from '@/types/api';
 import { handleError, ValidationError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
 import { generateTurnId } from '@/lib/utils/ids';
@@ -65,6 +65,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : undefined,
     });
 
+    const userName = body.userName?.trim() || '';
+    const explanationLevel = body.explanationLevel || 'intermediate';
+    const voice: VoiceOption = body.voice ?? 'alloy';
+
     // Generate teaching response
     const assistantTurnId = generateTurnId();
     const agentResponse = await mentorAgent.generateResponse(
@@ -73,13 +77,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       body.highlightedObjects,
       body.mode || 'guided',
       assistantTurnId,
-      body.context
+      body.context,
+      {
+        userName,
+        explanationLevel,
+        voice,
+      }
     );
 
     // Generate TTS audio
     let audioUrl: string | undefined;
     try {
-      audioUrl = await synthesizer.synthesize(agentResponse.narration);
+      audioUrl = await synthesizer.synthesize(agentResponse.narration, voice);
     } catch (error) {
       logger.warn('TTS generation failed, continuing without audio', error);
     }
