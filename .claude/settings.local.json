@@ -24,7 +24,9 @@
       "Bash(OPENAI_API_KEY='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' node scripts/generate-cached-audio.js --test)",
       "Bash(cat:*)",
       "Bash(npm run dev:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(docker system prune:*)",
+      "Bash(npm ci:*)"
     ],
     "deny": [],
     "ask": []

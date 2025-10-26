@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState, useRef, useCallback } from "react";
+import { Fragment, useState, useRef, useCallback, useEffect } from "react";
 import { ChevronLeft, ChevronRight, MessageSquare, X, StopCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTime } from "@/lib/utils";
@@ -35,6 +35,29 @@ export function TimelinePanel() {
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
   const stopStreamingCallback = useSessionStore((state) => state.stopStreamingCallback);
   const rerunQuestionCallback = useSessionStore((state) => state.rerunQuestionCallback);
+
+  // Global ESC key handler for stopping generation
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && stopStreamingCallback) {
+        // Don't prevent default or stop if user is in an input field
+        const target = event.target as HTMLElement;
+        const isInInputField =
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable;
+
+        if (!isInInputField) {
+          event.preventDefault();
+          console.log('⌨️ ESC pressed - stopping generation');
+          stopStreamingCallback();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [stopStreamingCallback]);
 
   const handleObjectClick = useCallback((objectId: string) => {
     if (!activeSessionId) return;
@@ -264,33 +287,92 @@ export function TimelinePanel() {
                   </button>
                 )}
               </div>
-              {message.content === "Thinking..." ? (
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-sm text-slate-600 font-medium">Thinking</span>
-                    <div className="flex gap-1.5">
-                      <span className="w-2 h-2 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-bounce shadow-sm" style={{ animationDelay: '0ms' }}></span>
-                      <span className="w-2 h-2 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-bounce shadow-sm" style={{ animationDelay: '150ms' }}></span>
-                      <span className="w-2 h-2 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-bounce shadow-sm" style={{ animationDelay: '300ms' }}></span>
+              {(message.content === "Thinking..." || message.isStreaming || message.isPlayingAudio) && !message.interrupted ? (
+                <div className="mt-2">
+                  {/* Show content if available (streaming or after thinking) */}
+                  {message.content && message.content !== "Thinking..." && (
+                    <p className="text-sm text-slate-700 leading-relaxed font-medium mb-2">
+                      {message.content}
+                      {message.isStreaming && !message.isPlayingAudio && (
+                        <span className="ml-1 text-sky-500">...</span>
+                      )}
+                    </p>
+                  )}
+
+                  {/* Status bar with stop button */}
+                  <div className="flex items-center justify-between gap-2 py-1">
+                    <div className="flex items-center gap-2.5">
+                      {message.isPlayingAudio ? (
+                        <>
+                          <span className="text-xs text-sky-600 font-bold">Speaking</span>
+                          <div className="flex gap-1">
+                            {[0, 1, 2].map((i) => (
+                              <div
+                                key={i}
+                                className="w-1 bg-gradient-to-t from-sky-400 to-blue-500 rounded-full animate-pulse shadow-sm"
+                                style={{
+                                  height: `${8 + Math.sin((Date.now() / 200) + i) * 4}px`,
+                                  animationDelay: `${i * 100}ms`
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      ) : message.content === "Thinking..." ? (
+                        <>
+                          <span className="text-xs text-slate-600 font-bold">Thinking</span>
+                          <div className="flex gap-1">
+                            <span className="w-1.5 h-1.5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-bounce shadow-sm" style={{ animationDelay: '0ms' }}></span>
+                            <span className="w-1.5 h-1.5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-bounce shadow-sm" style={{ animationDelay: '150ms' }}></span>
+                            <span className="w-1.5 h-1.5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-bounce shadow-sm" style={{ animationDelay: '300ms' }}></span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xs text-slate-600 font-bold">Generating</span>
+                          <div className="flex gap-1">
+                            <span className="w-1.5 h-1.5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-pulse shadow-sm"></span>
+                            <span className="w-1.5 h-1.5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-pulse shadow-sm" style={{ animationDelay: '100ms' }}></span>
+                            <span className="w-1.5 h-1.5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-full animate-pulse shadow-sm" style={{ animationDelay: '200ms' }}></span>
+                          </div>
+                        </>
+                      )}
                     </div>
+
+                    {/* Minimal stop button */}
+                    <button
+                      onClick={() => {
+                        if (stopStreamingCallback) {
+                          console.log('🛑 Stopping AI generation from timeline panel');
+                          stopStreamingCallback();
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/60 hover:bg-red-50 text-slate-600 hover:text-red-600 transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-200/60 hover:border-red-200/60 shadow-sm hover:shadow-md"
+                      title="Stop generating (ESC)"
+                    >
+                      <StopCircle className="h-3 w-3" />
+                      <span>Stop</span>
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      if (stopStreamingCallback) {
-                        console.log('🛑 Stopping AI generation from timeline panel');
-                        stopStreamingCallback();
-                      }
-                    }}
-                    className="p-1.5 rounded-xl hover:bg-red-50 transition-all duration-300 group hover:scale-110 active:scale-95"
-                    title="Stop generating"
-                  >
-                    <StopCircle className="h-4 w-4 text-slate-400 group-hover:text-red-500 transition-colors" />
-                  </button>
                 </div>
-              ) : message.content === "Stopped" ? (
-                <div className="mt-2 flex items-center gap-2.5">
-                  <span className="text-sm text-slate-600 font-medium">Generation stopped</span>
-                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-lg shadow-red-500/50"></div>
+              ) : message.content === "Stopped" || message.interrupted ? (
+                <div className="space-y-2">
+                  {message.content && message.content !== "Stopped" && (
+                    <p className="mt-2 text-sm text-slate-700 leading-relaxed font-medium opacity-75">
+                      {message.content}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-lg shadow-red-500/50"></div>
+                    <span className="text-xs text-red-600 font-bold">
+                      Generation stopped
+                      {message.interruptedAt && (
+                        <span className="text-red-400 ml-1.5 font-medium">
+                          at {formatTime(message.interruptedAt)}
+                        </span>
+                      )}
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <p className="mt-2 text-sm text-slate-700 leading-relaxed font-medium">{message.content}</p>

@@ -67,6 +67,35 @@ export function ContinuousAI() {
 
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
+    onInterrupted: useCallback((partialText: string) => {
+      const sessionId = currentSessionRef.current;
+      const thinkingMessageId = thinkingMessageIdRef.current;
+
+      if (sessionId && thinkingMessageId) {
+        // Update message to show it was interrupted
+        updateMessage(sessionId, thinkingMessageId, {
+          content: partialText || "Stopped",
+          interrupted: true,
+          interruptedAt: new Date().toISOString(),
+          isStreaming: false,
+          isPlayingAudio: false
+        });
+        console.log('⚠️ Message marked as interrupted');
+
+        appendTimelineEvent(sessionId, {
+          description: "AI response interrupted by user",
+          type: "response"
+        });
+      }
+
+      // Reset refs
+      currentSessionRef.current = null;
+      completeTextRef.current = '';
+      objectsInCurrentResponse.current = [];
+      thinkingMessageIdRef.current = null;
+      endSequence();
+      sequenceKeyRef.current = null;
+    }, [updateMessage, appendTimelineEvent, endSequence]),
     onCanvasObject: useCallback((object: any, placement: any) => {
       const sessionId = currentSessionRef.current ?? activeSessionId;
       if (!sessionId) {
@@ -124,7 +153,9 @@ export function ContinuousAI() {
           // Replace the "Thinking..." message with the actual response
           updateMessage(sessionId, thinkingMessageId, {
             content: finalText,
-            canvasObjectIds: objectIds.length > 0 ? objectIds : undefined
+            canvasObjectIds: objectIds.length > 0 ? objectIds : undefined,
+            isStreaming: false,
+            isPlayingAudio: false
           });
           console.log('✅ Updated thinking message with final response');
         } else {
@@ -218,10 +249,14 @@ export function ContinuousAI() {
 
     console.log('✅ User message added to chat history');
 
-    // Add "thinking..." placeholder message
-    const thinkingMessageId = addMessage(sessionId, { role: "assistant", content: "Thinking..." });
+    // Add "thinking..." placeholder message with streaming flag
+    const thinkingMessageId = addMessage(sessionId, {
+      role: "assistant",
+      content: "Thinking...",
+      isStreaming: true
+    });
     thinkingMessageIdRef.current = thinkingMessageId;
-    console.log('🤔 Thinking indicator added to chat');
+    console.log('🤔 Thinking indicator added to chat with streaming flag');
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('🚀 STARTING STREAMING RESPONSE');
@@ -280,18 +315,37 @@ export function ContinuousAI() {
     setStopStreamingCallback(() => {
       console.log('🛑 Stop callback invoked - completely stopping AI');
 
+      // Get current state before stopping
+      const partialText = completeTextRef.current;
+      const thinkingMessageId = thinkingMessageIdRef.current;
+      const sessionId = currentSessionRef.current;
+
       // Stop streaming and audio IMMEDIATELY
       streamingQA.stopStreaming();
       endSequence();
       sequenceKeyRef.current = null;
 
-      // DELETE the thinking message completely
-      const thinkingMessageId = thinkingMessageIdRef.current;
-      const sessionId = currentSessionRef.current;
+      // Update the message to show it was interrupted (if it had content)
       if (sessionId && thinkingMessageId) {
-        console.log('🗑️ Deleting thinking message:', thinkingMessageId);
-        removeMessage(sessionId, thinkingMessageId);
+        if (partialText && partialText.trim()) {
+          console.log('⚠️ Marking message as interrupted with partial content');
+          updateMessage(sessionId, thinkingMessageId, {
+            content: partialText,
+            interrupted: true,
+            interruptedAt: new Date().toISOString(),
+            isStreaming: false,
+            isPlayingAudio: false
+          });
+        } else {
+          console.log('🗑️ Removing empty thinking message');
+          removeMessage(sessionId, thinkingMessageId);
+        }
         thinkingMessageIdRef.current = null;
+
+        appendTimelineEvent(sessionId, {
+          description: "AI response stopped by user",
+          type: "response"
+        });
       }
 
       // Reset ALL refs to allow new questions immediately
@@ -306,7 +360,7 @@ export function ContinuousAI() {
     return () => {
       setStopStreamingCallback(null);
     };
-  }, [streamingQA, setStopStreamingCallback, removeMessage, endSequence]);
+  }, [streamingQA, setStopStreamingCallback, removeMessage, updateMessage, appendTimelineEvent, endSequence]);
 
   // Register rerun question callback
   useEffect(() => {
@@ -327,18 +381,21 @@ export function ContinuousAI() {
   useEffect(() => {
     if (streamingQA.currentText) {
       completeTextRef.current = streamingQA.currentText;
-      
+
       // Update the thinking message in real-time as text streams in
       const thinkingMessageId = thinkingMessageIdRef.current;
       const sessionId = currentSessionRef.current;
-      
-      if (sessionId && thinkingMessageId && streamingQA.currentText.trim().length > 0) {
+
+      if (sessionId && thinkingMessageId) {
+        const content = streamingQA.currentText.trim() || "Thinking...";
         updateMessage(sessionId, thinkingMessageId, {
-          content: streamingQA.currentText
+          content: content,
+          isStreaming: streamingQA.isStreaming,
+          isPlayingAudio: streamingQA.audioState.isPlaying
         });
       }
     }
-  }, [streamingQA.currentText, updateMessage]);
+  }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
 
   // Pause microphone when AI is speaking to prevent feedback loop (only for live tutor mode)
   useEffect(() => {

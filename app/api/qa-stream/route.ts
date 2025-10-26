@@ -307,7 +307,8 @@ export async function POST(request: NextRequest): Promise<Response> {
     },
 
     cancel() {
-      logger.info('SSE stream cancelled by client');
+      logger.info('SSE stream cancelled by client - cleaning up resources');
+      // Stream will be closed automatically
     },
   });
 

@@ -45,6 +45,7 @@ interface AgentResponse {
 
 export class StreamingOrchestrator {
   private anthropic: Anthropic;
+  private abortControllers: Map<string, AbortController>;
 
   constructor() {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -52,6 +53,30 @@ export class StreamingOrchestrator {
       throw new Error('ANTHROPIC_API_KEY environment variable is required');
     }
     this.anthropic = new Anthropic({ apiKey });
+    this.abortControllers = new Map();
+  }
+
+  /**
+   * Cancel a specific streaming response
+   */
+  public cancelStream(turnId: string): void {
+    const controller = this.abortControllers.get(turnId);
+    if (controller) {
+      logger.info('🛑 Cancelling stream for turn', { turnId });
+      controller.abort();
+      this.abortControllers.delete(turnId);
+    }
+  }
+
+  /**
+   * Cancel all active streams
+   */
+  public cancelAllStreams(): void {
+    logger.info('🛑 Cancelling all active streams', { count: this.abortControllers.size });
+    this.abortControllers.forEach((controller, turnId) => {
+      controller.abort();
+    });
+    this.abortControllers.clear();
   }
 
   /**
@@ -87,6 +112,10 @@ export class StreamingOrchestrator {
     logger.info('Mode', { mode });
     logger.info('Turn ID', { turnId });
     logger.info('Existing canvas objects', { count: session.canvasObjects.length });
+
+    // Create abort controller for this stream
+    const abortController = new AbortController();
+    this.abortControllers.set(turnId, abortController);
 
     const streamingContext: StreamingContext = {
       sessionId: session.id,
@@ -535,14 +564,31 @@ export class StreamingOrchestrator {
       logger.info('Total objects:', totalObjects);
       logger.info('Total references:', totalReferences);
     } catch (error) {
-      logger.error('Streaming error:', error);
-      yield {
-        type: 'error',
-        timestamp: Date.now(),
-        data: {
-          message: error instanceof Error ? error.message : 'Unknown error occurred'
-        }
-      };
+      // Check if this was an abort/cancellation
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.info('Stream cancelled by client', { turnId });
+        yield {
+          type: 'interrupted',
+          timestamp: Date.now(),
+          data: {
+            message: 'Response generation was stopped',
+            code: 'USER_CANCELLED'
+          }
+        };
+      } else {
+        logger.error('Streaming error:', error);
+        yield {
+          type: 'error',
+          timestamp: Date.now(),
+          data: {
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
+          }
+        };
+      }
+    } finally {
+      // Clean up abort controller
+      this.abortControllers.delete(turnId);
+      logger.debug('Cleaned up abort controller for turn', { turnId });
     }
   }
 
@@ -696,6 +742,12 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
   private parseResponse(responseText: string): AgentResponse {
     try {
+      // First check if this is the new marker format
+      if (responseText.includes('[NARRATION]') || responseText.includes('[OBJECT_START')) {
+        return this.parseMarkerFormat(responseText);
+      }
+
+      // Fallback to JSON format for backward compatibility
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
@@ -716,8 +768,8 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         };
       }
 
-      // Incomplete JSON - return empty narration (don't speak partial JSON)
-      logger.debug('No complete JSON found yet', { textLength: responseText.length });
+      // No valid format found
+      logger.debug('No valid response format found', { textLength: responseText.length });
       return {
         explanation: '',
         narration: '',
@@ -726,7 +778,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       };
     } catch (error) {
       // Parse error - return empty narration (don't speak malformed JSON)
-      logger.debug('JSON parse error (normal during streaming)', {
+      logger.debug('Parse error (normal during streaming)', {
         error: error instanceof Error ? error.message : 'Unknown',
         textSnippet: responseText.substring(0, 100)
       });
@@ -737,6 +789,64 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         references: []
       };
     }
+  }
+
+  private parseMarkerFormat(responseText: string): AgentResponse {
+    // Extract narration sections
+    const narrationMatches = responseText.matchAll(/\[NARRATION\]:\s*([^\[]*)/g);
+    const narrationParts = [];
+    for (const match of narrationMatches) {
+      if (match[1] && match[1].trim()) {
+        narrationParts.push(match[1].trim());
+      }
+    }
+    const narration = narrationParts.join(' ');
+
+    // Extract objects
+    const objects = [];
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
+    for (const match of objectMatches) {
+      const [_, type, id, content, meta] = match;
+      if (type && content) {
+        const obj: any = {
+          type,
+          content: content.trim()
+        };
+
+        // Parse metadata if present
+        if (meta) {
+          const metaMatch = meta.match(/(\w+)="([^"]+)"/);
+          if (metaMatch) {
+            obj.referenceName = metaMatch[2];
+          }
+        }
+
+        objects.push(obj);
+      }
+    }
+
+    // Extract references
+    const references = [];
+    const referenceMatches = responseText.matchAll(/\[REFERENCE\s+mention="([^"]+)"\s+objectId="([^"]+)"\]/g);
+    for (const match of referenceMatches) {
+      references.push({
+        mention: match[1],
+        objectId: match[2]
+      });
+    }
+
+    logger.debug('Parsed marker format response', {
+      narrationLength: narration.length,
+      objectCount: objects.length,
+      referenceCount: references.length
+    });
+
+    return {
+      explanation: narration, // Use narration as explanation too
+      narration,
+      objects,
+      references
+    };
   }
 
   private generateReferences(
