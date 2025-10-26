@@ -274,6 +274,7 @@ export class StreamingOrchestrator {
                 const mcpObjects = this.convertMCPResultToCanvasObjects(
                   mcpResult,
                   toolUse.name,
+                  toolUse.input as Record<string, any>,
                   session.canvasObjects,
                   toolGeneratedObjects,
                   turnId
@@ -479,7 +480,8 @@ export class StreamingOrchestrator {
       }
 
       // Generate additional canvas objects from Claude's response (if any)
-      if (agentResponse.objects && agentResponse.objects.length > 0) {
+      // ONLY if no MCP visualization tools were used (to avoid spurious diagrams)
+      if (agentResponse.objects && agentResponse.objects.length > 0 && toolGeneratedObjects.length === 0) {
         logger.info('Generating canvas objects from Claude response', {
           objectCount: agentResponse.objects.length
         });
@@ -630,10 +632,11 @@ export class StreamingOrchestrator {
 - Break explanations into small steps
 - Provide hints before solutions
 - Check understanding at checkpoints`
-        : `Provide direct explanations:
-- Give clear, complete answers
-- Still break into logical steps
-- Be thorough but concise`;
+        : `Provide concise direct explanations:
+- Start with brief 3-4 sentence summaries (5 sentence MAX)
+- Create visualizations to supplement brevity
+- Save detailed explanations for follow-up questions
+- Be clear but encourage further exploration`;
 
     let contextualInfo = '';
     if (conversationContext) {
@@ -696,7 +699,8 @@ VISUAL CREATION:
 - Position new objects spatially relative to existing ones
 - Use directional language: "as shown in the equation above", "let's place this below"
 - Make text objects detailed and well-formatted with bullet points and clear structure
-- Ensure content is comprehensive but concise - avoid overly short explanations
+- Keep initial explanations brief (3-4 sentences, 5 MAX) - let visuals do the teaching
+- Save comprehensive details for follow-up questions
 - Use proper line breaks and formatting in text content
 - For diagrams: Create meaningful visualizations that demonstrate the concept being discussed
 - Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms
@@ -888,6 +892,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
   private convertMCPResultToCanvasObjects(
     mcpResult: any,
     toolName: string,
+    toolInput: Record<string, any>,
     existingObjects: CanvasObject[],
     currentToolResults: CanvasObject[],
     turnId: string
@@ -898,6 +903,39 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       logger.warn('MCP result has no content array', { toolName });
       return objects;
     }
+
+    // Generate meaningful label from tool name and parameters
+    const generateLabel = (): string => {
+      switch (toolName) {
+        case 'render_biology_diagram':
+          const diagramType = toolInput.diagram_type || '';
+          const title = toolInput.title || '';
+          if (title) return title;
+          // Convert diagram_type to readable label: "crispr_mechanism" -> "CRISPR Mechanism"
+          return diagramType
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+
+        case 'generate':
+          return toolInput.title || 'Pathway Diagram';
+
+        case 'visualize_molecule':
+          const pdbId = toolInput.pdb_id || '';
+          return pdbId ? `${pdbId.toUpperCase()} Structure` : 'Molecular Structure';
+
+        case 'render_animation':
+          return toolInput.title || 'Math Animation';
+
+        case 'execute_python':
+          return toolInput.title || 'Data Visualization';
+
+        default:
+          return 'Visualization';
+      }
+    };
+
+    const label = generateLabel();
 
     // Process each content item from MCP result
     for (const content of mcpResult.content) {
@@ -928,10 +966,11 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         const imageObject: CanvasObject = {
           id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
           type: 'image',
+          label,
           data: {
             type: 'image',
             url: `data:${content.mimeType};base64,${content.data}`,
-            alt: `Visualization from ${toolName}`,
+            alt: label,
           },
           position,
           size: { width: 600, height: 400 },
@@ -979,10 +1018,11 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             const videoObject: CanvasObject = {
               id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
               type: 'video',
+              label,
               data: {
                 type: 'video',
                 url,
-                alt: `Animation from ${toolName}`,
+                alt: label,
               },
               position,
               size: { width: 600, height: 400 },
@@ -1002,10 +1042,11 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             const imageObject: CanvasObject = {
               id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
               type: 'image',
+              label,
               data: {
                 type: 'image',
                 url,
-                alt: `Visualization from ${toolName}`,
+                alt: label,
               },
               position,
               size: { width: 600, height: 400 },

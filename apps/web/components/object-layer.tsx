@@ -347,9 +347,6 @@ function CanvasObjectItem({
             <p className="text-xs uppercase tracking-wide text-slate-600 font-medium">
               {object.type}
             </p>
-            <h3 className="mt-1 text-base font-semibold text-slate-900">
-              {object.label}
-            </h3>
           </div>
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
         </div>

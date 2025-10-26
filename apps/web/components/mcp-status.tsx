@@ -16,9 +16,9 @@ export function MCPStatus() {
     activeSessionId ? state.mcpToolStatus[activeSessionId] || [] : []
   );
 
-  // Only show running or recently completed tools
+  // Only show running tools (hide completed/error notifications)
   const activeTools = mcpTools.filter(
-    (tool) => tool.status === 'running' || (tool.status === 'complete' && tool.endTime && Date.now() - tool.endTime < 3000)
+    (tool) => tool.status === 'running'
   );
 
   if (activeTools.length === 0) {
