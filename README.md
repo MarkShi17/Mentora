@@ -1,6 +1,6 @@
-# Mentora - AI Tutoring Platform
+# Mentora - Voice-Interactive AI Mentor with a Spatial Memory Canvas
 
-Complete full-stack AI-powered tutoring platform with voice interaction and infinite canvas workspace.
+Complete full-stack Agentic tutoring platform using multimodal RAG and MCPs to explain, visualize, and remember like a human mentor.
 
 ## Architecture
 
