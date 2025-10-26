@@ -372,7 +372,7 @@ export function TimelinePanel() {
                   <div className="flex items-center gap-2.5">
                     <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-lg shadow-red-500/50"></div>
                     <span className="text-xs text-red-600 font-bold">
-                      Generation stopped
+                      --interrupted--
                       {message.interruptedAt && (
                         <span className="text-red-400 ml-1.5 font-medium">
                           at {formatTime(message.interruptedAt)}
