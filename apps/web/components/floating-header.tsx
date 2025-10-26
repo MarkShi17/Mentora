@@ -43,26 +43,26 @@ export function FloatingHeader() {
   // };
 
   return (
-    <div className="pointer-events-none absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-3">
+    <div className="pointer-events-none absolute left-1/2 top-6 z-20 flex -translate-x-1/2 items-center gap-3">
       {/* Sources Button */}
-      <div className="pointer-events-auto rounded-full border border-sky-500/30 bg-white/95 px-4 py-2 shadow-lg backdrop-blur-md hover:border-sky-500/50 hover:bg-slate-50 transition-all">
+      <div className="pointer-events-auto rounded-2xl glass-white px-5 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.1)] backdrop-blur-2xl border border-white/50 hover:shadow-[0_12px_32px_rgba(6,182,212,0.2)] hover:border-sky-400/40 transition-all duration-300 hover:scale-105 active:scale-95">
         <button
           type="button"
           disabled={!activeSessionId}
           onClick={() => useSessionStore.getState().setSourcesDrawerOpen(true)}
           className={cn(
-            "flex items-center gap-2 text-sm font-medium transition-colors",
+            "flex items-center gap-2.5 text-sm font-bold transition-colors",
             activeSessionId ? "text-sky-600 hover:text-sky-700" : "text-slate-400 cursor-not-allowed"
           )}
         >
-          <ExternalLink className="h-3.5 w-3.5" />
+          <ExternalLink className="h-4 w-4" />
           Sources
         </button>
       </div>
 
       {/* Session Title */}
-      <div className="pointer-events-auto rounded-2xl border border-slate-200 bg-white/95 px-5 py-2.5 shadow-lg backdrop-blur-md">
-        <h1 className="text-base font-bold text-slate-900 tracking-tight">
+      <div className="pointer-events-auto rounded-3xl glass-white px-7 py-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] backdrop-blur-2xl border border-white/50 hover:shadow-[0_12px_40px_rgba(0,0,0,0.16)] transition-all duration-300">
+        <h1 className="text-base font-black text-slate-900 tracking-tight">
           {activeSession?.title ?? "Create a new lesson"}
         </h1>
       </div>
@@ -71,7 +71,7 @@ export function FloatingHeader() {
       <BrainBadge />
 
       {/* Tool Buttons */}
-      <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-2 py-2 shadow-lg backdrop-blur-md">
+      <div className="pointer-events-auto flex items-center gap-2.5 rounded-3xl glass-white px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.1)] backdrop-blur-2xl border border-white/50">
         <IconButton
           icon={MousePointer2}
           active={canvasMode === "pan"}
@@ -96,29 +96,29 @@ export function FloatingHeader() {
 
       {/* Pin Tray */}
       {/* {pins.length > 0 && (
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur-md">
+        <div className="pointer-events-auto flex items-center gap-2.5 rounded-3xl glass-white px-4 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.1)] backdrop-blur-2xl border border-white/50">
           <MapPin className="h-4 w-4 text-slate-600" />
           {pins.map((pin) => (
             <div
               key={pin.id}
-              className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1"
+              className="flex items-center gap-1.5 rounded-2xl border border-white/60 bg-white/40 px-3 py-1.5 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-300 hover:scale-105"
             >
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs text-slate-700 transition-colors hover:text-sky-600"
+                className="flex items-center gap-1.5 text-xs font-bold text-slate-700 transition-colors hover:text-sky-600"
                 onClick={() => requestFocus({ id: pin.id, x: pin.x, y: pin.y })}
               >
-                <LocateFixed className="h-3 w-3" />
+                <LocateFixed className="h-3.5 w-3.5" />
                 <span>{pin.label}</span>
               </button>
               <Button
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="h-4 w-4 text-slate-500 hover:text-red-500"
+                className="h-5 w-5 text-slate-500 hover:text-red-500 transition-colors"
                 onClick={() => activeSessionId && removePin(activeSessionId, pin.id)}
               >
-                <Trash2 className="h-3 w-3" />
+                <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </div>
           ))}
@@ -144,20 +144,20 @@ function IconButton({ icon: Icon, active, onClick, disabled, tooltip }: IconButt
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          "rounded-full p-2 transition-all",
+          "rounded-2xl p-2.5 transition-all duration-300",
           active
-            ? "bg-slate-200 text-sky-600 shadow-inner"
-            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+            ? "bg-gradient-to-br from-sky-400/20 to-blue-500/20 text-sky-600 shadow-lg shadow-sky-400/20 border border-sky-400/30"
+            : "text-slate-600 hover:bg-white/60 hover:text-slate-900 hover:shadow-md hover:scale-110 active:scale-95",
           disabled && "cursor-not-allowed opacity-40"
         )}
       >
         <Icon className="h-[18px] w-[18px]" />
       </button>
       {tooltip && !disabled && (
-        <div className="pointer-events-none absolute left-1/2 top-full mt-2 -translate-x-1/2 opacity-0 transition-opacity group-hover:opacity-100">
-          <div className="whitespace-nowrap rounded-md bg-white px-2 py-1 text-xs text-slate-700 shadow-lg ring-1 ring-slate-200">
+        <div className="pointer-events-none absolute left-1/2 top-full mt-3 -translate-x-1/2 opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:translate-y-0 translate-y-1">
+          <div className="relative whitespace-nowrap rounded-xl glass-white px-3 py-2 text-xs font-bold text-slate-700 shadow-[0_8px_24px_rgba(0,0,0,0.12)] border border-white/50">
             {tooltip}
-            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rotate-45 h-2 w-2 bg-white ring-1 ring-slate-200"></div>
+            <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rotate-45 h-2 w-2 bg-white border-l border-t border-white/50"></div>
           </div>
         </div>
       )}
