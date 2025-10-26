@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Settings, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
@@ -19,6 +19,16 @@ export function SidebarHistory() {
   const createSession = useSessionStore((state) => state.createSession);
   const updateSessionTitle = useSessionStore((state) => state.updateSessionTitle);
   const deleteSession = useSessionStore((state) => state.deleteSession);
+  const setLayoutOffset = useSessionStore((state) => state.setLayoutOffset);
+
+  useEffect(() => {
+    const width = isCollapsed ? 0 : 320;
+    setLayoutOffset('left', width);
+  }, [isCollapsed, setLayoutOffset]);
+
+  useEffect(() => () => {
+    setLayoutOffset('left', 0);
+  }, [setLayoutOffset]);
 
   const handleCreateSession = async () => {
     const now = new Date();

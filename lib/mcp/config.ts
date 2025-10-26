@@ -60,12 +60,12 @@ export const MCP_SERVERS: MCPServerRegistry = {
   mermaid: {
     id: 'mermaid',
     name: 'Mermaid Diagramming',
-    description: 'Generate process and pathway diagrams using Mermaid syntax',
+    description: 'Generate process and pathway diagrams using Mermaid syntax and convert to PNG',
     transport: 'stdio',
     command: process.env.MERMAID_MCP_COMMAND || 'npx',
     args: process.env.MERMAID_MCP_COMMAND
       ? process.env.MERMAID_MCP_ARGS?.split(' ').filter(Boolean)
-      : ['-y', '@modelcontextprotocol/server-mermaid'],
+      : ['-y', '@peng-shawn/mermaid-mcp-server'],
     enabled: process.env.ENABLE_MERMAID === 'true',
     timeout: 40000,
   },
@@ -101,10 +101,10 @@ export const MCP_SERVERS: MCPServerRegistry = {
   figma: {
     id: 'figma',
     name: 'Figma Integration',
-    description: 'Access Figma designs and components',
+    description: 'Access Figma designs and components via MCP',
     transport: 'stdio',
     command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-figma'],
+    args: ['-y', 'figma-mcp'],
     env: {
       FIGMA_PERSONAL_ACCESS_TOKEN: process.env.FIGMA_TOKEN || '',
     },

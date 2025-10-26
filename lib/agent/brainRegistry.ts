@@ -20,7 +20,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Function analysis and graphing',
     ],
     model: 'claude-3-5-haiku-20241022', // Fast for math
-    mcpTools: ['render_animation', 'sequential_thinking'],
+    mcpTools: ['render_animation', 'sequentialthinking'],
     promptEnhancement: `You are a specialized math tutor. Focus on:
 - Breaking down complex mathematical concepts into clear steps
 - Using Manim for stunning animated mathematical visualizations
@@ -42,14 +42,30 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Laboratory simulations',
     ],
     model: 'claude-3-5-haiku-20241022', // Fast for biology
-    mcpTools: ['execute_python', 'render_biology_diagram', 'sequential_thinking'],
-    promptEnhancement: `You are a specialized biology tutor. Focus on:
-- Creating detailed scientific diagrams and illustrations
-- Visualizing biological processes and cycles
-- Using Python for data visualization and scientific plots
-- Explaining complex biological systems step-by-step
-- Connecting biological concepts to real-world examples`,
-  },
+    mcpTools: [
+      'execute_python',
+      'render_biology_diagram',
+      'search_biorender',
+      'get_biorender_figure',
+      'generate',
+      'visualize_molecule',
+      'fetch_protein',
+      'sequentialthinking',
+    ],
+    promptEnhancement: `Biology tutor with MCP visualization tools. Your goal: make each topic intuitive, accurate, and visually clear.
+**CRITICAL: Always use MCP tools, NEVER generic "diagram" objects.**
+Tool priority:
+1. render_biology_diagram - for cell_cycle, crispr_mechanism, mitosis_phases, gene_expression, etc.
+2. generate - for custom pathways (Mermaid flowcharts)
+3. visualize_molecule - for 3D protein structures (use fetch_protein first)
+4. execute_python - only if above don't fit
+
+- Pair visuals with brief, structured explanations
+- Emphasize function, mechanism, and significance
+- Connect concepts to real-world examples
+- Keep focused—avoid unnecessary detail`,
+  }, //  - **BioRender-style** for cells, tissues, or systems when it strengthens understanding -----no work
+
 
   code: {
     id: 'code',
@@ -64,7 +80,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Debugging assistance',
     ],
     model: 'claude-3-5-haiku-20241022', // Fast for code
-    mcpTools: ['execute_python', 'sequential_thinking'], // Python execution + thinking
+    mcpTools: ['execute_python', 'sequentialthinking'], // Python execution + thinking
     promptEnhancement: `You are a specialized programming tutor with access to Python execution for visualizations.
 
 CRITICAL REQUIREMENTS:
@@ -141,7 +157,7 @@ NEVER use [OBJECT_START type="graph"] or [OBJECT_START type="diagram"] - always 
       'Comprehensive coverage',
     ],
     model: 'claude-sonnet-4-5-20250929', // Powerful for general knowledge
-    mcpTools: ['render_animation', 'execute_python', 'sequential_thinking'],
+    mcpTools: ['render_animation', 'execute_python', 'sequentialthinking'],
     promptEnhancement: `You are a versatile general tutor. Focus on:
 - Adapting your teaching style to the subject matter
 - Using appropriate visualizations for each topic

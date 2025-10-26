@@ -13,17 +13,7 @@ import { Tool } from '@anthropic-ai/sdk/resources/messages.mjs';
 export const MCP_TOOLS_FOR_CLAUDE: Tool[] = [
   {
     name: 'render_animation',
-    description: `Render beautiful mathematical animations using Manim (Mathematical Animation Engine).
-
-PREFERRED for mathematical visualizations! Use this tool when you need to:
-- Create animated mathematical concepts (Pythagorean theorem, geometry, calculus, algebra)
-- Show step-by-step mathematical transformations with smooth animations
-- Visualize function behavior over time with dynamic graphs
-- Create animated proofs or demonstrations with moving shapes and equations
-- Illustrate mathematical relationships dynamically with colors and transitions
-- Generate professional-quality mathematical videos and GIFs
-
-This tool creates stunning, animated visualizations that are perfect for teaching mathematical concepts. The code must define a Scene class that inherits from Manim's Scene.`,
+    description: `Create animated mathematical visualizations using Manim. PREFERRED for math: animated proofs, function transformations, geometric concepts, calculus demonstrations. Code must define a Scene class.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -57,20 +47,7 @@ class MainScene(Scene):
   },
   {
     name: 'execute_python',
-    description: `Execute Python code to generate static visualizations, data analysis, and scientific plots.
-
-Use this tool when you need to:
-- Create static matplotlib/seaborn visualizations (plots, charts, graphs)
-- Generate scientific diagrams (biology, chemistry, physics)
-- Perform data analysis and create visual results
-- Create custom static diagrams and plots
-- Demonstrate algorithm visualizations with static images
-
-Note: For mathematical concepts and animated visualizations, prefer the render_animation tool instead.
-
-Available libraries: numpy, pandas, matplotlib, seaborn, plotly, scipy
-
-The tool will return base64-encoded PNG images of any matplotlib plots created.`,
+    description: `Execute Python for custom static plots, data analysis, or scientific diagrams when specialized tools don't fit. Libraries: numpy, pandas, matplotlib, seaborn, scipy. Returns PNG images.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -89,14 +66,7 @@ The tool will return base64-encoded PNG images of any matplotlib plots created.`
   },
   {
     name: 'render_biology_diagram',
-    description: `Generate biology-focused schematics (cell structure, DNA transcription, photosynthesis) using curated matplotlib templates.
-
-Use this tool when you need to:
-- Illustrate organelle layouts within a eukaryotic cell
-- Explain transcription / translation visually
-- Show high-level photosynthesis flow inside a chloroplast
-
-Arguments allow selecting the template, providing a custom title, annotations, and highlight labels.`,
+    description: `Generate pre-built biology template diagrams: cell_structure, dna_transcription, photosynthesis, mitosis_phases, crispr_mechanism, cell_cycle, gene_expression. Use for standard biology processes. For custom pathways use generate, for 3D structures use visualize_molecule.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -124,17 +94,119 @@ Arguments allow selecting the template, providing a custom title, annotations, a
     },
   },
   {
-    name: 'sequential_thinking',
-    description: `Use structured sequential thinking to break down complex problems into steps.
-
-Use this tool when you need to:
-- Solve complex multi-step problems
-- Break down difficult concepts into manageable pieces
-- Work through proofs or derivations step-by-step
-- Analyze problems that require careful reasoning
-- Show your thinking process explicitly
-
-This tool helps you think through problems systematically before explaining them to the student.`,
+    name: 'search_biorender',
+    description: `Search BioRender's 30,000+ professional biology illustrations. Find diagrams matching topics, processes, or structures. Filter by category if needed.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search keywords, e.g., "cell cycle checkpoint" or "CRISPR complex"',
+        },
+        category: {
+          type: 'string',
+          description: 'Optional BioRender category filter (e.g., "Cell Biology", "Genetics")',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'get_biorender_figure',
+    description: `Retrieve a specific BioRender illustration by figure ID. Use after search_biorender to get publication-quality diagrams.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        figure_id: {
+          type: 'string',
+          description: 'BioRender figure identifier (e.g., "BR-12345") returned from a search',
+        },
+        format: {
+          type: 'string',
+          enum: ['png', 'svg'],
+          description: 'Preferred output format (default: png)',
+        },
+      },
+      required: ['figure_id'],
+    },
+  },
+  {
+    name: 'generate',
+    description: `Create custom flowchart diagrams using Mermaid syntax. PREFERRED for biological pathways, metabolic processes, signaling cascades, regulatory networks. Shows branching, feedback loops, decision points. Provide Mermaid code (flowchart/sequence/state).`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          description: `Mermaid code block. Example for a flowchart:
+flowchart LR
+  A[Signal] --> B{Checkpoints}
+  B -->|G1| C[DNA Synthesis]
+  B -->|G2| D[Repair]`,
+        },
+        type: {
+          type: 'string',
+          enum: ['flowchart', 'sequence', 'state', 'class', 'er', 'mindmap'],
+          description: 'Mermaid renderer preset best suited for the given code',
+        },
+        theme: {
+          type: 'string',
+          enum: ['default', 'neutral', 'forest', 'dark'],
+          description: 'Optional Mermaid styling theme (default: theme configured server-side)',
+        },
+      },
+      required: ['code', 'type'],
+    },
+  },
+  {
+    name: 'visualize_molecule',
+    description: `Render 3D molecular structures using PyMOL. PREFERRED for protein/DNA structures: Cas9, enzymes, antibodies, protein-DNA complexes, active sites. Requires PDB ID. Styles: cartoon, surface, sticks, spheres, electrostatic. Can highlight specific residues.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        pdb_id: {
+          type: 'string',
+          description: 'PDB accession identifier (e.g., "4OO8" for Cas9)',
+        },
+        style: {
+          type: 'string',
+          enum: ['cartoon', 'surface', 'sticks', 'spheres', 'electrostatic'],
+          description: 'Preferred rendering style (default: cartoon)',
+        },
+        highlight_residues: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Residue identifiers to highlight (e.g., ["ARG1335", "HIS840"])',
+        },
+        orientation: {
+          type: 'string',
+          description: 'Optional camera orientation instructions (e.g., "align to guide RNA groove")',
+        },
+      },
+      required: ['pdb_id'],
+    },
+  },
+  {
+    name: 'fetch_protein',
+    description: `Lookup protein by name via UniProt. Get metadata, accession IDs, PDB structures. Use before visualize_molecule.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Common protein name or UniProt identifier',
+        },
+        organism: {
+          type: 'string',
+          description: 'Optional organism filter to disambiguate results',
+        },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'sequentialthinking',
+    description: `Break down complex problems into sequential thinking steps. Use for multi-step problem solving, proofs, derivations, or careful reasoning before explaining to student.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -169,19 +241,31 @@ export const TOOL_TO_SERVER_MAP: Record<string, string> = {
   execute_python: 'python',
   render_animation: 'manim',
   render_biology_diagram: 'python',
-  sequential_thinking: 'sequential-thinking',
+  search_biorender: 'biorender',
+  get_biorender_figure: 'biorender',
+  generate: 'mermaid',
+  visualize_molecule: 'chatmol',
+  fetch_protein: 'chatmol',
+  sequentialthinking: 'sequential-thinking',
 };
 
 /**
  * Check if a tool is a visualization tool that should create canvas objects
  */
 export function isVisualizationTool(toolName: string): boolean {
-  return toolName === 'execute_python' || toolName === 'render_animation' || toolName === 'render_biology_diagram';
+  return (
+    toolName === 'execute_python' ||
+    toolName === 'render_animation' ||
+    toolName === 'render_biology_diagram' ||
+    toolName === 'get_biorender_figure' ||
+    toolName === 'generate' ||
+    toolName === 'visualize_molecule'
+  );
 }
 
 /**
  * Check if a tool is a thinking tool that enhances reasoning
  */
 export function isThinkingTool(toolName: string): boolean {
-  return toolName === 'sequential_thinking';
+  return toolName === 'sequentialthinking';
 }

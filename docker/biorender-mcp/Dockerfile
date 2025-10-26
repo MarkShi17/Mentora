@@ -12,8 +12,8 @@ WORKDIR /app
 COPY requirements.txt ./
 COPY server.py ./
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with increased timeout and retries
+RUN pip install --no-cache-dir --timeout=300 --retries=5 -r requirements.txt
 
 # Expose port
 EXPOSE 8000
