@@ -14,8 +14,26 @@ const DEMO_RESPONSES = {
   }
 };
 
-// Audio cache for instant playback
+// Audio cache for instant playback (in-memory + localStorage)
 const audioCache = new Map<string, HTMLAudioElement>();
+
+// Helper functions for localStorage audio caching
+const getCachedAudioUrl = (cacheKey: string): string | null => {
+  try {
+    return localStorage.getItem(`mentora_tts_${cacheKey}`);
+  } catch (error) {
+    console.warn('Failed to get cached audio from localStorage:', error);
+    return null;
+  }
+};
+
+const setCachedAudioUrl = (cacheKey: string, audioUrl: string): void => {
+  try {
+    localStorage.setItem(`mentora_tts_${cacheKey}`, audioUrl);
+  } catch (error) {
+    console.warn('Failed to cache audio in localStorage:', error);
+  }
+};
 
 /**
  * Hook for detecting voice triggers in the demo session and revealing canvas objects.
@@ -61,34 +79,56 @@ export function useDemoVoiceHandler(sessionId: string | null) {
     for (const [key, response] of Object.entries(DEMO_RESPONSES)) {
       const cacheKey = `${response.text}-${voice}`;
       
-      if (!audioCache.has(cacheKey)) {
+      // Check if we already have it in memory
+      if (audioCache.has(cacheKey)) {
+        console.log(`✅ Audio already cached in memory for ${key}`);
+        continue;
+      }
+      
+      // Check localStorage first
+      const cachedUrl = getCachedAudioUrl(cacheKey);
+      if (cachedUrl) {
         try {
-          const ttsResponse = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: response.text, voice })
-          });
-          
-          if (ttsResponse.ok) {
-            const data = await ttsResponse.json();
-            const audio = new Audio();
-            
-            // Convert base64 to blob URL
-            const binaryString = atob(data.audio);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            const blob = new Blob([bytes], { type: 'audio/mp3' });
-            const audioUrl = URL.createObjectURL(blob);
-            
-            audio.src = audioUrl;
-            audioCache.set(cacheKey, audio);
-            console.log(`✅ Cached TTS audio for ${key}`);
-          }
+          const audio = new Audio();
+          audio.src = cachedUrl;
+          audioCache.set(cacheKey, audio);
+          console.log(`✅ Loaded cached audio from localStorage for ${key}`);
+          continue;
         } catch (error) {
-          console.warn(`⚠️ Failed to pre-generate TTS for ${key}:`, error);
+          console.warn(`⚠️ Failed to load cached audio for ${key}:`, error);
         }
+      }
+      
+      // Generate new audio if not cached
+      try {
+        const ttsResponse = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: response.text, voice })
+        });
+        
+        if (ttsResponse.ok) {
+          const data = await ttsResponse.json();
+          const audio = new Audio();
+          
+          // Convert base64 to blob URL
+          const binaryString = atob(data.audio);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: 'audio/mp3' });
+          const audioUrl = URL.createObjectURL(blob);
+          
+          // Cache in localStorage for persistence
+          setCachedAudioUrl(cacheKey, audioUrl);
+          
+          audio.src = audioUrl;
+          audioCache.set(cacheKey, audio);
+          console.log(`✅ Generated and cached TTS audio for ${key}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Failed to pre-generate TTS for ${key}:`, error);
       }
     }
   }, []);
@@ -97,7 +137,7 @@ export function useDemoVoiceHandler(sessionId: string | null) {
   const speakCached = useCallback((text: string, voice: string, onComplete?: () => void) => {
     const cacheKey = `${text}-${voice}`;
     
-    // Check if we have cached audio
+    // Check if we have cached audio in memory
     if (audioCache.has(cacheKey)) {
       const audio = audioCache.get(cacheKey)!;
       audio.currentTime = 0;
@@ -106,8 +146,27 @@ export function useDemoVoiceHandler(sessionId: string | null) {
       if (onComplete) {
         audio.onended = onComplete;
       }
-      console.log('🎵 Playing cached audio');
+      console.log('🎵 Playing cached audio from memory');
       return;
+    }
+    
+    // Check localStorage as fallback
+    const cachedUrl = getCachedAudioUrl(cacheKey);
+    if (cachedUrl) {
+      try {
+        const audio = new Audio();
+        audio.src = cachedUrl;
+        audio.currentTime = 0;
+        audio.play();
+        
+        if (onComplete) {
+          audio.onended = onComplete;
+        }
+        console.log('🎵 Playing cached audio from localStorage');
+        return;
+      } catch (error) {
+        console.warn('⚠️ Failed to play cached audio from localStorage:', error);
+      }
     }
 
     // Fallback to regular TTS if not cached

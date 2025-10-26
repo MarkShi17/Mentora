@@ -238,7 +238,7 @@ ChromaDB stores chat turns, canvas objects, and routing metadata
           demoGroup: 'features',
           data: {
             type: 'video',
-            url: '/download.mp4',
+            url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
             alt: 'Manim mathematical animation'
           },
           metadata: {
