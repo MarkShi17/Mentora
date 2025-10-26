@@ -42,7 +42,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Laboratory simulations',
     ],
     model: 'claude-3-5-haiku-20241022', // Fast for biology
-    mcpTools: ['execute_python', 'sequential_thinking'],
+    mcpTools: ['execute_python', 'render_biology_diagram', 'sequential_thinking'],
     promptEnhancement: `You are a specialized biology tutor. Focus on:
 - Creating detailed scientific diagrams and illustrations
 - Visualizing biological processes and cycles
