@@ -114,26 +114,40 @@ export function SelectionLayer({
     if (!onResizeStart) return null;
 
     const dims = getDimensions(obj);
-    const handleSize = 8 / transform.k; // Scale handle size inversely with zoom
+
+    // The component div has dimensions (x, y, width, height) which define its content box.
+    // The CSS border-2 (2px) is rendered OUTSIDE this content box.
+    // To position handles on the outer corners of the visible border:
+    // - Subtract border width from position (move outward)
+    // - Add border width to dimensions (expand total size)
+    const borderWidth = 2;
+    const outerX = dims.x - borderWidth;
+    const outerY = dims.y - borderWidth;
+    const outerWidth = dims.width + (borderWidth * 2);
+    const outerHeight = dims.height + (borderWidth * 2);
+
+    const handleSize = 10 / transform.k;
     const handleOffset = handleSize / 2;
 
     const corners = [
-      { name: 'nw', x: dims.x - handleOffset, y: dims.y - handleOffset, cursor: 'nw-resize' },
-      { name: 'ne', x: dims.x + dims.width - handleOffset, y: dims.y - handleOffset, cursor: 'ne-resize' },
-      { name: 'sw', x: dims.x - handleOffset, y: dims.y + dims.height - handleOffset, cursor: 'sw-resize' },
-      { name: 'se', x: dims.x + dims.width - handleOffset, y: dims.y + dims.height - handleOffset, cursor: 'se-resize' }
+      { name: 'nw', x: outerX - handleOffset, y: outerY - handleOffset, cursor: 'nw-resize' },
+      { name: 'ne', x: outerX + outerWidth - handleOffset, y: outerY - handleOffset, cursor: 'ne-resize' },
+      { name: 'sw', x: outerX - handleOffset, y: outerY + outerHeight - handleOffset, cursor: 'sw-resize' },
+      { name: 'se', x: outerX + outerWidth - handleOffset, y: outerY + outerHeight - handleOffset, cursor: 'se-resize' }
     ];
 
     return corners.map(corner => (
       <div
         key={corner.name}
-        className="absolute pointer-events-auto bg-white border-2 border-sky-500 rounded-sm hover:bg-sky-100 z-50"
+        className="absolute pointer-events-auto bg-white border-[3px] border-sky-500 rounded-md hover:bg-sky-100 hover:border-sky-600 z-50 shadow-lg hover:shadow-xl hover:scale-125"
         style={{
           left: corner.x,
           top: corner.y,
           width: handleSize,
           height: handleSize,
-          cursor: corner.cursor
+          cursor: corner.cursor,
+          boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)',
+          transition: 'background-color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s'
         }}
         onPointerDown={(e) => {
           e.stopPropagation();
@@ -161,11 +175,20 @@ export function SelectionLayer({
     if (!onConnectionStart) return null;
 
     const dims = getDimensions(obj);
+
+    // Position anchors on the visible outer border by accounting for CSS border-2
+    const borderWidth = 2;
+    const outerX = dims.x - borderWidth;
+    const outerY = dims.y - borderWidth;
+    const outerWidth = dims.width + (borderWidth * 2);
+    const outerHeight = dims.height + (borderWidth * 2);
+
     const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];
 
     return anchors.map(anchor => {
+      // getAnchorPosition calculates midpoints based on provided dimensions
       const pos = getAnchorPosition(
-        { ...obj, x: dims.x, y: dims.y, width: dims.width, height: dims.height },
+        { ...obj, x: outerX, y: outerY, width: outerWidth, height: outerHeight },
         anchor
       );
 
@@ -209,11 +232,19 @@ export function SelectionLayer({
         <div className="relative h-full w-full" style={stageStyle}>
           {objects.map(obj => {
             const dims = getDimensions(obj);
+
+            // Same border calculation as normal anchor rendering
+            const borderWidth = 2;
+            const outerX = dims.x - borderWidth;
+            const outerY = dims.y - borderWidth;
+            const outerWidth = dims.width + (borderWidth * 2);
+            const outerHeight = dims.height + (borderWidth * 2);
+
             const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];
 
             return anchors.map(anchor => {
               const pos = getAnchorPosition(
-                { ...obj, x: dims.x, y: dims.y, width: dims.width, height: dims.height },
+                { ...obj, x: outerX, y: outerY, width: outerWidth, height: outerHeight },
                 anchor
               );
 
@@ -275,8 +306,8 @@ export function SelectionLayer({
                 transform: "translateY(-100%)"
               }}
             >
-              <div className="mb-2 flex justify-center items-center pointer-events-auto">
-                <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+              <div className="mb-3 flex justify-center items-center pointer-events-auto">
+                <div className="rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2 text-xs font-black text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap flex items-center gap-2 border border-white/30 backdrop-blur-sm">
                   <span>Highlighted</span>
                   <ObjectMenuButton onOpenMenu={handleOpenMenu} />
                 </div>
@@ -348,8 +379,8 @@ export function SelectionLayer({
                 height: boundingHeight + boundingPadding * 2
               }}
             >
-              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[calc(100%+8px)] pointer-events-auto">
-                <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[calc(100%+12px)] pointer-events-auto">
+                <div className="rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2 text-xs font-black text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap flex items-center gap-2 border border-white/30 backdrop-blur-sm">
                   <span>{selectedObjects.length} Selected</span>
                   <ObjectMenuButton onOpenMenu={handleOpenMenu} />
                 </div>
@@ -392,8 +423,8 @@ export function SelectionLayer({
               transform: "translateY(-100%)"
             }}
           >
-            <div className="mb-2 flex justify-center items-center pointer-events-auto">
-              <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+            <div className="mb-3 flex justify-center items-center pointer-events-auto">
+              <div className="rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2 text-xs font-black text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap flex items-center gap-2 border border-white/30 backdrop-blur-sm">
                 <span>Highlighted</span>
                 <ObjectMenuButton onOpenMenu={handleOpenMenu} />
               </div>

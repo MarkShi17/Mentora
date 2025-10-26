@@ -6,6 +6,7 @@ import { useContinuousAI } from "@/hooks/use-continuous-ai";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useSessionStore } from "@/lib/session-store";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
+import { useSequentialConnections } from "@/hooks/use-sequential-connections";
 import { Brain } from "lucide-react";
 
 export function ContinuousAI() {
@@ -47,12 +48,12 @@ export function ContinuousAI() {
   const updateMessage = useSessionStore((state) => state.updateMessage);
   const removeMessage = useSessionStore((state) => state.removeMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
-  const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
   const setLiveTutorOn = useSessionStore((state) => state.setLiveTutorOn);
   const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
   const setIsPushToTalkActive = useSessionStore((state) => state.setIsPushToTalkActive);
   const setStopStreamingCallback = useSessionStore((state) => state.setStopStreamingCallback);
   const setRerunQuestionCallback = useSessionStore((state) => state.setRerunQuestionCallback);
+  const { startSequence, addObjectToSequence, endSequence } = useSequentialConnections();
 
   // Get messages for active session
   const messages = activeSessionId ? (allMessages[activeSessionId] || []) : [];
@@ -62,52 +63,56 @@ export function ContinuousAI() {
   const completeTextRef = useRef<string>('');
   const objectsInCurrentResponse = useRef<string[]>([]);  // Track objects created in current response
   const thinkingMessageIdRef = useRef<string | null>(null);  // Track thinking message to replace it
+  const sequenceKeyRef = useRef<string | null>(null);
 
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
     onCanvasObject: useCallback((object: any, placement: any) => {
-      if (activeSessionId) {
-        const canvasObject = {
-          id: object.id,
-          type: object.type,
-          x: object.position.x,
-          y: object.position.y,
-          width: object.size.width,
-          height: object.size.height,
-          zIndex: object.zIndex || 1,
-          selected: false,
-          color: getColorForType(object.type),
-          label: object.metadata?.referenceName || object.type,
-          metadata: {
-            ...object.metadata,
-            // Add animation flag for newly created objects
-            animated: true,
-            createdAt: Date.now()
-          },
-          data: object.data
-        };
-
-        // Respect placement timing - delay object appearance based on timing value
-        const delay = placement.timing || 0;
-        console.log(`🎨 Scheduling canvas object "${canvasObject.label}" to appear in ${delay}ms`);
-
-        setTimeout(() => {
-          updateCanvasObject(activeSessionId, canvasObject);
-
-          // Add timeline event for new object
-          appendTimelineEvent(activeSessionId, {
-            description: `Created ${object.type}: ${object.metadata?.referenceName || object.id}`,
-            type: "visual"
-          });
-
-          console.log(`✅ Canvas object "${canvasObject.label}" now visible`);
-        }, delay);
-
-        // Track this object for the current response
-        objectsInCurrentResponse.current.push(object.id);
-        console.log(`📝 Tracked object ${object.id} for current response`);
+      const sessionId = currentSessionRef.current ?? activeSessionId;
+      if (!sessionId) {
+        return;
       }
-    }, [activeSessionId, updateCanvasObject, appendTimelineEvent]),
+
+      const canvasObject = {
+        id: object.id,
+        type: object.type,
+        x: object.position.x,
+        y: object.position.y,
+        width: object.size.width,
+        height: object.size.height,
+        zIndex: object.zIndex || 1,
+        selected: false,
+        color: getColorForType(object.type),
+        label: object.metadata?.referenceName || object.type,
+        metadata: {
+          ...object.metadata,
+          animated: true,
+          createdAt: Date.now()
+        },
+        data: object.data
+      };
+
+      const applyObject = () => {
+        const finalObject = addObjectToSequence(sessionId, canvasObject, object.position, sequenceKeyRef.current);
+
+        appendTimelineEvent(sessionId, {
+          description: `Created ${object.type}: ${finalObject.label}`,
+          type: "visual"
+        });
+
+        objectsInCurrentResponse.current.push(object.id);
+        console.log(`✅ Canvas object "${finalObject.label}" now visible`);
+      };
+
+      const delay = placement.timing || 0;
+      console.log(`🎨 Scheduling canvas object "${canvasObject.label}" to appear in ${delay}ms`);
+
+      if (delay > 0) {
+        setTimeout(applyObject, delay);
+      } else {
+        applyObject();
+      }
+    }, [activeSessionId, addObjectToSequence, appendTimelineEvent]),
     onComplete: useCallback(() => {
       const sessionId = currentSessionRef.current;
       const finalText = completeTextRef.current;
@@ -144,7 +149,13 @@ export function ContinuousAI() {
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
       thinkingMessageIdRef.current = null;
-    }, [addMessage, updateMessage, appendTimelineEvent])
+      endSequence();
+      sequenceKeyRef.current = null;
+    }, [addMessage, updateMessage, appendTimelineEvent, endSequence]),
+    onError: useCallback(() => {
+      endSequence();
+      sequenceKeyRef.current = null;
+    }, [endSequence])
   });
 
   const getColorForType = (type: string): string => {
@@ -173,6 +184,8 @@ export function ContinuousAI() {
 
       // Stop streaming immediately
       streamingQA.stopStreaming();
+      endSequence();
+      sequenceKeyRef.current = null;
 
       // Show interrupt feedback briefly
       setInterrupted(true);
@@ -220,6 +233,7 @@ export function ContinuousAI() {
     objectsInCurrentResponse.current = [];  // Reset for new response
 
     try {
+      sequenceKeyRef.current = startSequence(sessionId);
       // Use streaming QA for real-time response with audio
       await streamingQA.startStreaming(sessionId, question, {
         highlightedObjects: [],
@@ -234,6 +248,8 @@ export function ContinuousAI() {
       // Note: Assistant message is added in onComplete callback
     } catch (error) {
       console.error("Error processing question:", error);
+      endSequence();
+      sequenceKeyRef.current = null;
 
       // Provide user-friendly error messages
       let errorMessage = "I'm experiencing a momentary issue. Please try again.";
@@ -253,11 +269,11 @@ export function ContinuousAI() {
         type: "response"
       });
     }
-  }, [activeSessionId, createSession, addMessage, appendTimelineEvent, conversationContext, streamingQA]);
+  }, [activeSessionId, createSession, addMessage, appendTimelineEvent, conversationContext, streamingQA, setInterrupted, startSequence, endSequence]);
 
   useEffect(() => {
     setQuestionCallback(handleQuestionDetected);
-  }, [setQuestionCallback, activeSessionId, createSession, addMessage, appendTimelineEvent, updateCanvasObject, conversationContext]);
+  }, [setQuestionCallback, handleQuestionDetected]);
 
   // Register stop streaming callback
   useEffect(() => {
@@ -266,6 +282,8 @@ export function ContinuousAI() {
 
       // Stop streaming and audio IMMEDIATELY
       streamingQA.stopStreaming();
+      endSequence();
+      sequenceKeyRef.current = null;
 
       // DELETE the thinking message completely
       const thinkingMessageId = thinkingMessageIdRef.current;
@@ -288,7 +306,7 @@ export function ContinuousAI() {
     return () => {
       setStopStreamingCallback(null);
     };
-  }, [streamingQA, setStopStreamingCallback, removeMessage]);
+  }, [streamingQA, setStopStreamingCallback, removeMessage, endSequence]);
 
   // Register rerun question callback
   useEffect(() => {
@@ -396,6 +414,8 @@ export function ContinuousAI() {
             // User is interrupting AI
             console.log('🛑 User interrupting AI via spacebar hold');
             streamingQA.stopStreaming();
+            endSequence();
+            sequenceKeyRef.current = null;
             setInterrupted(true);
             setTimeout(() => setInterrupted(false), 1500);
           }
@@ -442,7 +462,7 @@ export function ContinuousAI() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, spacebarRecognition, streamingQA, setIsPushToTalkActive, setSpacebarTranscript]);
+  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, spacebarRecognition, streamingQA, setIsPushToTalkActive, setSpacebarTranscript, setInterrupted, endSequence]);
 
   const isQuestionDetected = currentTranscript &&
     currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor|generate)/);

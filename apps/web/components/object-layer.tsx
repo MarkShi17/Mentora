@@ -9,6 +9,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { ObjectLoadingState } from "./object-loading-state";
+import { CodeBlock } from "@/components/code-block";
 
 // Removed getObjectSizeClass - now using backend-calculated sizes directly
 
@@ -18,7 +19,7 @@ function renderObjectContent(object: CanvasObject) {
   switch (object.type) {
     case 'text':
       return (
-        <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed p-4 h-full overflow-auto">
+        <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed">
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
@@ -51,82 +52,102 @@ function renderObjectContent(object: CanvasObject) {
     
     case 'diagram':
       return (
-        <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto">
-          <div
-            className="bg-white rounded"
-            dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
-          />
-        </div>
+        <div
+          className="bg-white rounded"
+          dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
+        />
       );
     
     case 'code':
       return (
-        <pre className="text-sm text-slate-800 bg-slate-100 p-4 rounded-lg overflow-auto leading-relaxed h-full">
-          <code>{object.data.code || ''}</code>
-        </pre>
+        <CodeBlock
+          code={object.data.code || ''}
+          language={object.data.language || 'text'}
+          theme="light"
+          showLineNumbers={true}
+          showCopyButton={true}
+        />
       );
     
     case 'graph':
       return (
-        <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto">
-          <div
-            className="bg-white rounded"
-            dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
-          />
-        </div>
+        <div
+          className="bg-white rounded"
+          dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
+        />
       );
     
     case 'latex':
-      // Support both inline and display math from react-markdown
-      let latexContent = object.data.content || object.data.latex || '';
+      // Access the LaTeX source from the correct field
+      const latexSource = object.data.latex || object.data.content || '';
 
-      // Auto-wrap raw LaTeX with delimiters if not already wrapped
-      if (latexContent && !latexContent.includes('$')) {
-        // Wrap with display mode delimiters for centered equations
-        latexContent = `$$${latexContent}$$`;
-      }
-
-      const isDisplayMode = latexContent.startsWith('$$') || object.metadata?.displayMode;
-
-      // If we have LaTeX source, render with KaTeX
-      if (latexContent) {
+      // If no LaTeX source, fall back to rendered image
+      if (!latexSource) {
         return (
-          <div className={cn(
-            "p-4 text-slate-900",
-            isDisplayMode ? "flex items-center justify-center" : "flex items-start"
-          )}>
-            <ReactMarkdown
-              remarkPlugins={[remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-            >
-              {latexContent}
-            </ReactMarkdown>
+          <div className="text-slate-900">
+            <img
+              src={object.data.rendered}
+              alt="LaTeX equation"
+              className=""
+            />
           </div>
         );
       }
 
-      // Fallback to image rendering for backwards compatibility
+      // Wrap with display mode delimiters for KaTeX if not already wrapped
+      let displayContent = latexSource;
+      if (!displayContent.includes('$')) {
+        // Use display mode ($$...$$) for centered equations
+        displayContent = `$$${displayContent}$$`;
+      }
+
+      // Render with KaTeX via ReactMarkdown
       return (
-        <div className="flex items-center justify-center p-4 h-full">
-          <img
-            src={object.data.rendered}
-            alt="LaTeX equation"
-            className="max-w-full max-h-full object-contain"
-          />
+        <div className="p-4 text-slate-900 flex items-center justify-center h-full">
+          <div className="katex-wrapper">
+            <ReactMarkdown
+              remarkPlugins={[remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+            >
+              {displayContent}
+            </ReactMarkdown>
+          </div>
         </div>
       );
     
     case 'image':
       return (
+        <img 
+          src={object.data.url || object.data.content} 
+          alt={object.data.alt || 'Generated image'} 
+          className="rounded"
+        />
+      );
+
+    case 'video':
+      return (
         <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto flex items-center justify-center">
-          <img 
-            src={object.data.url || object.data.content} 
-            alt={object.data.alt || 'Generated image'} 
-            className="max-w-full max-h-full object-contain rounded"
-          />
+          <video
+            src={object.data.url}
+            controls
+            loop
+            className="max-w-full max-h-full rounded"
+            style={{ maxHeight: '100%', maxWidth: '100%' }}
+            onPointerDown={(e) => {
+              // Prevent drag start when clicking on video controls
+              e.stopPropagation();
+            }}
+            onPointerMove={(e) => {
+              // Prevent drag move when hovering over video
+              e.stopPropagation();
+            }}
+          >
+            <track kind="captions" />
+            Your browser does not support the video tag.
+          </video>
         </div>
       );
-    
+
     default:
       return (
         <p className="text-sm text-slate-800">
@@ -209,8 +230,7 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
             key={object.id}
             data-canvas-object="true"
             className={cn(
-              "pointer-events-auto absolute rounded-lg border-2 border-transparent shadow-lg transition-colors",
-              object.selected ? "border-sky-400" : "border-transparent",
+              "pointer-events-auto absolute rounded-lg shadow-lg transition-colors",
               resizeState ? "cursor-default" : (isDragging ? "cursor-grabbing" : "cursor-grab"),
               !isBeingDragged && !isBeingResized && "transition-all"
             )}
@@ -219,7 +239,9 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               top: objectY,
               width: objectWidth,
               height: objectHeight,
-              maxWidth: object.type === 'latex' ? '800px' : undefined,
+              minWidth: '150px',
+              minHeight: '100px',
+              maxWidth: 'none',
               background: `${object.color}20`,
               zIndex: object.zIndex || 0,
               transform: dragTransform
@@ -240,9 +262,10 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               if (resizeState) {
                 return;
               }
-              event.stopPropagation();
-              event.preventDefault();
-              if (onDragMove) {
+              // Only call drag move if we're actually dragging
+              if (isDragging && onDragMove) {
+                event.stopPropagation();
+                event.preventDefault();
                 onDragMove(object.id, event);
               }
             }}
@@ -268,8 +291,11 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               }
             }}
           >
-            <div className="flex flex-col bg-white/95 p-4 backdrop-blur rounded-lg border border-slate-200 shadow-xl h-full">
-              <div className="mb-3 flex items-center justify-between flex-shrink-0">
+            <div className={cn(
+              "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl transition-colors",
+              object.selected ? "border-2 border-sky-400" : "border border-slate-200"
+            )}>
+              <div className="px-4 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-600 font-medium">
                     {object.type}
@@ -281,7 +307,7 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
               </div>
               <div
-                className="flex-1 overflow-auto"
+                className="px-4 pb-4"
                 style={{
                   fontSize: `${textScale * 100}%`,
                   transformOrigin: 'top left'
@@ -294,9 +320,11 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                 )}
               </div>
               {object.metadata?.description ? (
-                <p className="text-sm text-slate-600 mt-3 pt-3 border-t border-slate-200 flex-shrink-0">
-                  {String(object.metadata.description)}
-                </p>
+                <div className="px-4 pb-4 pt-2 border-t border-slate-200">
+                  <p className="text-sm text-slate-600">
+                    {String(object.metadata.description)}
+                  </p>
+                </div>
               ) : null}
             </div>
           </div>

@@ -91,7 +91,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           session = sessionManager.getSession(body.sessionId);
         } catch (error) {
           logger.warn(`Session ${body.sessionId} not found, creating fallback session`);
-          session = sessionManager.createSession('general', `Session ${body.sessionId}`);
+          session = sessionManager.createSession('math', `Session ${body.sessionId}`);
           actualSessionId = session.id;
         }
 
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         const generatedReferences: any[] = [];
         let fullText = '';
 
-        // Stream response
+        // Stream response with MCP tools
         const responseStream = streamingOrchestrator.streamResponse(
           body.question,
           session,
@@ -224,7 +224,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           voice,
           body.context,
           { userName, explanationLevel }, // Pass user settings
-          cachedIntroPlayed // Pass cached intro info
+          cachedIntroPlayed, // Pass cached intro info
+          brainResult.selectedBrain // Pass selected brain for MCP tool filtering
         );
 
         for await (const event of responseStream) {

@@ -4,6 +4,7 @@ import { useCallback, useState, useEffect, useRef } from "react";
 import { VoiceToggle } from "@/components/voice-toggle";
 import { useSessionStore } from "@/lib/session-store";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
+import { useSequentialConnections } from "@/hooks/use-sequential-connections";
 
 // Helper function to get color for object type
 function getColorForType(type: string): string {
@@ -21,62 +22,73 @@ export function PromptBar() {
   const [value, setValue] = useState("");
   const thinkingMessageIdRef = useRef<string | null>(null);
   const currentSessionRef = useRef<string | null>(null);
+  const sequenceKeyRef = useRef<string | null>(null);
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const sessions = useSessionStore((state) => state.sessions);
   const createSession = useSessionStore((state) => state.createSession);
   const addMessage = useSessionStore((state) => state.addMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
-  const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
   const voiceInputState = useSessionStore((state) => state.voiceInputState);
   const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
   const setStopStreamingCallback = useSessionStore((state) => state.setStopStreamingCallback);
   const setRerunQuestionCallback = useSessionStore((state) => state.setRerunQuestionCallback);
   const updateMessage = useSessionStore((state) => state.updateMessage);
   const removeMessage = useSessionStore((state) => state.removeMessage);
+  const { startSequence, addObjectToSequence, endSequence } = useSequentialConnections();
 
   // Streaming QA hook - always enabled
   const streamingQA = useStreamingQA({
-    onCanvasObject: useCallback((object: any, placement: any) => {
-      if (activeSessionId) {
-        const canvasObject = {
-          id: object.id,
-          type: object.type,
-          x: object.position.x,
-          y: object.position.y,
-          width: object.size.width,
-          height: object.size.height,
-          zIndex: object.zIndex || 1,
-          selected: false,
-          color: getColorForType(object.type),
-          label: object.metadata?.referenceName || object.label || object.type,
-          metadata: object.metadata,
-          data: object.data,
-          generationState: object.generationState,
-          placeholder: object.placeholder
-        };
-        updateCanvasObject(activeSessionId, canvasObject);
+    onCanvasObject: useCallback((object: any) => {
+      const sessionId = currentSessionRef.current ?? activeSessionId;
+      if (!sessionId) {
+        return;
       }
-    }, [activeSessionId, updateCanvasObject]),
+
+      const canvasObject = {
+        id: object.id,
+        type: object.type,
+        x: object.position.x,
+        y: object.position.y,
+        width: object.size.width,
+        height: object.size.height,
+        zIndex: object.zIndex || 1,
+        selected: false,
+        color: getColorForType(object.type),
+        label: object.metadata?.referenceName || object.label || object.type,
+        metadata: object.metadata,
+        data: object.data,
+        generationState: object.generationState,
+        placeholder: object.placeholder
+      };
+
+      addObjectToSequence(sessionId, canvasObject, object.position, sequenceKeyRef.current);
+    }, [activeSessionId, addObjectToSequence]),
     onComplete: useCallback(() => {
-      // Update the thinking message with the final text when streaming completes
       const sessionId = currentSessionRef.current;
       const thinkingMessageId = thinkingMessageIdRef.current;
 
       if (sessionId && thinkingMessageId) {
-        // Note: We'll access currentText inside the callback
         console.log('✅ Streaming complete - finalizing message');
         thinkingMessageIdRef.current = null;
         currentSessionRef.current = null;
       }
 
-      if (activeSessionId) {
-        appendTimelineEvent(activeSessionId, {
+      const targetSessionId = sessionId ?? activeSessionId;
+      if (targetSessionId) {
+        appendTimelineEvent(targetSessionId, {
           description: "AI completed response.",
           type: "response"
         });
       }
-    }, [activeSessionId, appendTimelineEvent, updateMessage])
+
+      endSequence();
+      sequenceKeyRef.current = null;
+    }, [activeSessionId, appendTimelineEvent, endSequence]),
+    onError: useCallback(() => {
+      endSequence();
+      sequenceKeyRef.current = null;
+    }, [endSequence])
   });
 
   // Update thinking message in real-time as text streams in
@@ -150,6 +162,7 @@ export function PromptBar() {
 
     // Always use streaming mode
     try {
+      sequenceKeyRef.current = startSequence(sessionId);
       await streamingQA.startStreaming(sessionId, prompt, {
         highlightedObjects: selectedObjects,
         mode: "guided"
@@ -158,6 +171,8 @@ export function PromptBar() {
       // Note: Message update happens in onComplete callback
     } catch (error) {
       console.error("Streaming error:", error);
+      endSequence();
+      sequenceKeyRef.current = null;
 
       // User-friendly error messages
       let errorMessage = "I'm experiencing a momentary issue. Please try again.";
@@ -178,7 +193,7 @@ export function PromptBar() {
         type: "response"
       });
     }
-  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, addMessage, updateCanvasObject, streamingQA]);
+  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, addMessage, startSequence, streamingQA, endSequence]);
 
   const submitPromptMessage = useCallback(async () => {
     if (!value.trim()) {
@@ -213,6 +228,8 @@ export function PromptBar() {
 
       // Stop streaming and audio IMMEDIATELY
       streamingQA.stopStreaming();
+      endSequence();
+      sequenceKeyRef.current = null;
 
       // DELETE the thinking message completely
       const thinkingMessageId = thinkingMessageIdRef.current;
@@ -230,7 +247,7 @@ export function PromptBar() {
     return () => {
       setStopStreamingCallback(null);
     };
-  }, [streamingQA, setStopStreamingCallback, removeMessage]);
+  }, [streamingQA, setStopStreamingCallback, removeMessage, endSequence]);
 
   // Register rerun question callback
   useEffect(() => {
