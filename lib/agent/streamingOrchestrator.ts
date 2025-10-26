@@ -68,7 +68,11 @@ export class StreamingOrchestrator {
     userSettings?: {
       userName?: string;
       explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
-    }
+    },
+    cachedIntroPlayed?: {
+      text: string;
+      id: string;
+    } | null
   ): AsyncGenerator<StreamEvent, void, unknown> {
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logger.info('🎬 STREAMING ORCHESTRATOR STARTED');
@@ -103,7 +107,7 @@ export class StreamingOrchestrator {
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system and user prompts with user settings
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings);
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
       // Start Claude streaming
@@ -131,52 +135,38 @@ export class StreamingOrchestrator {
       let totalObjects = 0;
       let totalReferences = 0;
 
-      // Track parsing state for incremental JSON extraction
-      let lastNarrationLength = 0;
-      let lastObjectsCount = 0;
-      const streamedObjects = new Set<number>();
+      // Track parsing state for streaming format
+      let currentObjectDef: any = null;
+      let currentObjectMetadata: any = {};
+      let accumulatedNarration = '';
+      const processedObjects = new Set<string>();
 
-      // Process Claude's streaming response with incremental JSON parsing
+      // Process Claude's streaming response with event-based parsing
       for await (const chunk of stream) {
         if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
           const textChunk = chunk.delta.text;
           fullResponse += textChunk;
+          accumulatedNarration += textChunk;
 
-          // Try to parse JSON incrementally
-          try {
-            const agentResponse = this.parseResponse(fullResponse);
+          // Parse streaming markers in real-time
+          const lines = accumulatedNarration.split('\n');
+          accumulatedNarration = lines[lines.length - 1]; // Keep incomplete line
 
-            // NARRATION STREAMING: Extract new narration text
-            if (agentResponse.narration && agentResponse.narration.length > lastNarrationLength) {
-              const newNarration = agentResponse.narration.slice(lastNarrationLength);
+          for (let i = 0; i < lines.length - 1; i++) {
+            const line = lines[i].trim();
 
-              // SAFETY CHECK: Ensure it's clean narration, not JSON fragments
-              const isCleanNarration = !newNarration.includes('{') &&
-                                       !newNarration.includes('}') &&
-                                       !newNarration.includes('"explanation"') &&
-                                       !newNarration.includes('"objects"') &&
-                                       !newNarration.includes('"narration"') &&
-                                       !newNarration.includes('"references"');
+            // Parse [NARRATION]: markers - stream text immediately
+            if (line.startsWith('[NARRATION]:')) {
+              const narrationText = line.substring('[NARRATION]:'.length).trim();
 
-              if (isCleanNarration && newNarration.trim().length > 0) {
-                lastNarrationLength = agentResponse.narration.length;
+              if (narrationText) {
+                logger.info('🗣️ Streaming narration', { text: narrationText.substring(0, 50) + '...' });
 
-                // Log what we're about to speak for debugging
-                logger.info('🗣️ Speaking narration chunk', {
-                  text: newNarration.substring(0, 100) + (newNarration.length > 100 ? '...' : '')
-                });
+                // Extract complete sentences
+                const sentences = sentenceParser.addChunk(narrationText + ' ');
 
-                // Extract complete sentences from new narration
-                const sentences = sentenceParser.addChunk(newNarration);
-
-                // Generate TTS for each complete sentence
                 for (const sentence of sentences) {
-                  logger.debug('Complete narration sentence detected', {
-                    sentenceIndex: sentence.index,
-                    text: sentence.text
-                  });
-
-                  // Send text chunk event
+                  // Send text chunk immediately
                   yield {
                     type: 'text_chunk',
                     timestamp: Date.now(),
@@ -186,7 +176,7 @@ export class StreamingOrchestrator {
                     }
                   };
 
-                  // Generate TTS asynchronously and stream audio
+                  // Generate TTS asynchronously
                   try {
                     const audioResult = await ttsService.generateSentenceSpeech(
                       sentence.text,
@@ -194,219 +184,226 @@ export class StreamingOrchestrator {
                       sentence.index
                     );
 
-                    yield {
-                      type: 'audio_chunk',
-                      timestamp: Date.now(),
-                      data: audioResult
-                    };
+                    if (audioResult && audioResult.audio) {
+                      yield {
+                        type: 'audio_chunk',
+                        timestamp: Date.now(),
+                        data: {
+                          audio: audioResult.audio,
+                          text: sentence.text,
+                          sentenceIndex: sentence.index
+                        }
+                      };
+
+                      logger.debug('Audio chunk generated', {
+                        sentenceIndex: sentence.index,
+                        textPreview: sentence.text.substring(0, 50)
+                      });
+                    }
                   } catch (error) {
-                    logger.warn('TTS generation failed for sentence, continuing', {
-                      sentenceIndex: sentence.index,
-                      error: error instanceof Error ? error.message : 'Unknown'
-                    });
-                    // Continue without audio for this sentence
+                    logger.warn('TTS generation failed', { error, sentence: sentence.text });
                   }
                 }
-              } else {
-                logger.debug('Skipping non-narration text chunk', {
-                  text: newNarration.substring(0, 100),
-                  hasJSON: newNarration.includes('{') || newNarration.includes('}')
-                });
               }
             }
 
-            // CANVAS OBJECT STREAMING: Stream new objects one at a time
-            if (agentResponse.objects && agentResponse.objects.length > lastObjectsCount) {
-              const newObjects = agentResponse.objects.slice(lastObjectsCount);
+            // Parse [OBJECT_START]: markers - send placeholder immediately
+            else if (line.includes('[OBJECT_START')) {
+              const match = line.match(/\[OBJECT_START type="([^"]+)" id="([^"]+)"\]/);
+              if (match) {
+                const [, objType, objId] = match;
 
-              for (let i = 0; i < newObjects.length; i++) {
-                const globalIndex = lastObjectsCount + i;
-
-                // Skip if already streamed (safety check)
-                if (streamedObjects.has(globalIndex)) continue;
-
-                const request = newObjects[i];
-
-                // Generate canvas object
-                const existingCanvasObjects = streamingContext.existingObjects;
-                const position = layoutEngine.calculatePosition(
-                  {
-                    existingObjects: existingCanvasObjects.map(obj => ({
+                // Send placeholder object immediately
+                const placeholder = {
+                  id: objId,
+                  type: objType,
+                  position: layoutEngine.calculatePosition(
+                    { existingObjects: streamingContext.existingObjects.map(obj => ({
                       id: obj.id,
                       position: obj.position,
                       size: obj.size
-                    }))
-                  },
-                  { width: 400, height: 200 }
-                );
-
-                let enhancedContent = request.content;
-                if (request.type === 'diagram') {
-                  enhancedContent = `${request.content} - Context: ${question}`;
-                }
-
-                const canvasObject = objectGenerator.generateObject(
-                  {
-                    type: request.type,
-                    content: enhancedContent,
-                    referenceName: request.referenceName,
-                    metadata: request.metadata
-                  },
-                  position,
-                  turnId
-                );
-
-                // Add to existing objects for next position calculation
-                streamingContext.existingObjects.push(canvasObject);
-
-                // Stream canvas object immediately
-                const placement: ObjectPlacement = {
-                  objectId: canvasObject.id,
-                  position: canvasObject.position,
-                  animateIn: 'fade',
-                  timing: totalObjects * 300 // Stagger by 300ms
+                    }))},
+                    { width: 400, height: 200 }
+                  ),
+                  size: { width: 400, height: 200 },
+                  generationState: 'generating',
+                  placeholder: true,
+                  turnId,
+                  metadata: {}
                 };
 
+                // Start tracking this object
+                currentObjectDef = {
+                  id: objId,
+                  type: objType,
+                  content: '',
+                  metadata: {}
+                };
+
+                // Send placeholder event
                 yield {
                   type: 'canvas_object',
                   timestamp: Date.now(),
                   data: {
-                    object: canvasObject,
-                    placement
+                    object: placeholder,
+                    placement: {
+                      objectId: objId,
+                      position: placeholder.position,
+                      animateIn: 'fade',
+                      timing: totalObjects * 200
+                    }
                   }
                 };
 
-                streamedObjects.add(globalIndex);
-                totalObjects++;
-
-                logger.debug('Streamed canvas object', {
-                  type: canvasObject.type,
-                  index: globalIndex,
-                  referenceName: request.referenceName
-                });
+                logger.info('📦 Object placeholder sent', { type: objType, id: objId });
               }
-
-              lastObjectsCount = agentResponse.objects.length;
             }
 
-            // REFERENCES: Stream references as they appear
-            if (agentResponse.references && agentResponse.references.length > totalReferences) {
-              const newReferences = agentResponse.references.slice(totalReferences);
+            // Parse [OBJECT_CONTENT]: markers
+            else if (line.startsWith('[OBJECT_CONTENT]:') && currentObjectDef) {
+              currentObjectDef.content = line.substring('[OBJECT_CONTENT]:'.length).trim();
+            }
 
-              for (const ref of newReferences) {
-                const objectReference = this.generateReferences(
-                  [ref],
-                  streamingContext.existingObjects,
-                  []
-                )[0];
+            // Parse [OBJECT_META]: markers
+            else if (line.includes('[OBJECT_META') && currentObjectDef) {
+              const match = line.match(/\[OBJECT_META ([^=]+)="([^"]*)"\]/);
+              if (match) {
+                const [, key, value] = match;
+                currentObjectDef.metadata[key] = value;
+              }
+            }
 
-                if (objectReference) {
-                  yield {
-                    type: 'reference',
-                    timestamp: Date.now(),
-                    data: objectReference
-                  };
+            // Parse [OBJECT_END]: markers - generate complete object
+            else if (line.includes('[OBJECT_END]') && currentObjectDef) {
+              // Generate the complete object
+              const canvasObject = objectGenerator.generateObject(
+                {
+                  type: currentObjectDef.type,
+                  content: currentObjectDef.content,
+                  referenceName: currentObjectDef.metadata.referenceName,
+                  metadata: currentObjectDef.metadata
+                },
+                layoutEngine.calculatePosition(
+                  { existingObjects: streamingContext.existingObjects.map(obj => ({
+                    id: obj.id,
+                    position: obj.position,
+                    size: obj.size
+                  }))},
+                  { width: 400, height: 200 }
+                ),
+                turnId
+              );
 
-                  totalReferences++;
+              // Override ID to match placeholder
+              canvasObject.id = currentObjectDef.id;
+              canvasObject.generationState = 'complete';
+
+              // Add to existing objects
+              streamingContext.existingObjects.push(canvasObject);
+
+              // Send complete object (replaces placeholder)
+              yield {
+                type: 'canvas_object',
+                timestamp: Date.now(),
+                data: {
+                  object: canvasObject,
+                  placement: {
+                    objectId: canvasObject.id,
+                    position: canvasObject.position,
+                    animateIn: 'none',
+                    timing: 0
+                  }
                 }
-              }
+              };
+
+              totalObjects++;
+              processedObjects.add(currentObjectDef.id);
+              logger.info('✅ Object completed', { type: canvasObject.type, id: canvasObject.id });
+
+              currentObjectDef = null;
             }
 
-          } catch (error) {
-            // Incomplete JSON - continue accumulating
-            // This is normal during streaming, only log at debug level
-            logger.debug('Waiting for more JSON data', {
-              bufferLength: fullResponse.length
-            });
+            // Parse [REFERENCE]: markers
+            else if (line.includes('[REFERENCE')) {
+              const match = line.match(/\[REFERENCE mention="([^"]+)" objectId="([^"]+)"\]/);
+              if (match) {
+                const [, mention, objectId] = match;
+
+                yield {
+                  type: 'reference',
+                  timestamp: Date.now(),
+                  data: {
+                    mention,
+                    objectId
+                  }
+                };
+
+                totalReferences++;
+                logger.debug('🔗 Reference streamed', { mention, objectId });
+              }
+            }
           }
         }
       }
 
-      // Flush any remaining narration sentence
-      const finalSentence = sentenceParser.flush();
-      if (finalSentence) {
-        logger.debug('Flushing final narration sentence', {
-          sentenceIndex: finalSentence.index,
-          text: finalSentence.text
-        });
+      // Process any remaining narration in the buffer
+      if (accumulatedNarration.trim()) {
+        const line = accumulatedNarration.trim();
+        if (line.startsWith('[NARRATION]:')) {
+          const narrationText = line.substring('[NARRATION]:'.length).trim();
+          if (narrationText) {
+            const sentences = sentenceParser.addChunk(narrationText);
+            for (const sentence of sentences) {
+              yield {
+                type: 'text_chunk',
+                timestamp: Date.now(),
+                data: {
+                  text: sentence.text,
+                  sentenceIndex: sentence.index
+                }
+              };
+            }
+          }
+        }
+      }
 
+      // Send final sentences from the sentence parser
+      const finalSentences = sentenceParser.flush();
+      for (const sentence of finalSentences) {
         yield {
           type: 'text_chunk',
           timestamp: Date.now(),
           data: {
-            text: finalSentence.text,
-            sentenceIndex: finalSentence.index
+            text: sentence.text,
+            sentenceIndex: sentence.index
           }
         };
 
+        // Generate TTS for final sentences
         try {
           const audioResult = await ttsService.generateSentenceSpeech(
-            finalSentence.text,
+            sentence.text,
             voice,
-            finalSentence.index
+            sentence.index
           );
 
-          yield {
-            type: 'audio_chunk',
-            timestamp: Date.now(),
-            data: audioResult
-          };
+          if (audioResult && audioResult.audio) {
+            yield {
+              type: 'audio_chunk',
+              timestamp: Date.now(),
+              data: {
+                audio: audioResult.audio,
+                text: sentence.text,
+                sentenceIndex: sentence.index
+              }
+            };
+
+            logger.debug('Audio chunk generated for final sentence', {
+              sentenceIndex: sentence.index
+            });
+          }
         } catch (error) {
           logger.warn('TTS generation failed for final sentence', { error });
-        }
-      }
-
-      // Final parse to catch any remaining objects/references
-      const finalResponse = this.parseResponse(fullResponse);
-
-      // Stream any remaining objects that weren't caught during streaming
-      if (finalResponse.objects && finalResponse.objects.length > lastObjectsCount) {
-        const remainingObjects = finalResponse.objects.slice(lastObjectsCount);
-
-        for (let i = 0; i < remainingObjects.length; i++) {
-          const globalIndex = lastObjectsCount + i;
-          if (streamedObjects.has(globalIndex)) continue;
-
-          const request = remainingObjects[i];
-          const position = layoutEngine.calculatePosition(
-            {
-              existingObjects: streamingContext.existingObjects.map(obj => ({
-                id: obj.id,
-                position: obj.position,
-                size: obj.size
-              }))
-            },
-            { width: 400, height: 200 }
-          );
-
-          const canvasObject = objectGenerator.generateObject(
-            {
-              type: request.type,
-              content: request.content,
-              referenceName: request.referenceName,
-              metadata: request.metadata
-            },
-            position,
-            turnId
-          );
-
-          streamingContext.existingObjects.push(canvasObject);
-
-          yield {
-            type: 'canvas_object',
-            timestamp: Date.now(),
-            data: {
-              object: canvasObject,
-              placement: {
-                objectId: canvasObject.id,
-                position: canvasObject.position,
-                animateIn: 'fade',
-                timing: totalObjects * 300
-              }
-            }
-          };
-
-          totalObjects++;
         }
       }
 
@@ -423,22 +420,18 @@ export class StreamingOrchestrator {
       };
 
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      logger.info('✅ STREAMING RESPONSE COMPLETED');
+      logger.info('✅ STREAMING COMPLETE');
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      logger.info('Summary', {
-        totalSentences: sentenceParser.getSentenceCount(),
-        totalObjects,
-        totalReferences
-      });
+      logger.info('Total sentences:', sentenceParser.getSentenceCount());
+      logger.info('Total objects:', totalObjects);
+      logger.info('Total references:', totalReferences);
     } catch (error) {
-      logger.error('Streaming response failed', { error });
-
+      logger.error('Streaming error:', error);
       yield {
         type: 'error',
         timestamp: Date.now(),
         data: {
-          message: error instanceof Error ? error.message : 'Unknown error occurred',
-          code: 'STREAMING_ERROR'
+          message: error instanceof Error ? error.message : 'Unknown error occurred'
         }
       };
     }
@@ -459,7 +452,11 @@ export class StreamingOrchestrator {
     userSettings?: {
       userName?: string;
       explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
-    }
+    },
+    cachedIntroPlayed?: {
+      text: string;
+      id: string;
+    } | null
   ): string {
     const teachingStyle =
       mode === 'guided'
@@ -496,11 +493,17 @@ export class StreamingOrchestrator {
       ? 'Use technical terminology freely, focus on depth and nuance, assume strong foundational knowledge.'
       : 'Balance clarity with depth, explain complex concepts but assume basic familiarity.';
 
+    const cachedIntroInfo = cachedIntroPlayed
+      ? `\nCRITICAL INSTRUCTION: An introductory phrase has already been spoken: "${cachedIntroPlayed.text}"
+DO NOT repeat this greeting or acknowledgment. Start your [NARRATION] by going DIRECTLY to the main content.
+Skip phrases like "Let me help", "I can explain", "Sure", etc. Jump straight into teaching.\n`
+      : '';
+
     return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.
 ${userName ? `\nSTUDENT NAME: ${userName} - Address them by name occasionally to personalize the interaction.\n` : ''}
 EXPLANATION LEVEL: ${explanationLevel}
 ${levelGuidance}
-
+${cachedIntroInfo}
 CANVAS STATE:
 ${context.canvasState}
 
@@ -535,30 +538,35 @@ VISUAL CREATION:
 - Make diagrams contextually relevant to the specific question or concept being explained
 
 RESPONSE FORMAT:
-You must respond with a JSON object in the following format:
-{
-  "explanation": "Full text explanation of the concept",
-  "narration": "What to say aloud, including spatial references like 'above', 'below', 'to the right'",
-  "objects": [
-    {
-      "type": "latex|graph|code|text|diagram",
-      "content": "The actual content (LaTeX string, equation, code, etc.)",
-      "referenceName": "equation 1" or "graph A" (optional),
-      "metadata": {
-        "language": "python" (for code),
-        "equation": "y = x^2" (for graphs),
-        "fontSize": 16 (for text),
-        "description": "Detailed description of what the diagram shows" (for diagrams)
-      }
-    }
-  ],
-  "references": [
-    {
-      "mention": "as shown in the equation",
-      "objectId": "obj_xyz" (use actual object IDs from canvas state)
-    }
-  ]
-}
+Stream your response using these markers. Start with text immediately, then define objects as they become relevant:
+
+[NARRATION]: Start your spoken response here immediately
+[OBJECT_START type="latex|graph|code|text|diagram" id="obj_1"]: Begin defining an object
+[OBJECT_CONTENT]: The actual content for the object
+[OBJECT_META key="value"]: Optional metadata (language, equation, etc.)
+[OBJECT_END]: Complete the object definition
+[NARRATION]: Continue with more explanation
+[REFERENCE mention="as shown above" objectId="obj_xyz"]: Reference existing objects
+
+Example:
+[NARRATION]: Let me help you understand quadratic equations.
+[NARRATION]: A quadratic equation has the general form where the highest power is 2.
+[OBJECT_START type="latex" id="eq_1"]: Starting equation
+[OBJECT_CONTENT]: ax^2 + bx + c = 0
+[OBJECT_META referenceName="general form"]:
+[OBJECT_END]:
+[NARRATION]: As you can see in the general form above, we have three coefficients.
+[OBJECT_START type="graph" id="graph_1"]: Creating visualization
+[OBJECT_CONTENT]: y = x^2 - 4x + 3
+[OBJECT_META equation="x^2 - 4x + 3"]:
+[OBJECT_END]:
+[NARRATION]: This parabola shows how the equation creates a U-shaped curve.
+
+IMPORTANT:
+- Start with [NARRATION] immediately - don't wait to plan objects
+- Stream text naturally and define objects inline as they become relevant
+- Keep narration conversational and natural
+- Objects can be defined while you continue explaining
 
 Subject: ${session.subject}
 
@@ -572,7 +580,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       prompt += `Previous conversation:\n${context.conversationHistory}\n\n`;
     }
 
-    prompt += 'Generate your response as a JSON object following the specified format.';
+    prompt += 'Generate your response using the streaming format with [NARRATION], [OBJECT_START], etc. markers.';
 
     return prompt;
   }

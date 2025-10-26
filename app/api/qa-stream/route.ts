@@ -14,6 +14,10 @@ import { StreamingQARequest } from '@/types/api';
 import { ValidationError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
 import { generateTurnId } from '@/lib/utils/ids';
+import { classifyQuestion } from '@/lib/agent/questionClassifier';
+import { cachedResponseManager } from '@/lib/voice/cachedResponses';
+import fs from 'fs';
+import path from 'path';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -127,6 +131,58 @@ export async function POST(request: NextRequest): Promise<Response> {
           sessionId: actualSessionId
         });
 
+        // Load cached audio if not already loaded
+        if (!cachedResponseManager.isCacheLoaded()) {
+          try {
+            const cacheFilePath = path.join(process.cwd(), 'lib', 'voice', 'cached-audio-test.json');
+            if (fs.existsSync(cacheFilePath)) {
+              const cacheData = JSON.parse(fs.readFileSync(cacheFilePath, 'utf8'));
+              await cachedResponseManager.loadCache(cacheData);
+              logger.info('📦 Loaded cached audio intros', cachedResponseManager.getCacheStats());
+            } else {
+              logger.warn('No cached audio file found, will skip cached intros');
+            }
+          } catch (error) {
+            logger.warn('Failed to load cached audio', { error });
+          }
+        }
+
+        // Classify the question and send cached intro immediately
+        let cachedIntroPlayed: { text: string; id: string } | null = null;
+        try {
+          const questionCategory = classifyQuestion(body.question);
+          const cachedIntro = cachedResponseManager.getCachedIntro(questionCategory);
+
+          if (cachedIntro) {
+            // Send cached intro event immediately for instant feedback
+            const cachedIntroEvent = `data: ${JSON.stringify({
+              type: 'cached_intro',
+              timestamp: Date.now(),
+              data: {
+                id: cachedIntro.id,
+                text: cachedIntro.text,
+                audio: cachedIntro.audio,
+                category: cachedIntro.category,
+                duration: cachedIntro.duration
+              }
+            })}\n\n`;
+            safeEnqueue(encoder.encode(cachedIntroEvent));
+
+            cachedIntroPlayed = {
+              text: cachedIntro.text,
+              id: cachedIntro.id
+            };
+
+            logger.info('🎯 Cached intro sent', {
+              category: questionCategory,
+              introId: cachedIntro.id,
+              text: cachedIntro.text.substring(0, 30) + '...'
+            });
+          }
+        } catch (error) {
+          logger.warn('Failed to send cached intro', { error });
+        }
+
         // Select appropriate brain for this question
         const brainResult = await brainSelector.selectBrain(body.question, {
           recentTopics: body.context?.topics,
@@ -167,7 +223,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           assistantTurnId,
           voice,
           body.context,
-          { userName, explanationLevel } // Pass user settings
+          { userName, explanationLevel }, // Pass user settings
+          cachedIntroPlayed // Pass cached intro info
         );
 
         for await (const event of responseStream) {

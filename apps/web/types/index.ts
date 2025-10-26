@@ -81,6 +81,7 @@ export type ObjectReference = {
 };
 
 export type StreamEvent =
+  | { type: 'cached_intro'; data: { id: string; text: string; audio: string; category: string; duration: number } }
   | { type: 'text_chunk'; data: { text: string } }
   | { type: 'audio_chunk'; data: { audio: string; text: string; sentenceIndex: number } }
   | { type: 'canvas_object'; data: { object: any; placement: ObjectPlacement } }

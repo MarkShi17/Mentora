@@ -138,6 +138,26 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
 
             // Handle different event types
             switch (event.type) {
+              case 'cached_intro':
+                console.log('🎯 Cached intro received:', event.data.text);
+                console.log('   Category:', event.data.category);
+                console.log('   Duration:', event.data.duration + 'ms');
+
+                // Play cached intro immediately for instant feedback
+                audioQueue.enqueue({
+                  audio: event.data.audio,
+                  text: event.data.text,
+                  sentenceIndex: -1, // Special index for cached intro
+                });
+
+                // Optionally show the intro text immediately in the UI
+                setState(prev => ({
+                  ...prev,
+                  currentText: event.data.text,
+                  isStreaming: true,
+                }));
+                break;
+
               case 'brain_selected':
                 console.log('🧠 Brain selected:', event.data.brainName, `(${event.data.confidence.toFixed(2)} confidence)`);
                 console.log('   Reasoning:', event.data.reasoning);

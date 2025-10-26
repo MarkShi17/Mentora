@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { ObjectLoadingState } from "./object-loading-state";
 
 // Removed getObjectSizeClass - now using backend-calculated sizes directly
 
@@ -286,7 +287,11 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                   transformOrigin: 'top left'
                 }}
               >
-                {renderObjectContent(object)}
+                {object.generationState === 'generating' || object.placeholder ? (
+                  <ObjectLoadingState type={object.type} />
+                ) : (
+                  renderObjectContent(object)
+                )}
               </div>
               {object.metadata?.description ? (
                 <p className="text-sm text-slate-600 mt-3 pt-3 border-t border-slate-200 flex-shrink-0">

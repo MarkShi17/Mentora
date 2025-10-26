@@ -49,9 +49,11 @@ export function PromptBar() {
           zIndex: object.zIndex || 1,
           selected: false,
           color: getColorForType(object.type),
-          label: object.metadata?.referenceName || object.type,
+          label: object.metadata?.referenceName || object.label || object.type,
           metadata: object.metadata,
-          data: object.data
+          data: object.data,
+          generationState: object.generationState,
+          placeholder: object.placeholder
         };
         updateCanvasObject(activeSessionId, canvasObject);
       }
@@ -82,12 +84,20 @@ export function PromptBar() {
     const sessionId = currentSessionRef.current;
     const thinkingMessageId = thinkingMessageIdRef.current;
 
-    if (sessionId && thinkingMessageId && streamingQA.isStreaming && streamingQA.currentText.trim()) {
-      updateMessage(sessionId, thinkingMessageId, {
-        content: streamingQA.currentText
-      });
+    if (sessionId && thinkingMessageId) {
+      if (streamingQA.isStreaming && streamingQA.currentText.trim()) {
+        // Add "..." to indicate streaming is ongoing
+        updateMessage(sessionId, thinkingMessageId, {
+          content: streamingQA.currentText + (streamingQA.audioState.isPlaying ? ' 🔊' : ' ...')
+        });
+      } else if (!streamingQA.isStreaming && streamingQA.currentText.trim()) {
+        // Remove "..." when streaming is done
+        updateMessage(sessionId, thinkingMessageId, {
+          content: streamingQA.currentText
+        });
+      }
     }
-  }, [streamingQA.currentText, streamingQA.isStreaming, updateMessage]);
+  }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
 
   const handleTranscript = useCallback((transcript: string) => {
     setValue((prev) => `${prev} ${transcript}`.trim());

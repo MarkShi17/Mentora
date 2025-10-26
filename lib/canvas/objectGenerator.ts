@@ -26,6 +26,7 @@ export class ObjectGenerator {
       position,
       size: { width: 400, height: 100 },
       zIndex: 1,
+      label: referenceName || 'Equation',
       data: {
         type: 'latex',
         latex,
@@ -54,6 +55,7 @@ export class ObjectGenerator {
       position,
       size: { width: 500, height: 400 },
       zIndex: 1,
+      label: referenceName || `Graph: ${equation}`,
       data: {
         type: 'graph',
         equation,
@@ -95,6 +97,7 @@ export class ObjectGenerator {
       position,
       size: { width, height },
       zIndex: 1,
+      label: referenceName || `Code (${language})`,
       data: {
         type: 'code',
         code,
@@ -139,6 +142,7 @@ export class ObjectGenerator {
       position,
       size: { width: estimatedWidth, height: estimatedHeight },
       zIndex: 1,
+      label: referenceName || 'Note',
       data: {
         type: 'text',
         content,
@@ -167,6 +171,7 @@ export class ObjectGenerator {
       position,
       size: { width: 600, height: 450 }, // Larger default size for better visibility
       zIndex: 1,
+      label: referenceName || 'Diagram',
       data: {
         type: 'diagram',
         svg,
