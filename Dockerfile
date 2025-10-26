@@ -35,7 +35,9 @@ WORKDIR /app
 
 # Copy package files
 COPY package.json package-lock.json* ./
-RUN npm ci
+# Install all dependencies including optional ones for ChromaDB
+# Use --force to bypass peer dependency issues
+RUN npm ci --force
 
 # Development stage
 FROM base AS dev

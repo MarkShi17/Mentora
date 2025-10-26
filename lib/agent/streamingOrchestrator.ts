@@ -150,10 +150,10 @@ export class StreamingOrchestrator {
         tools: availableTools.map(t => t.name)
       });
 
-      // Build context from session
-      const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
+      // Build context from session (now async due to RAG)
+      const sessionContext = await contextBuilder.buildContext(session, highlightedObjectIds);
 
-      // Generate system and user prompts with user settings
+      // Generate system and user prompts with user settings (include RAG context)
       const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
@@ -716,6 +716,38 @@ export class StreamingOrchestrator {
         }
       };
 
+      // Auto-ingest to ChromaDB if RAG is enabled
+      if (process.env.ENABLE_RAG === 'true' && process.env.RAG_AUTO_INGEST !== 'false') {
+        try {
+          const { safeAutoIngest } = await import('@/lib/rag/safeRagService');
+
+          // Get all new objects created in this turn
+          const newObjects = streamingContext.existingObjects.filter(
+            obj => obj.metadata?.turnId === turnId
+          );
+
+          logger.info('🔄 Auto-ingesting to ChromaDB', {
+            objectCount: newObjects.length,
+            turnId,
+            sessionId: session.id
+          });
+
+          // Ingest in background (don't block streaming)
+          await safeAutoIngest(
+            session.id,
+            turnId,
+            newObjects,
+            question,
+            finalResponseText,
+            session.subject || 'general'
+          );
+
+          logger.info('✅ ChromaDB ingestion complete', { turnId });
+        } catch (error) {
+          logger.warn('RAG module not available or ingestion failed', { error });
+        }
+      }
+
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.info('✅ STREAMING COMPLETE');
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -831,7 +863,7 @@ ${cachedIntroInfo}
 CANVAS STATE:
 ${context.canvasState}
 
-${context.highlightedObjects ? `STUDENT HIGHLIGHTED:\n${context.highlightedObjects}\n` : ''}${contextualInfo}
+${context.highlightedObjects ? `STUDENT HIGHLIGHTED:\n${context.highlightedObjects}\n` : ''}${context.ragContext ? `${context.ragContext}\n` : ''}${contextualInfo}
 
 CONTEXTUAL AWARENESS:
 - You have been listening to the user's ongoing conversation and building context

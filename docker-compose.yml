@@ -32,6 +32,15 @@ services:
       - NODE_ENV=development
       - LOG_LEVEL=info
       - PORT=3000
+      - ENABLE_RAG=${ENABLE_RAG:-false}
+      - RAG_SERVICE_URL=${RAG_SERVICE_URL:-http://rag-service:8006}
+      - CHROMADB_URL=${CHROMADB_URL:-http://chromadb:8000}
+      - CHROMADB_COLLECTION=${CHROMADB_COLLECTION:-mentora_knowledge}
+      - CHROMA_AUTH_TOKEN=${CHROMA_AUTH_TOKEN:-test-token}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - RAG_TOP_K=${RAG_TOP_K:-5}
+      - RAG_MIN_RELEVANCE_SCORE=${RAG_MIN_RELEVANCE_SCORE:-0.7}
+      - RAG_AUTO_INGEST=${RAG_AUTO_INGEST:-true}
     volumes:
       - .:/app
       - /app/node_modules
@@ -171,6 +180,57 @@ services:
       - mcp
       - biorender-mcp
 
+  # ChromaDB Vector Database for RAG (optional, controlled by ENABLE_RAG)
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    container_name: mentora-chromadb
+    ports:
+      - "8005:8000"
+    volumes:
+      - chromadb-data:/chroma/chroma
+    environment:
+      - ALLOW_RESET=true
+      - ANONYMIZED_TELEMETRY=false
+      - PERSIST_DIRECTORY=/chroma/chroma
+    networks:
+      - mentora-network
+    restart: unless-stopped
+    profiles:
+      - rag
+      - full
+
+  # Python RAG Service - Multi-modal RAG with ChromaDB
+  rag-service:
+    build:
+      context: ./docker/rag-service
+      dockerfile: Dockerfile
+    container_name: mentora-rag-service
+    ports:
+      - "8006:8006"
+    environment:
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - CHROMADB_COLLECTION=${CHROMADB_COLLECTION:-mentora_knowledge}
+      - CHROMA_AUTH_TOKEN=${CHROMA_AUTH_TOKEN:-test-token}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - NODE_ENV=${NODE_ENV:-development}
+    networks:
+      - mentora-network
+    depends_on:
+      chromadb:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - rag
+      - full
+
 networks:
   mentora-network:
     driver: bridge
@@ -180,3 +240,4 @@ volumes:
   manim-mcp-media:
   chatmol-media:
   biorender-media:
+  chromadb-data:
