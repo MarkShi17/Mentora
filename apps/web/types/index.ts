@@ -20,6 +20,8 @@ export type ImageAttachment = {
   extractedText?: string;  // Text extracted via OCR/Vision API
 };
 
+export type VoiceOption = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+
 export type Message = {
   id: string;
   role: MessageRole;
@@ -36,6 +38,9 @@ export type Message = {
   isStreaming?: boolean;  // Currently streaming text
   isPlayingAudio?: boolean;  // Currently playing audio
   audioComplete?: boolean;  // Audio has finished playing naturally (not interrupted)
+  narrationText?: string;  // Final narration text used for TTS playback
+  narrationVoice?: VoiceOption;  // Voice used for narration playback
+  narrationUpdatedAt?: string;  // Timestamp when narration metadata last updated
 };
 
 export type CanvasObjectType = "diagram" | "note" | "formula" | "image" | "text" | "code" | "graph" | "latex";
@@ -112,4 +117,3 @@ export type StreamEvent =
   | { type: 'complete'; data?: any }
   | { type: 'error'; data: { message: string } }
   | { type: 'interrupted'; data: { message: string; code: string } };
-

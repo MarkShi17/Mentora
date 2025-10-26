@@ -150,10 +150,9 @@ class ChatMolMCPServer:
                 f.write(f"png {output_file}, width=800, height=600, dpi=150, ray=1\n")
                 f.write("quit\n")
 
-            # Run PyMOL in command-line mode using system Python
-            # Use system Python (/usr/bin/python3) which has pymol installed
+            # Run PyMOL via the configured binary path (avoids Python module import errors)
             result = subprocess.run(
-                ["/usr/bin/python3", "-m", "pymol", "-cq", script_file],
+                [self.pymol_path, "-cq", script_file],
                 capture_output=True,
                 text=True,
                 timeout=120

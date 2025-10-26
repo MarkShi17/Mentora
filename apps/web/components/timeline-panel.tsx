@@ -1,11 +1,12 @@
 'use client';
 
 import { Fragment, useState, useRef, useCallback, useEffect } from "react";
-import { ChevronLeft, ChevronRight, MessageSquare, X, StopCircle, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquare, X, StopCircle, RotateCcw, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatTime } from "@/lib/utils";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
+import { useOpenAITTS } from "@/hooks/use-openai-tts";
 
 // Change this to switch between collapse styles: "icon" | "tab" | "bubble"
 const COLLAPSE_STYLE: "icon" | "tab" | "bubble" = "icon";
@@ -22,6 +23,7 @@ type DragState = {
 export function TimelinePanel() {
   const [position, setPosition] = useState({ right: 16, top: 16 }); // 16px = 1rem (4 in Tailwind)
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [replayingMessageId, setReplayingMessageId] = useState<string | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const hasAutoOpenedRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -38,6 +40,9 @@ export function TimelinePanel() {
   const rerunQuestionCallback = useSessionStore((state) => state.rerunQuestionCallback);
   const isExpanded = useSessionStore((state) => state.timelineOpen);
   const setTimelineOpen = useSessionStore((state) => state.setTimelineOpen);
+  const getMessageNarration = useSessionStore((state) => state.getMessageNarration);
+  const settings = useSessionStore((state) => state.settings);
+  const { speak, stop: stopNarration, speaking: narrationSpeaking, loading: narrationLoading } = useOpenAITTS();
 
   // Global ESC key handler for stopping generation
   useEffect(() => {
@@ -103,6 +108,40 @@ export function TimelinePanel() {
 
     console.log(`🎯 Focused on canvas object: ${object.label}`);
   }, [activeSessionId, canvasObjects, requestFocus, updateCanvasObject]);
+
+  const handleReplay = useCallback(async (messageId: string) => {
+    if (!activeSessionId) return;
+
+    if (replayingMessageId === messageId && (narrationSpeaking || narrationLoading)) {
+      stopNarration();
+      setReplayingMessageId(null);
+      return;
+    }
+
+    const narration = getMessageNarration(activeSessionId, messageId);
+    const message = dialogue.find((m) => m.id === messageId);
+    const text = (narration?.text ?? message?.content ?? '').trim();
+
+    if (!text) {
+      console.warn(`⚠️ No narration text available for replay on message ${messageId}`);
+      return;
+    }
+
+    const voice = narration?.voice ?? settings.voice ?? 'alloy';
+    setReplayingMessageId(messageId);
+
+    try {
+      await speak(text, voice);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Playback stopped") {
+        console.log('🔇 Narration replay stopped by user');
+      } else {
+        console.error('❌ Failed to replay narration:', error);
+      }
+    } finally {
+      setReplayingMessageId((current) => (current === messageId ? null : current));
+    }
+  }, [activeSessionId, dialogue, getMessageNarration, narrationLoading, narrationSpeaking, replayingMessageId, settings.voice, speak, stopNarration]);
 
   const handleDragStart = (event: React.PointerEvent<HTMLDivElement>) => {
     // Only allow dragging from the header area, not from buttons
@@ -322,23 +361,33 @@ export function TimelinePanel() {
                   {/* Status bar with stop/restart button */}
                   <div className="flex items-center justify-between gap-2 py-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      {message.audioComplete && message.canvasObjectIds && message.canvasObjectIds.length > 0 ? (
-                        // Show canvas object pins when audio completes
-                        message.canvasObjectIds.map(objId => {
-                          const sessionObjects = activeSessionId ? canvasObjects[activeSessionId] || [] : [];
-                          const obj = sessionObjects.find(o => o.id === objId);
-                          if (!obj) return null;
+                      {message.audioComplete ? (
+                        message.canvasObjectIds && message.canvasObjectIds.length > 0 ? (
+                          <>
+                            <span className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                              Pins
+                            </span>
+                            {message.canvasObjectIds.map((objId) => {
+                              const sessionObjects = activeSessionId ? canvasObjects[activeSessionId] || [] : [];
+                              const obj = sessionObjects.find(o => o.id === objId);
+                              if (!obj) return null;
 
-                          return (
-                            <button
-                              key={objId}
-                              onClick={() => handleObjectClick(objId)}
-                              className="px-2.5 py-1 text-xs rounded-full bg-gradient-to-r from-sky-50 to-blue-50 text-sky-700 hover:from-sky-100 hover:to-blue-100 transition-all duration-300 border border-sky-200/60 font-bold shadow-sm hover:shadow-md hover:scale-105 active:scale-95 backdrop-blur-sm"
-                            >
-                              📌 {obj.label}
-                            </button>
-                          );
-                        })
+                              return (
+                                <button
+                                  key={objId}
+                                  onClick={() => handleObjectClick(objId)}
+                                  className="px-2.5 py-1 text-xs rounded-full bg-gradient-to-r from-sky-50 to-blue-50 text-sky-700 hover:from-sky-100 hover:to-blue-100 transition-all duration-300 border border-sky-200/60 font-bold shadow-sm hover:shadow-md hover:scale-105 active:scale-95 backdrop-blur-sm"
+                                >
+                                  📌 {obj.label}
+                                </button>
+                              );
+                            })}
+                          </>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-500">
+                            Narration ready — no visuals created
+                          </span>
+                        )
                       ) : message.isPlayingAudio ? (
                         <>
                           <span className="text-xs text-sky-600 font-bold">Speaking</span>
@@ -377,29 +426,28 @@ export function TimelinePanel() {
                     </div>
 
                     {message.audioComplete ? (
-                      /* Restart button when audio is complete */
                       <button
-                        onClick={() => {
-                          // Find the previous user message to rerun
-                          const currentIndex = dialogue.findIndex(m => m.id === message.id);
-                          if (currentIndex > 0) {
-                            // Look backwards for the most recent user message
-                            for (let i = currentIndex - 1; i >= 0; i--) {
-                              if (dialogue[i].role === "user") {
-                                if (rerunQuestionCallback) {
-                                  console.log('🔄 Restarting with question:', dialogue[i].content);
-                                  rerunQuestionCallback(dialogue[i].content);
-                                }
-                                break;
-                              }
-                            }
-                          }
-                        }}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/60 hover:bg-green-50 text-slate-600 hover:text-green-600 transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-200/60 hover:border-green-200/60 shadow-sm hover:shadow-md"
-                        title="Restart with same question"
+                        onClick={() => void handleReplay(message.id)}
+                        disabled={narrationLoading && replayingMessageId === message.id}
+                        className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border shadow-sm transition-all duration-200",
+                          replayingMessageId === message.id && (narrationSpeaking || narrationLoading)
+                            ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                            : "bg-white/60 text-slate-600 border-slate-200/60 hover:bg-sky-50 hover:text-sky-700 hover:border-sky-200"
+                        )}
+                        title={replayingMessageId === message.id && (narrationSpeaking || narrationLoading) ? "Stop replay" : "Replay narration"}
                       >
-                        <RotateCcw className="h-3 w-3" />
-                        <span>Restart</span>
+                        {replayingMessageId === message.id && (narrationSpeaking || narrationLoading) ? (
+                          <>
+                            <StopCircle className="h-3 w-3" />
+                            <span>Stop Replay</span>
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="h-3 w-3" />
+                            <span>{narrationLoading && replayingMessageId === message.id ? 'Loading...' : 'Replay'}</span>
+                          </>
+                        )}
                       </button>
                     ) : (
                       /* Stop button while generating/speaking */

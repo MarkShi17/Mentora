@@ -126,6 +126,11 @@ type SessionState = {
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => string;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Omit<Message, "id" | "timestamp">>) => void;
   removeMessage: (sessionId: string, messageId: string) => void;
+  getMessageNarration: (sessionId: string, messageId: string) => {
+    text: string;
+    voice: VoiceOption;
+    updatedAt: string;
+  } | null;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   updateCanvasObjects: (sessionId: string, objects: CanvasObject[]) => void;
   deleteCanvasObjects: (sessionId: string, objectIds: string[]) => void;
@@ -383,6 +388,24 @@ export const useSessionStore = create<SessionState>()(
           };
         }
       });
+    },
+    getMessageNarration: (sessionId, messageId) => {
+      const state = get();
+      const messages = state.messages[sessionId];
+      if (!messages) return null;
+
+      const message = messages.find((m) => m.id === messageId);
+      if (!message) return null;
+
+      const text = (message.narrationText ?? message.content ?? '').trim();
+      if (!text) return null;
+
+      const voice = message.narrationVoice ?? state.settings.voice ?? 'alloy';
+      return {
+        text,
+        voice,
+        updatedAt: message.narrationUpdatedAt ?? message.timestamp,
+      };
     },
     removeMessage: (sessionId, messageId) => {
       set((state) => {

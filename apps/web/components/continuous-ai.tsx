@@ -58,6 +58,7 @@ export function ContinuousAI() {
   const setIsPushToTalkActive = useSessionStore((state) => state.setIsPushToTalkActive);
   const setStopStreamingCallback = useSessionStore((state) => state.setStopStreamingCallback);
   const setRerunQuestionCallback = useSessionStore((state) => state.setRerunQuestionCallback);
+  const settings = useSessionStore((state) => state.settings);
   const { startSequence, addObjectToSequence, endSequence } = useSequentialConnections();
 
   // Get messages for active session
@@ -86,7 +87,11 @@ export function ContinuousAI() {
           interrupted: true,
           interruptedAt: new Date().toISOString(),
           isStreaming: false,
-          isPlayingAudio: false
+          isPlayingAudio: false,
+          audioComplete: false,
+          narrationText: undefined,
+          narrationVoice: undefined,
+          narrationUpdatedAt: undefined
         });
         console.log('⚠️ Message marked as interrupted');
 
@@ -159,27 +164,52 @@ export function ContinuousAI() {
       const thinkingMessageId = thinkingMessageIdRef.current;
 
       if (sessionId && finalText.trim()) {
+        const timestamp = new Date().toISOString();
+
         if (thinkingMessageId) {
           // Replace the "Thinking..." message with the actual response
           updateMessage(sessionId, thinkingMessageId, {
             content: finalText,
             canvasObjectIds: objectIds.length > 0 ? objectIds : undefined,
             isStreaming: false,
-            isPlayingAudio: streamingQA.audioState.isPlaying  // Explicitly set based on current audio state
+            isPlayingAudio: streamingQA.audioState.isPlaying, // Explicitly set based on current audio state
+            audioComplete: streamingQA.audioState.isPlaying ? false : true,
+            narrationText: finalText,
+            narrationVoice: settings.voice,
+            narrationUpdatedAt: timestamp
           });
           console.log('✅ Updated thinking message with final response');
 
-          // Store message ID for audio completion tracking (don't clear until audio finishes)
-          audioCompletionSessionRef.current = sessionId;
-          audioCompletionMessageIdRef.current = thinkingMessageId;
+          if (streamingQA.audioState.isPlaying) {
+            // Store message ID for audio completion tracking (don't clear until audio finishes)
+            audioCompletionSessionRef.current = sessionId;
+            audioCompletionMessageIdRef.current = thinkingMessageId;
+          } else {
+            audioCompletionSessionRef.current = null;
+            audioCompletionMessageIdRef.current = null;
+          }
         } else {
           // Fallback: add new message if thinking message wasn't created
-          addMessage(sessionId, {
+          const messageId = addMessage(sessionId, {
             role: "assistant",
             content: finalText,
-            canvasObjectIds: objectIds.length > 0 ? objectIds : undefined
+            canvasObjectIds: objectIds.length > 0 ? objectIds : undefined,
+            isStreaming: false,
+            isPlayingAudio: streamingQA.audioState.isPlaying,
+            audioComplete: streamingQA.audioState.isPlaying ? false : true,
+            narrationText: finalText,
+            narrationVoice: settings.voice,
+            narrationUpdatedAt: timestamp
           });
           console.log('💬 Assistant message added to chat history from onComplete');
+
+          if (streamingQA.audioState.isPlaying) {
+            audioCompletionSessionRef.current = sessionId;
+            audioCompletionMessageIdRef.current = messageId;
+          } else {
+            audioCompletionSessionRef.current = null;
+            audioCompletionMessageIdRef.current = null;
+          }
         }
 
         appendTimelineEvent(sessionId, {
@@ -199,7 +229,7 @@ export function ContinuousAI() {
       thinkingMessageIdRef.current = null;
       endSequence();
       sequenceKeyRef.current = null;
-    }, [addMessage, updateMessage, appendTimelineEvent, endSequence, setLastAIMessage]),
+    }, [addMessage, updateMessage, appendTimelineEvent, endSequence, setLastAIMessage, settings.voice, streamingQA.audioState.isPlaying]),
     onError: useCallback(() => {
       endSequence();
       sequenceKeyRef.current = null;
@@ -366,7 +396,11 @@ export function ContinuousAI() {
             interrupted: true,
             interruptedAt: new Date().toISOString(),
             isStreaming: false,
-            isPlayingAudio: false
+            isPlayingAudio: false,
+            audioComplete: false,
+            narrationText: undefined,
+            narrationVoice: undefined,
+            narrationUpdatedAt: undefined
           });
         } else {
           console.log('🗑️ Removing empty thinking message');
