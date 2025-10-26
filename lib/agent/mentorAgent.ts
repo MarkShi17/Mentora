@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Session } from '@/types/session';
 import { CanvasObject, ObjectPlacement, ObjectReference } from '@/types/canvas';
-import { TeachingMode } from '@/types/api';
+import { TeachingMode, VoiceOption } from '@/types/api';
 import { contextBuilder } from './contextBuilder';
 import { objectGenerator } from '@/lib/canvas/objectGenerator';
 import { layoutEngine } from '@/lib/canvas/layoutEngine';
@@ -12,7 +12,6 @@ import { initializeMCP } from '@/lib/mcp/init';
 import { MCP_TOOLS_FOR_CLAUDE, TOOL_TO_SERVER_MAP, isVisualizationTool } from './mcpTools';
 import { brainSelector } from './brainSelector';
 import { multimodalRAG } from '@/lib/memory/multimodalRAG';
-import { getBrain } from './brainRegistry';
 
 interface AgentResponse {
   explanation: string;
@@ -28,6 +27,12 @@ interface AgentResponse {
     objectId: string;
   }>;
 }
+
+type UserSettings = {
+  userName?: string;
+  explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
+  voice?: VoiceOption;
+};
 
 const CANVAS_TYPE_PRIORITY: Record<string, number> = {
   text: 0,
@@ -60,7 +65,8 @@ export class MentorAgent {
       recentConversation?: string[];
       topics?: string[];
       conversationHistory?: string[];
-    }
+    },
+    userSettings?: UserSettings
   ): Promise<{
     text: string;
     narration: string;
@@ -104,11 +110,12 @@ export class MentorAgent {
         mode,
         context,
         brainResult.selectedBrain,
-        memoryContext
+        memoryContext,
+        userSettings
       );
 
       // Generate user prompt
-      const userPrompt = this.buildUserPrompt(question, sessionContext);
+      const userPrompt = this.buildUserPrompt(question, sessionContext, userSettings);
 
       // Call Claude API with MCP tools
       let messages: Anthropic.MessageParam[] = [
@@ -357,16 +364,17 @@ export class MentorAgent {
   }
 
   private buildSystemPrompt(
-    session: Session, 
-    context: any, 
-    mode: TeachingMode, 
+    session: Session,
+    context: any,
+    mode: TeachingMode,
     conversationContext?: {
       recentConversation?: string[];
       topics?: string[];
       conversationHistory?: string[];
     },
     selectedBrain?: { type: string; name: string; description: string; promptEnhancement: string },
-    memoryContext?: string
+    memoryContext?: string,
+    userSettings?: UserSettings
   ): string {
     const teachingStyle =
       mode === 'guided'
@@ -401,11 +409,27 @@ ${selectedBrain.promptEnhancement}\n`
       : '';
 
     // Add memory context from RAG if available
-    const memorySection = memoryContext 
+    const memorySection = memoryContext
       ? `\n${memoryContext}\n`
       : '';
 
+    const userName = userSettings?.userName?.trim() || '';
+    const explanationLevel = userSettings?.explanationLevel || 'intermediate';
+
+    const nameDirective = userName
+      ? `\nSTUDENT NAME: ${userName}\n- Address ${userName} by name periodically to personalize the interaction.\n- Reference ${userName}'s prior questions when it reinforces continuity.\n`
+      : '';
+
+    const levelGuidance = explanationLevel === 'beginner'
+      ? 'Use simple language, define every technical term, and rely on analogies or concrete examples.'
+      : explanationLevel === 'advanced'
+        ? 'Use precise technical terminology, dive into nuance, and assume the learner has strong foundational knowledge.'
+        : 'Balance clarity with depth. Explain complex concepts accessibly while preserving rigor and detail.';
+
     return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.${brainInfo}
+${nameDirective}
+EXPLANATION LEVEL: ${explanationLevel}
+${levelGuidance}
 
 CANVAS STATE:
 ${context.canvasState}
@@ -557,8 +581,18 @@ Subject: ${session.subject}
 Be canvas-aware and create appropriate visuals for the subject area.`;
   }
 
-  private buildUserPrompt(question: string, context: any): string {
+  private buildUserPrompt(question: string, context: any, userSettings?: UserSettings): string {
     let prompt = `Student question: ${question}\n\n`;
+
+    if (userSettings?.userName) {
+      prompt += `Preferred student name: ${userSettings.userName}\n`;
+    }
+
+    if (userSettings?.explanationLevel) {
+      prompt += `Target explanation level: ${userSettings.explanationLevel}\n\n`;
+    } else if (userSettings?.userName) {
+      prompt += '\n';
+    }
 
     if (context.conversationHistory && context.conversationHistory !== 'No previous conversation.') {
       prompt += `Previous conversation:\n${context.conversationHistory}\n\n`;
@@ -608,7 +642,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       const biologyGuidance = [
         '- Use the specialized biology visualization tools to match the learner\'s request:',
         '  - render_biology_diagram for canonical cellular/process schematics (cell structure, mitosis, cell cycle, gene expression, CRISPR)',
-        '  - generate for pathways, state transitions, or step-by-step biological mechanisms',
+        '  - create_mermaid_diagram for pathways, state transitions, or step-by-step biological mechanisms',
         '  - visualize_molecule when molecular structure, proteins, or 3D context is needed (call fetch_protein first if you need accession details)',
         '  - search_biorender and get_biorender_figure when professional or presentation-ready artwork/icons will help understanding',
         '  - execute_python only when you need custom data-driven plots or a diagram the other biology tools cannot produce',

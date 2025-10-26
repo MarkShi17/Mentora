@@ -8,7 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Session } from '@/types/session';
 import { CanvasObject, ObjectPlacement, ObjectReference } from '@/types/canvas';
-import { TeachingMode, StreamEvent } from '@/types/api';
+import { TeachingMode, StreamEvent, VoiceOption } from '@/types/api';
 import { contextBuilder } from './contextBuilder';
 import { objectGenerator } from '@/lib/canvas/objectGenerator';
 import { layoutEngine } from '@/lib/canvas/layoutEngine';
@@ -23,7 +23,7 @@ import type { Brain } from '@/types/brain';
 interface StreamingContext {
   sessionId: string;
   turnId: string;
-  voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+  voice: VoiceOption;
   existingObjects: CanvasObject[];
   userQuestion: string;
 }
@@ -88,7 +88,7 @@ export class StreamingOrchestrator {
     highlightedObjectIds: string[] = [],
     mode: TeachingMode = 'guided',
     turnId: string,
-    voice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer' = 'nova',
+    voice: VoiceOption = 'alloy',
     context?: {
       recentConversation?: string[];
       topics?: string[];
@@ -155,7 +155,7 @@ export class StreamingOrchestrator {
 
       // Generate system and user prompts with user settings (include RAG context)
       const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
-      const userPrompt = this.buildUserPrompt(question, sessionContext);
+      const userPrompt = this.buildUserPrompt(question, sessionContext, userSettings);
 
       // Get model from selected brain
       const model = selectedBrain?.model || 'claude-sonnet-4-5-20250929';
@@ -185,11 +185,30 @@ export class StreamingOrchestrator {
       while (iteration < maxIterations) {
         iteration++;
 
+        logger.info('🔁 Loop iteration started', {
+          iteration,
+          maxIterations,
+          messagesCount: messages.length,
+          messagesStructure: messages.map((m, idx) => ({
+            index: idx,
+            role: m.role,
+            hasContent: !!m.content
+          }))
+        });
+
         logger.info('🧠 Calling Claude API', {
           model: 'claude-sonnet-4-5-20250929',
           maxTokens: 4096,
           iteration,
-          hasTools: availableTools.length > 0
+          hasTools: availableTools.length > 0,
+          messagesCount: messages.length,
+          messagesStructure: messages.map((m, idx) => ({
+            index: idx,
+            role: m.role,
+            contentBlocks: Array.isArray(m.content) ? m.content.length : 1,
+            contentTypes: Array.isArray(m.content) ? m.content.map((c: any) => c.type) : [typeof m.content],
+            toolUseIds: Array.isArray(m.content) ? m.content.filter((c: any) => c.type === 'tool_use').map((c: any) => c.id) : []
+          }))
         });
 
         const response = await this.anthropic.messages.create({
@@ -306,12 +325,6 @@ export class StreamingOrchestrator {
             logger.info('✅ Narration streamed, now executing tools');
           }
 
-          // Add assistant's message with tool use to conversation
-          messages.push({
-            role: 'assistant',
-            content: response.content
-          });
-
           // Execute all tool calls
           const toolResultsContent: Anthropic.ToolResultBlockParam[] = [];
 
@@ -338,8 +351,7 @@ export class StreamingOrchestrator {
                 data: {
                   toolName: toolUse.name,
                   serverId,
-                  description: MCP_TOOLS_FOR_CLAUDE.find(t => t.name === toolUse.name)?.description || '',
-                  isGeneratingComponent: isVisualizationTool(toolUse.name)
+                  description: MCP_TOOLS_FOR_CLAUDE.find(t => t.name === toolUse.name)?.description || ''
                 }
               };
 
@@ -367,6 +379,7 @@ export class StreamingOrchestrator {
                 const mcpObjects = this.convertMCPResultToCanvasObjects(
                   mcpResult,
                   toolUse.name,
+                  toolUse.input as Record<string, any>,
                   session.canvasObjects,
                   toolGeneratedObjects,
                   turnId
@@ -409,8 +422,13 @@ export class StreamingOrchestrator {
               toolResultsContent.push({
                 type: 'tool_result',
                 tool_use_id: toolUse.id,
-                content: resultText || 'Tool executed successfully'
-              });
+                content: [
+                  {
+                    type: 'text',
+                    text: resultText || 'Tool executed successfully'
+                  }
+                ]
+              } as Anthropic.ToolResultBlockParam);
 
               // Emit tool_complete event
               yield {
@@ -460,21 +478,74 @@ export class StreamingOrchestrator {
             }
           }
 
-          // Add tool results to conversation
-          messages.push({
-            role: 'user',
-            content: toolResultsContent
-          });
+          // Add assistant's message with FULL response content (per Anthropic API spec)
+          // Must include both text and tool_use blocks from Claude's response
+          try {
+            logger.info('📨 Adding messages to conversation array before iteration 2', {
+              iteration,
+              currentMessagesCount: messages.length,
+              responseContentBlocks: response.content.length,
+              toolResultsCount: toolResultsContent.length
+            });
 
-          // Continue conversation loop to get final response
-          continue;
+            messages.push({
+              role: 'assistant',
+              content: response.content  // Contains FULL response (text + tool_use blocks)
+            });
+
+            logger.info('✅ Added assistant message', {
+              messagesCount: messages.length,
+              lastMessageRole: messages[messages.length - 1].role
+            });
+
+            // Add user message with tool results (per Anthropic API spec)
+            messages.push({
+              role: 'user',
+              content: toolResultsContent  // Contains tool_result blocks
+            });
+
+            logger.info('✅ Added user message with tool results', {
+              messagesCount: messages.length,
+              lastMessageRole: messages[messages.length - 1].role,
+              toolResultsContentCount: toolResultsContent.length
+            });
+
+            logger.info('🔄 About to continue to iteration 2', {
+              currentIteration: iteration,
+              nextIteration: iteration + 1,
+              maxIterations,
+              willContinue: iteration < maxIterations
+            });
+
+            // Continue conversation loop to get final response
+            continue;
+          } catch (error) {
+            logger.error('❌ ERROR adding messages or continuing loop', {
+              error: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined,
+              iteration
+            });
+            throw error;
+          }
         }
 
         // Claude finished without using tools or after using tools
+        logger.info('📋 Processing final response from Claude', {
+          iteration,
+          contentBlocks: response.content.length,
+          blockTypes: response.content.map((b: any) => b.type),
+          hasTextBlocks: response.content.some((b: any) => b.type === 'text')
+        });
+
         const textContent = response.content
           .filter(block => block.type === 'text')
           .map((block: any) => block.text)
           .join('\n');
+
+        logger.info('📝 Extracted text content', {
+          textLength: textContent.length,
+          textPreview: textContent.substring(0, 200)
+        });
 
         finalResponseText = textContent;
         break;
@@ -486,13 +557,77 @@ export class StreamingOrchestrator {
         hasFinalResponse: !!finalResponseText
       });
 
+      // Create canvas objects from pre-tool components (markdown notes, etc.)
+      if (preToolComponents.length > 0) {
+        logger.info('🎨 Creating canvas objects from pre-tool components', {
+          componentCount: preToolComponents.length,
+          types: preToolComponents.map(c => c.type)
+        });
+
+        for (const request of preToolComponents) {
+          const position = layoutEngine.calculatePosition(
+            {
+              existingObjects: streamingContext.existingObjects.map(obj => ({
+                id: obj.id,
+                position: obj.position,
+                size: obj.size
+              }))
+            },
+            { width: 400, height: 200 }
+          );
+
+          const canvasObject = objectGenerator.generateObject(
+            {
+              type: request.type,
+              content: request.content,
+              referenceName: request.referenceName,
+              metadata: request.metadata
+            },
+            position,
+            turnId
+          );
+
+          streamingContext.existingObjects.push(canvasObject);
+
+          const placement: ObjectPlacement = {
+            objectId: canvasObject.id,
+            position: canvasObject.position,
+            animateIn: 'fade',
+            timing: toolGeneratedObjects.length * 300
+          };
+
+          yield {
+            type: 'canvas_object',
+            timestamp: Date.now(),
+            data: { object: canvasObject, placement }
+          };
+
+          logger.info('✅ Pre-tool component created as canvas object', {
+            type: canvasObject.type,
+            label: canvasObject.label
+          });
+        }
+      }
+
       // Now stream the final response with TTS
       const sentenceParser = new SentenceParser();
-      let totalObjects = toolGeneratedObjects.length; // Start with MCP objects
+      let totalObjects = toolGeneratedObjects.length + preToolComponents.length; // Include pre-tool objects
       let totalReferences = 0;
 
       // Parse the final response to get narration and additional objects
+      logger.info('🔍 About to parse final response text', {
+        textLength: finalResponseText.length,
+        textPreview: finalResponseText.substring(0, 300)
+      });
+
       const agentResponse = this.parseResponse(finalResponseText);
+
+      logger.info('📊 Parsed agent response', {
+        narrationLength: agentResponse.narration.length,
+        objectsCount: agentResponse.objects.length,
+        objectTypes: agentResponse.objects.map(o => o.type),
+        referencesCount: agentResponse.references.length
+      });
 
       // Separate objects into priority (latex, graph) and regular for early rendering
       const priorityObjects = agentResponse.objects.filter(obj =>
@@ -628,10 +763,11 @@ export class StreamingOrchestrator {
         }
       }
 
-      // Generate remaining canvas objects (non-priority) from Claude's response
-      if (regularObjects && regularObjects.length > 0) {
-        logger.info('Generating regular canvas objects from Claude response', {
-          objectCount: regularObjects.length
+      // Generate additional canvas objects from Claude's response (if any)
+      // ONLY if no MCP visualization tools were used (to avoid spurious diagrams)
+      if (agentResponse.objects && agentResponse.objects.length > 0 && toolGeneratedObjects.length === 0) {
+        logger.info('Generating canvas objects from Claude response', {
+          objectCount: agentResponse.objects.length
         });
 
         for (const request of regularObjects) {
@@ -821,10 +957,11 @@ finally {
 - Break explanations into small steps
 - Provide hints before solutions
 - Check understanding at checkpoints`
-        : `Provide direct explanations:
-- Give clear, complete answers
-- Still break into logical steps
-- Be thorough but concise`;
+        : `Provide concise direct explanations:
+- Start with brief 3-4 sentence summaries (5 sentence MAX)
+- Create visualizations to supplement brevity
+- Save detailed explanations for follow-up questions
+- Be clear but encourage further exploration`;
 
     let contextualInfo = '';
     if (conversationContext) {
@@ -887,7 +1024,8 @@ VISUAL CREATION:
 - Position new objects spatially relative to existing ones
 - Use directional language: "as shown in the equation above", "let's place this below"
 - Make text objects detailed and well-formatted with bullet points and clear structure
-- Ensure content is comprehensive but concise - avoid overly short explanations
+- Keep initial explanations brief (3-4 sentences, 5 MAX) - let visuals do the teaching
+- Save comprehensive details for follow-up questions
 - Use proper line breaks and formatting in text content
 - For diagrams: Create meaningful visualizations that demonstrate the concept being discussed
 - Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms
@@ -960,8 +1098,25 @@ ${selectedBrain.promptEnhancement}
 Be canvas-aware and create appropriate visuals for the subject area.`;
   }
 
-  private buildUserPrompt(question: string, context: any): string {
+  private buildUserPrompt(
+    question: string,
+    context: any,
+    userSettings?: {
+      userName?: string;
+      explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
+    }
+  ): string {
     let prompt = `Student question: ${question}\n\n`;
+
+    if (userSettings?.userName) {
+      prompt += `Preferred student name: ${userSettings.userName}\n`;
+    }
+
+    if (userSettings?.explanationLevel) {
+      prompt += `Target explanation level: ${userSettings.explanationLevel}\n\n`;
+    } else if (userSettings?.userName) {
+      prompt += '\n';
+    }
 
     if (context.conversationHistory && context.conversationHistory !== 'No previous conversation.') {
       prompt += `Previous conversation:\n${context.conversationHistory}\n\n`;
@@ -1036,7 +1191,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
     // Extract objects
     const objects = [];
-    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/);
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
     for (const match of objectMatches) {
       const [_, type, id, content, meta] = match;
       if (type && content) {
@@ -1127,6 +1282,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
   private convertMCPResultToCanvasObjects(
     mcpResult: any,
     toolName: string,
+    toolInput: Record<string, any>,
     existingObjects: CanvasObject[],
     currentToolResults: CanvasObject[],
     turnId: string
@@ -1137,6 +1293,39 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       logger.warn('MCP result has no content array', { toolName });
       return objects;
     }
+
+    // Generate meaningful label from tool name and parameters
+    const generateLabel = (): string => {
+      switch (toolName) {
+        case 'render_biology_diagram':
+          const diagramType = toolInput.diagram_type || '';
+          const title = toolInput.title || '';
+          if (title) return title;
+          // Convert diagram_type to readable label: "crispr_mechanism" -> "CRISPR Mechanism"
+          return diagramType
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+
+        case 'generate':
+          return toolInput.title || 'Pathway Diagram';
+
+        case 'visualize_molecule':
+          const pdbId = toolInput.pdb_id || '';
+          return pdbId ? `${pdbId.toUpperCase()} Structure` : 'Molecular Structure';
+
+        case 'render_animation':
+          return toolInput.title || 'Math Animation';
+
+        case 'execute_python':
+          return toolInput.title || 'Data Visualization';
+
+        default:
+          return 'Visualization';
+      }
+    };
+
+    const label = generateLabel();
 
     // Process each content item from MCP result
     for (const content of mcpResult.content) {
@@ -1167,10 +1356,11 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         const imageObject: CanvasObject = {
           id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
           type: 'image',
+          label,
           data: {
             type: 'image',
             url: `data:${content.mimeType};base64,${content.data}`,
-            alt: `Visualization from ${toolName}`,
+            alt: label,
           },
           position,
           size: { width: 600, height: 400 },
@@ -1236,10 +1426,11 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             const videoObject: CanvasObject = {
               id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
               type: 'video',
+              label,
               data: {
                 type: 'video',
                 url,
-                alt: `Animation from ${toolName}`,
+                alt: label,
               },
               position,
               size: { width: 600, height: 400 },
@@ -1260,10 +1451,11 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             const imageObject: CanvasObject = {
               id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
               type: 'image',
+              label,
               data: {
                 type: 'image',
                 url,
-                alt: `Visualization from ${toolName}`,
+                alt: label,
               },
               position,
               size: { width: 600, height: 400 },

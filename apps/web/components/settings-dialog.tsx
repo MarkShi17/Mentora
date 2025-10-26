@@ -4,6 +4,7 @@ import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
+import type { VoiceOption } from "@/types";
 
 type SettingsDialogProps = {
   open: boolean;
@@ -15,7 +16,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const updateSettings = useSessionStore((state) => state.updateSettings);
 
   const [preferredName, setPreferredName] = useState(settings.preferredName || "");
-  const [voice, setVoice] = useState(settings.voice || "alloy");
+  const [voice, setVoice] = useState<VoiceOption>(settings.voice || "alloy");
   const [explanationLevel, setExplanationLevel] = useState(settings.explanationLevel || "intermediate");
 
   const handleSave = () => {
@@ -64,7 +65,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </label>
               <select
                 value={voice}
-                onChange={(e) => setVoice(e.target.value)}
+                onChange={(e) => setVoice(e.target.value as VoiceOption)}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
               >
                 <option value="alloy">Alloy (Neutral)</option>

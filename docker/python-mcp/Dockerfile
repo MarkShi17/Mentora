@@ -19,7 +19,9 @@ RUN pip install --no-cache-dir --timeout=600 --retries=5 -r requirements.txt
 COPY server.py .
 
 # Run as non-root user
-RUN useradd -m -u 1000 mcp && chown -R mcp:mcp /app
+RUN useradd -m -u 1000 mcp && \
+    mkdir -p /app/media && \
+    chown -R mcp:mcp /app
 USER mcp
 
 # Expose port for HTTP mode

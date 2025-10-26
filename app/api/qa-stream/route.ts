@@ -10,7 +10,7 @@ import { sessionManager } from '@/lib/agent/sessionManager';
 import { streamingOrchestrator } from '@/lib/agent/streamingOrchestrator';
 import { contextBuilder } from '@/lib/agent/contextBuilder';
 import { brainSelector } from '@/lib/agent/brainSelector';
-import { StreamingQARequest } from '@/types/api';
+import { StreamingQARequest, VoiceOption } from '@/types/api';
 import { ValidationError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
 import { generateTurnId } from '@/lib/utils/ids';
@@ -122,9 +122,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         const assistantTurnId = generateTurnId();
 
         // Voice selection - use user's preference or default to nova
-        const voice = (body as any).voice || 'nova';
-        const userName = (body as any).userName || '';
-        const explanationLevel = (body as any).explanationLevel || 'intermediate';
+        const userName = body.userName?.trim() || '';
+        const explanationLevel = body.explanationLevel || 'intermediate';
+        const voice: VoiceOption = body.voice ?? 'alloy';
 
         logger.info('🤖 Starting AI response generation', {
           assistantTurnId,
@@ -246,8 +246,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           body.context,
           { userName, explanationLevel }, // Pass user settings
           cachedIntroPlayed, // Pass cached intro info
-          brainResult.selectedBrain, // Pass selected brain for MCP tool filtering
-          body.images // Pass image attachments for vision analysis
+          brainResult.selectedBrain // Pass selected brain for MCP tool filtering
         );
 
         for await (const event of responseStream) {
