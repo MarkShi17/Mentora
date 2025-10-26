@@ -13,6 +13,7 @@ Mentora now includes a complete MCP client layer that connects to multiple MCP s
 - **Sequential Thinking**: Structured step-by-step problem solving
 - **Manim Animations**: Mathematical visualizations (Docker-based)
 - **Python Execution**: Diagram and visualization generation (Docker-based)
+- **Biology Diagram Generator**: Curated biology schematics (via Python MCP)
 - **GitHub Integration**: Code search and repository access
 - **Figma Integration**: Design file and component access
 
@@ -183,6 +184,7 @@ MANIM_MCP_URL=http://manim-mcp:8000
 # Python MCP - Docker-based Python execution
 ENABLE_PYTHON=false
 PYTHON_MCP_URL=http://python-mcp:8000
+# When ENABLE_PYTHON is true, both execute_python and render_biology_diagram tools become available
 
 # GitHub MCP - Requires personal access token
 GITHUB_TOKEN=ghp_your_token_here

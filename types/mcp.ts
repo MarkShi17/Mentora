@@ -133,6 +133,16 @@ export interface PythonExecutionInput {
 }
 
 /**
+ * Biology Diagram Tool Input
+ */
+export interface BiologyDiagramInput {
+  diagram_type: 'cell_structure' | 'dna_transcription' | 'photosynthesis';
+  title?: string;
+  annotations?: string[];
+  highlight?: string[];
+}
+
+/**
  * GitHub Tool Input
  */
 export interface GitHubToolInput {

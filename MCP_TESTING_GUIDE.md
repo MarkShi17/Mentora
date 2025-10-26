@@ -20,6 +20,12 @@ Ask these questions to see **static plots**:
 4. **"Show me a scatter plot with random data"**
    - Should create: Scatter plot visualization
 
+5. **"Draw a labeled diagram of a eukaryotic cell"**
+   - Should create: Biology MCP schematic highlighting nucleus, mitochondria, ribosomes
+
+6. **"Illustrate DNA transcription with RNA polymerase"**
+   - Should create: Diagram showing double helix, polymerase, and mRNA arrow
+
 ### Test Questions for Manim MCP (Animated Visualizations)
 
 Ask these questions to see **animations** (MP4/GIF):
@@ -73,7 +79,7 @@ docker-compose logs backend --tail 50 | grep "MCP"
 
 ### 3. Expected Canvas Objects
 
-When you ask "Show me a plot of sin(x)", you should see **4 types of objects**:
+When you ask "Show me a plot of sin(x)" or "Draw a labeled eukaryotic cell", you should see **these canvas objects**:
 
 1. **ImageObject** (from Python MCP)
    - The actual matplotlib PNG image
@@ -91,6 +97,11 @@ When you ask "Show me a plot of sin(x)", you should see **4 types of objects**:
 4. **DiagramObject** (from Claude, if applicable)
    - SVG diagrams
    - Type: `diagram`
+
+5. **ImageObject** (from Biology MCP)
+   - Curated schematic PNG (cell structure, DNA transcription, photosynthesis)
+   - Type: `image`
+   - Metadata tags include `["mcp","render_biology_diagram","biology"]`
 
 ## Troubleshooting
 
