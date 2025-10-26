@@ -64,6 +64,10 @@ export class StreamingOrchestrator {
       recentConversation?: string[];
       topics?: string[];
       conversationHistory?: string[];
+    },
+    userSettings?: {
+      userName?: string;
+      explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
     }
   ): AsyncGenerator<StreamEvent, void, unknown> {
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -98,8 +102,8 @@ export class StreamingOrchestrator {
       // Build context from session
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
-      // Generate system and user prompts
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context);
+      // Generate system and user prompts with user settings
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
       // Start Claude streaming
@@ -451,6 +455,10 @@ export class StreamingOrchestrator {
       recentConversation?: string[];
       topics?: string[];
       conversationHistory?: string[];
+    },
+    userSettings?: {
+      userName?: string;
+      explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
     }
   ): string {
     const teachingStyle =
@@ -478,7 +486,20 @@ export class StreamingOrchestrator {
       }
     }
 
+    const userName = userSettings?.userName || '';
+    const explanationLevel = userSettings?.explanationLevel || 'intermediate';
+
+    // Adjust explanation depth based on level
+    const levelGuidance = explanationLevel === 'beginner'
+      ? 'Use simple language, provide many examples, and explain technical terms when you use them.'
+      : explanationLevel === 'advanced'
+      ? 'Use technical terminology freely, focus on depth and nuance, assume strong foundational knowledge.'
+      : 'Balance clarity with depth, explain complex concepts but assume basic familiarity.';
+
     return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.
+${userName ? `\nSTUDENT NAME: ${userName} - Address them by name occasionally to personalize the interaction.\n` : ''}
+EXPLANATION LEVEL: ${explanationLevel}
+${levelGuidance}
 
 CANVAS STATE:
 ${context.canvasState}
