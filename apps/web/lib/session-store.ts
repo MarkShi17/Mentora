@@ -50,6 +50,11 @@ type VoiceInputState = {
   isPushToTalkActive: boolean;
 };
 
+type DemoMode = {
+  isDemoMode: boolean;
+  demoSessionId: string | null;
+};
+
 type BrainState = {
   brainType: BrainType | null;
   brainName: string | null;
@@ -111,6 +116,8 @@ type SessionState = {
   rerunQuestionCallback: ((question: string) => void) | null;
   activeBrain: Record<string, BrainState>;
   mcpToolStatus: Record<string, MCPToolStatus[]>;
+  demoMode: DemoMode;
+  setDemoMode: (isDemoMode: boolean, demoSessionId?: string) => void;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   updateSessionTitle: (sessionId: string, title: string) => void;
@@ -214,6 +221,16 @@ export const useSessionStore = create<SessionState>()(
       rerunQuestionCallback: null,
       activeBrain: {},
       mcpToolStatus: {},
+      demoMode: {
+        isDemoMode: false,
+        demoSessionId: null
+      },
+      setDemoMode: (isDemoMode, demoSessionId) => {
+        set((state) => {
+          state.demoMode.isDemoMode = isDemoMode;
+          state.demoMode.demoSessionId = demoSessionId || null;
+        });
+      },
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {

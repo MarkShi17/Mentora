@@ -341,6 +341,13 @@ export function PromptBar() {
       setTimelineOpen(true);
     }
 
+    // Check if we're in demo mode - if so, don't run the actual tutoring system
+    const demoMode = useSessionStore.getState().demoMode;
+    if (demoMode.isDemoMode && demoMode.demoSessionId === sessionId) {
+      console.log('🎭 Demo mode active - skipping actual tutoring system from prompt bar');
+      return;
+    }
+
     // Add "thinking..." placeholder message with streaming flag
     const thinkingMessageId = addMessage(sessionId, {
       role: "assistant",

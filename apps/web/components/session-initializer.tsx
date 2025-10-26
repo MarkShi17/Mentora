@@ -10,30 +10,35 @@ export function SessionInitializer() {
   const sessions = useSessionStore((state) => state.sessions);
   const createSession = useSessionStore((state) => state.createSession);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
+  const setDemoMode = useSessionStore((state) => state.setDemoMode);
 
   const createDefaultLesson = async () => {
     try {
       // Create demo session for hackathon presentation
       const title = 'Mentora Demo - Hackathon Showcase';
       const sessionId = await createSession({ title });
+      
+      // Set demo mode for this session
+      setDemoMode(true, sessionId);
+      console.log('🎭 Demo mode set for session:', sessionId);
 
       // Store object IDs for creating connections
       const objectIds: Record<string, string> = {};
 
       // DEMO SESSION: Showcasing Mentora's architecture, tech stack, and capabilities
-      // Organized in 3 clusters for 2-minute hackathon presentation
+      // Organized as a horizontal tree (left to right) for 2-minute hackathon presentation
       const placeholderObjects: CanvasObject[] = [
-        // ==================== CLUSTER 1: ARCHITECTURE & TECH STACK (LEFT) ====================
+        // ==================== HORIZONTAL TREE LAYOUT (LEFT TO RIGHT) ====================
 
-        // 1. Main Title (VISIBLE - Entry point) - LARGE AND PROMINENT
+        // 1. Main Title (VISIBLE - Root node) - CENTER LEFT
         {
           id: objectIds.title = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Mentora Platform',
-          x: 50,
-          y: 50,
-          width: 800,  // Increased from 600
-          height: 200,  // Increased from 80 - much taller
+          x: 100,
+          y: 300,
+          width: 400,
+          height: 150,
           color: '#6366f1', // Indigo
           selected: false,
           zIndex: 1,
@@ -53,15 +58,15 @@ Ask me questions to explore the platform!`,
           },
         },
 
-        // 2. Architecture Overview (HIDDEN - Reveal on "what are you?")
+        // 2. Architecture Overview (HIDDEN - Reveal on "what are you?") - RIGHT OF TITLE
         {
           id: objectIds.architecture = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Architecture',
-          x: 50,
-          y: 150,
-          width: 600,
-          height: 280,
+          x: 600,
+          y: 200,
+          width: 500,
+          height: 200,
           color: '#3b82f6', // Blue
           selected: false,
           zIndex: 2,
@@ -92,15 +97,51 @@ OpenAI TTS-1 (Text-to-Speech)
 
         // ==================== CLUSTER 2: FEATURES & HOW IT WORKS (CENTER) ====================
 
-        // 4. Key Features (HIDDEN - Reveal on "what are your features?")
+        // 3. How It Works (HIDDEN - Reveal on "what are you?") - RIGHT OF ARCHITECTURE
+        {
+          id: objectIds.howItWorks = `obj-${nanoid(8)}`,
+          type: 'note',
+          label: 'How It Works',
+          x: 1200,
+          y: 200,
+          width: 500,
+          height: 200,
+          color: '#8b5cf6', // Purple
+          selected: false,
+          zIndex: 3,
+          hidden: true,  // Reveal on trigger 1
+          demoGroup: 'architecture',
+          data: {
+            content: `# **How It Works**
+
+**1. Student asks question** (voice or text)
+   ↓
+**2. AI processes with context** (conversation history + canvas state)
+   ↓
+**3. Generate visual objects** (equations, diagrams, code, graphs)
+   ↓
+**4. Speak response** (natural TTS with spatial references)
+   ↓
+**5. Continuous feedback loop** (ask follow-ups, explore deeper)
+
+**AI maintains spatial awareness** - references objects on canvas naturally!`,
+          },
+          metadata: {
+            description: 'Platform capabilities',
+          },
+        },
+
+        // ==================== CONTINUATION OF TREE (STAGE 2) ====================
+
+        // 4. Key Features (HIDDEN - Reveal on "what are your features?") - CONTINUES TREE
         {
           id: objectIds.features = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Key Features',
-          x: 700,
-          y: 50,
-          width: 650,
-          height: 450,
+          x: 1800,
+          y: 200,
+          width: 500,
+          height: 200,
           color: '#f59e0b', // Amber
           selected: false,
           zIndex: 4,
@@ -133,58 +174,22 @@ OpenAI TTS-1 (Text-to-Speech)
 - Extensible architecture for new tools`,
           },
           metadata: {
-            description: 'Platform capabilities',
+            description: 'Application scenarios',
           },
         },
 
-        // 5. How It Works (HIDDEN - Reveal on "what are you?")
-        {
-          id: objectIds.howItWorks = `obj-${nanoid(8)}`,
-          type: 'note',
-          label: 'How It Works',
-          x: 700,
-          y: 540,
-          width: 650,
-          height: 280,
-          color: '#8b5cf6', // Purple
-          selected: false,
-          zIndex: 5,
-          hidden: true,  // Reveal on trigger 1
-          demoGroup: 'architecture',
-          data: {
-            content: `# **How It Works**
-
-**1. Student asks question** (voice or text)
-   ↓
-**2. AI processes with context** (conversation history + canvas state)
-   ↓
-**3. Generate visual objects** (equations, diagrams, code, graphs)
-   ↓
-**4. Speak response** (natural TTS with spatial references)
-   ↓
-**5. Continuous feedback loop** (ask follow-ups, explore deeper)
-
-**AI maintains spatial awareness** - references objects on canvas naturally!`,
-          },
-          metadata: {
-            description: 'User flow and teaching pipeline',
-          },
-        },
-
-        // ==================== CLUSTER 3: USE CASES & DEMO (RIGHT) ====================
-
-        // 6. Use Cases (HIDDEN - Reveal on "what are your features?")
+        // 5. Use Cases (HIDDEN - Reveal on "what are your features?") - CONTINUES TREE
         {
           id: objectIds.useCases = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Use Cases',
-          x: 1400,
-          y: 50,
-          width: 550,
-          height: 400,
+          x: 2400,
+          y: 200,
+          width: 500,
+          height: 200,
           color: '#ec4899', // Pink
           selected: false,
-          zIndex: 6,
+          zIndex: 5,
           hidden: true,  // Reveal on trigger 2
           demoGroup: 'features',
           data: {
@@ -209,22 +214,22 @@ OpenAI TTS-1 (Text-to-Speech)
 **Perfect for STEM education, coding bootcamps, and self-study!**`,
           },
           metadata: {
-            description: 'Application scenarios',
+            description: 'Teaching approaches',
           },
         },
 
-        // 7. Teaching Modes (HIDDEN - Reveal on "what are your features?")
+        // 6. Teaching Modes (HIDDEN - Reveal on "what are your features?") - CONTINUES TREE
         {
           id: objectIds.teachingModes = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Teaching Modes',
-          x: 1400,
-          y: 490,
-          width: 550,
-          height: 230,
+          x: 3000,
+          y: 200,
+          width: 500,
+          height: 200,
           color: '#06b6d4', // Cyan
           selected: false,
-          zIndex: 7,
+          zIndex: 6,
           hidden: true,  // Reveal on trigger 2
           demoGroup: 'features',
           data: {
@@ -247,18 +252,18 @@ OpenAI TTS-1 (Text-to-Speech)
           },
         },
 
-        // 8. Demo Instructions (HIDDEN - Reveal on "what are your features?")
+        // 7. Try It Now! (HIDDEN - Reveal on "what are your features?") - COMPLETES TREE
         {
           id: objectIds.demo = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Try It Now!',
-          x: 1400,
-          y: 760,
-          width: 550,
-          height: 280,
+          x: 3600,
+          y: 200,
+          width: 500,
+          height: 200,
           color: '#10b981', // Green
           selected: false,
-          zIndex: 8,
+          zIndex: 7,
           hidden: true,  // Reveal on trigger 2
           demoGroup: 'features',
           data: {

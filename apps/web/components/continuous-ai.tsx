@@ -264,6 +264,13 @@ export function ContinuousAI() {
 
     console.log('✅ User message added to chat history');
 
+    // Check if we're in demo mode - if so, don't run the actual tutoring system
+    const demoMode = useSessionStore.getState().demoMode;
+    if (demoMode.isDemoMode && demoMode.demoSessionId === sessionId) {
+      console.log('🎭 Demo mode active - skipping actual tutoring system from continuous AI');
+      return;
+    }
+
     // Add "thinking..." placeholder message with streaming flag
     const thinkingMessageId = addMessage(sessionId, {
       role: "assistant",
@@ -283,6 +290,7 @@ export function ContinuousAI() {
     objectsInCurrentResponse.current = [];  // Reset for new response
 
     try {
+
       sequenceKeyRef.current = startSequence(sessionId);
       // Use streaming QA for real-time response with audio
       await streamingQA.startStreaming(sessionId, question, {
