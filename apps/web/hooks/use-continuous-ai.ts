@@ -81,6 +81,7 @@ export function useContinuousAI() {
     questions: [],
     lastActivity: Date.now()
   });
+  const lastAIMessageRef = useRef<string>(''); // Track last AI message to detect if it was a question
   const [supported, setSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -99,9 +100,30 @@ export function useContinuousAI() {
     onQuestionDetectedRef.current = callback;
   }, []);
 
+  const setLastAIMessage = useCallback((message: string) => {
+    lastAIMessageRef.current = message;
+    console.log('📝 Updated last AI message:', message.substring(0, 100));
+  }, []);
+
   const detectQuestion = useCallback((text: string): QuestionDetectionResult => {
     const utterance = text.toLowerCase().trim();
-    
+
+    // Check if AI just asked a question - if so, be very lenient with responses
+    const aiAskedQuestion = lastAIMessageRef.current.includes('?');
+
+    if (aiAskedQuestion) {
+      // AI asked a question - treat ANY reasonable utterance as a response
+      console.log('🎯 AI asked question - accepting response');
+      if (utterance.length > 5) { // Any utterance longer than 5 chars is a valid response
+        return {
+          isQuestion: true,
+          confidence: 0.9,
+          questionType: 'direct',
+          context: ['Response to AI question']
+        };
+      }
+    }
+
     // Command/request indicators - much more comprehensive
     const commandWords = [
       // Direct commands
@@ -474,18 +496,31 @@ export function useContinuousAI() {
         
         if (questionResult.isQuestion && questionResult.confidence > 0.4 && isEducational) {
           console.log('Question detected:', transcript, 'Type:', questionResult.questionType, 'Confidence:', questionResult.confidence);
-          
+
           // Prevent multiple processing of the same question
           if (transcript !== lastFinalText && !isProcessingRef.current) {
             isProcessingRef.current = true;
             lastFinalText = transcript;
-            
+
             // Clear any existing timeout
             if (silenceTimeoutRef.current) {
               clearTimeout(silenceTimeoutRef.current);
             }
-            
-            // Set a timeout to process the question after a brief silence
+
+            // Check if this is an interrupt attempt (contains "mentora" or direct addressing)
+            const lowerTranscript = transcript.toLowerCase();
+            const isInterruptAttempt = lowerTranscript.includes('mentora') ||
+                                     lowerTranscript.includes('hey mentora') ||
+                                     lowerTranscript.includes('ok mentora');
+
+            // Process immediately for interrupts, delay for normal questions
+            const delay = isInterruptAttempt ? 0 : 2000;
+
+            if (isInterruptAttempt) {
+              console.log('🚨 INTERRUPT ATTEMPT DETECTED - Processing immediately!');
+            }
+
+            // Set a timeout to process the question after a brief silence (or immediately for interrupts)
             silenceTimeoutRef.current = setTimeout(() => {
               if (onQuestionDetectedRef.current) {
                 // Clean up the question to extract just the question part
@@ -495,7 +530,7 @@ export function useContinuousAI() {
               }
               // Don't set isProcessingRef.current = false here - keep listening
               // The processing will be reset when the next utterance comes in
-            }, 2000); // 2 second delay to ensure complete utterance
+            }, delay);
           }
         }
         
@@ -682,6 +717,7 @@ export function useContinuousAI() {
     pauseListening,
     resumeListening,
     setQuestionCallback,
-    forceProcessTranscript
+    forceProcessTranscript,
+    setLastAIMessage
   };
 }

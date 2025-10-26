@@ -20,10 +20,10 @@ type DragState = {
 };
 
 export function TimelinePanel() {
-  const [isExpanded, setIsExpanded] = useState(false); // Start collapsed
   const [position, setPosition] = useState({ right: 16, top: 16 }); // 16px = 1rem (4 in Tailwind)
   const [dragState, setDragState] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
+  const hasAutoOpenedRef = useRef(false);
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const messages = useSessionStore((state) => state.messages);
@@ -35,12 +35,13 @@ export function TimelinePanel() {
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
   const stopStreamingCallback = useSessionStore((state) => state.stopStreamingCallback);
   const rerunQuestionCallback = useSessionStore((state) => state.rerunQuestionCallback);
+  const isExpanded = useSessionStore((state) => state.timelineOpen);
+  const setTimelineOpen = useSessionStore((state) => state.setTimelineOpen);
 
-  // Global ESC and Spacebar handler for stopping generation
+  // Global ESC key handler for stopping generation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Check for stop keys (ESC or Spacebar) when AI is generating
-      if (stopStreamingCallback && (event.key === 'Escape' || event.code === 'Space')) {
+      if (event.key === 'Escape' && stopStreamingCallback) {
         // Don't prevent default or stop if user is in an input field
         const target = event.target as HTMLElement;
         const isInInputField =
@@ -49,13 +50,9 @@ export function TimelinePanel() {
           target.isContentEditable;
 
         if (!isInInputField) {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            console.log('⌨️ ESC pressed - stopping generation');
-            stopStreamingCallback();
-          }
-          // Note: Spacebar handling is primarily in ContinuousAI component
-          // This is just for documentation/consistency
+          event.preventDefault();
+          console.log('⌨️ ESC pressed - stopping generation');
+          stopStreamingCallback();
         }
       }
     };
@@ -64,12 +61,12 @@ export function TimelinePanel() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [stopStreamingCallback]);
 
-  // Automatically expand the panel when the first message is added (only once)
+  // Reset auto-open tracking when switching sessions
   useEffect(() => {
     if (dialogue.length === 1 && !isExpanded) {
-      setIsExpanded(true);
+      setTimelineOpen(true);
     }
-  }, [dialogue.length]);
+  }, [dialogue.length, isExpanded]);
 
   const handleObjectClick = useCallback((objectId: string) => {
     if (!activeSessionId) return;
@@ -162,7 +159,7 @@ export function TimelinePanel() {
   if (COLLAPSE_STYLE === "icon" && !isExpanded) {
     return (
       <button
-        onClick={() => setIsExpanded(true)}
+        onClick={() => setTimelineOpen(true)}
         className="pointer-events-auto absolute z-20 rounded-2xl glass-white p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] backdrop-blur-2xl transition-all hover:shadow-[0_12px_40px_rgba(0,0,0,0.16)] hover:scale-110 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group border border-white/50"
         style={{
           right: `${position.right}px`,
@@ -183,7 +180,7 @@ export function TimelinePanel() {
   if (COLLAPSE_STYLE === "tab" && !isExpanded) {
     return (
       <button
-        onClick={() => setIsExpanded(true)}
+        onClick={() => setTimelineOpen(true)}
         className="pointer-events-auto absolute z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-slate-200 bg-white/95 px-2 py-8 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:px-3 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: 0,
@@ -204,7 +201,7 @@ export function TimelinePanel() {
   if (COLLAPSE_STYLE === "bubble" && !isExpanded) {
     return (
       <button
-        onClick={() => setIsExpanded(true)}
+        onClick={() => setTimelineOpen(true)}
         className="pointer-events-auto absolute z-20 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:scale-105 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: `${position.right}px`,
@@ -255,7 +252,7 @@ export function TimelinePanel() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setIsExpanded(false)}
+            onClick={() => setTimelineOpen(false)}
             className="h-8 w-8 rounded-xl transition-all hover:scale-110 active:scale-95 hover:bg-white/60 group text-slate-600 hover:text-slate-900"
           >
             {COLLAPSE_STYLE === "tab" ? (
@@ -360,7 +357,7 @@ export function TimelinePanel() {
                         }
                       }}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/60 hover:bg-red-50 text-slate-600 hover:text-red-600 transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-200/60 hover:border-red-200/60 shadow-sm hover:shadow-md"
-                      title="Stop generating (ESC or Spacebar)"
+                      title="Stop generating (ESC)"
                     >
                       <StopCircle className="h-3 w-3" />
                       <span>Stop</span>
@@ -377,7 +374,7 @@ export function TimelinePanel() {
                   <div className="flex items-center gap-2.5">
                     <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-lg shadow-red-500/50"></div>
                     <span className="text-xs text-red-600 font-bold">
-                      Generation stopped
+                      --interrupted--
                       {message.interruptedAt && (
                         <span className="text-red-400 ml-1.5 font-medium">
                           at {formatTime(message.interruptedAt)}

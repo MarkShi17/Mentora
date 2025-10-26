@@ -28,7 +28,14 @@ type FocusTarget = {
   x: number;
   y: number;
   id?: string;
+  smooth?: boolean;
+  duration?: number;
+  scale?: number;
+  offsetX?: number;
+  offsetY?: number;
 } | null;
+
+type FocusTargetInput = NonNullable<FocusTarget>;
 
 type Settings = {
   preferredName: string;
@@ -57,24 +64,46 @@ type MCPToolStatus = {
   error?: string;
 };
 
+type CanvasAction = {
+  type: 'add' | 'delete' | 'move' | 'resize' | 'connect' | 'disconnect';
+  timestamp: number;
+  objects?: CanvasObject[]; // State before action (for undo)
+  metadata?: any; // Additional info about the action
+};
+
+type CanvasHistory = {
+  undoStack: CanvasAction[];
+  redoStack: CanvasAction[];
+};
+
 type SessionState = {
   sessions: Session[];
   activeSessionId: string | null;
   messages: Record<string, Message[]>;
   canvasObjects: Record<string, CanvasObject[]>;
   connections: Record<string, ObjectConnection[]>;
+  canvasHistory: Record<string, CanvasHistory>;
   sources: Record<string, SourceLink[]>;
   timeline: Record<string, TimelineEvent[]>;
   transcripts: Record<string, string>;
   pins: Record<string, Pin[]>;
   voiceActive: boolean;
   sourcesDrawerOpen: boolean;
+  sidebarOpen: boolean;
+  timelineOpen: boolean;
   captionsEnabled: boolean;
+  sessionsWithFirstInput: Record<string, boolean>;
   canvasMode: "pan" | "lasso" | "pin";
   canvasViews: Record<string, CanvasView>;
   selectionMethods: Record<string, "click" | "lasso">;
   lastSelectedObjectIds: Record<string, string | null>;
   focusTarget: FocusTarget;
+  layoutOffsets: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
   settings: Settings;
   voiceInputState: VoiceInputState;
   stopStreamingCallback: (() => void) | null;
@@ -102,13 +131,17 @@ type SessionState = {
   setVoiceActive: (value: boolean) => void;
   appendTimelineEvent: (sessionId: string, event: Omit<TimelineEvent, "id" | "timestamp">) => void;
   setSourcesDrawerOpen: (open: boolean) => void;
+  setSidebarOpen: (open: boolean) => void;
+  setTimelineOpen: (open: boolean) => void;
   setCaptionsEnabled: (enabled: boolean) => void;
+  markSessionAsHavingFirstInput: (sessionId: string) => void;
   setCanvasMode: (mode: "pan" | "lasso" | "pin") => void;
   addPin: (sessionId: string, payload: { x: number; y: number; label?: string }) => Pin | null;
   removePin: (sessionId: string, pinId: string) => void;
   setCanvasView: (sessionId: string, view: CanvasView) => void;
-  requestFocus: (target: { x: number; y: number; id?: string }) => void;
+  requestFocus: (target: FocusTargetInput) => void;
   clearFocus: () => void;
+  setLayoutOffset: (side: 'left' | 'right' | 'top' | 'bottom', value: number) => void;
   updateSettings: (settings: Partial<Settings>) => void;
   setLiveTutorOn: (on: boolean) => void;
   setSpacebarTranscript: (transcript: string) => void;
@@ -123,6 +156,12 @@ type SessionState = {
   addMCPToolStatus: (sessionId: string, tool: MCPToolStatus) => void;
   updateMCPToolStatus: (sessionId: string, toolName: string, updates: Partial<MCPToolStatus>) => void;
   clearMCPToolStatus: (sessionId: string) => void;
+  // Undo/Redo actions
+  pushCanvasAction: (sessionId: string, action: Omit<CanvasAction, 'timestamp'>) => void;
+  undoCanvasAction: (sessionId: string) => void;
+  redoCanvasAction: (sessionId: string) => void;
+  canUndo: (sessionId: string) => boolean;
+  canRedo: (sessionId: string) => boolean;
 };
 
 const withImmer = immer<SessionState>;
@@ -136,18 +175,28 @@ export const useSessionStore = create<SessionState>()(
       messages: {},
       canvasObjects: {},
       connections: {},
+      canvasHistory: {},
       sources: {},
       timeline: {},
       transcripts: {},
       pins: {},
       voiceActive: false,
       sourcesDrawerOpen: false,
+      sidebarOpen: true,
+      timelineOpen: false,
       captionsEnabled: true,
+      sessionsWithFirstInput: {},
       canvasMode: "pan",
       canvasViews: {},
       selectionMethods: {},
       lastSelectedObjectIds: {},
       focusTarget: null,
+      layoutOffsets: {
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+      },
       settings: {
         preferredName: "",
         voice: "alloy",
@@ -337,11 +386,25 @@ export const useSessionStore = create<SessionState>()(
       });
     },
     updateCanvasObjects: (sessionId, objects) => {
+      // Save state before update for undo
+      const state = get();
+      const currentObjects = [...(state.canvasObjects[sessionId] || [])];
+
       set((state) => {
         state.canvasObjects[sessionId] = objects;
       });
+
+      // Push to undo stack (this handles move/resize operations)
+      get().pushCanvasAction(sessionId, {
+        type: 'move', // Generic type for any object update
+        objects: currentObjects,
+      });
     },
     deleteCanvasObjects: (sessionId, objectIds) => {
+      // Save state before deletion for undo
+      const state = get();
+      const currentObjects = [...(state.canvasObjects[sessionId] || [])];
+
       set((state) => {
         const list = state.canvasObjects[sessionId];
         if (!list) {
@@ -350,17 +413,17 @@ export const useSessionStore = create<SessionState>()(
         // Filter out objects with IDs in the objectIds array
         state.canvasObjects[sessionId] = list.filter((obj) => !objectIds.includes(obj.id));
 
-        // Delete all connections involving deleted objects
-        const connectionsList = state.connections[sessionId];
-        if (connectionsList) {
-          state.connections[sessionId] = connectionsList.filter(
-            (conn) => !objectIds.includes(conn.sourceObjectId) && !objectIds.includes(conn.targetObjectId)
-          );
-        }
 
         // Clear selection method and last selected object
         delete state.selectionMethods[sessionId];
         state.lastSelectedObjectIds[sessionId] = null;
+      });
+
+      // Push to undo stack
+      get().pushCanvasAction(sessionId, {
+        type: 'delete',
+        objects: currentObjects,
+        metadata: { deletedIds: objectIds }
       });
     },
     toggleObjectSelection: (sessionId, objectId, keepOthers = false) => {
@@ -432,9 +495,24 @@ export const useSessionStore = create<SessionState>()(
         state.sourcesDrawerOpen = open;
       });
     },
+    setSidebarOpen: (open) => {
+      set((state) => {
+        state.sidebarOpen = open;
+      });
+    },
+    setTimelineOpen: (open) => {
+      set((state) => {
+        state.timelineOpen = open;
+      });
+    },
     setCaptionsEnabled: (enabled) => {
       set((state) => {
         state.captionsEnabled = enabled;
+      });
+    },
+    markSessionAsHavingFirstInput: (sessionId) => {
+      set((state) => {
+        state.sessionsWithFirstInput[sessionId] = true;
       });
     },
     setCanvasMode: (mode) => {
@@ -513,6 +591,11 @@ export const useSessionStore = create<SessionState>()(
     clearFocus: () => {
       set((state) => {
         state.focusTarget = null;
+      });
+    },
+    setLayoutOffset: (side, value) => {
+      set((state) => {
+        state.layoutOffsets[side] = Math.max(0, value);
       });
     },
     updateSettings: (settings) => {
@@ -618,6 +701,105 @@ export const useSessionStore = create<SessionState>()(
       set((state) => {
         state.mcpToolStatus[sessionId] = [];
       });
+    },
+
+    // Undo/Redo implementation
+    pushCanvasAction: (sessionId, action) => {
+      set((state) => {
+        if (!state.canvasHistory[sessionId]) {
+          state.canvasHistory[sessionId] = { undoStack: [], redoStack: [] };
+        }
+
+        const history = state.canvasHistory[sessionId];
+        const MAX_HISTORY = 50; // Limit history size
+
+        // Add action with timestamp
+        history.undoStack.push({ ...action, timestamp: Date.now() });
+
+        // Trim history if too large
+        if (history.undoStack.length > MAX_HISTORY) {
+          history.undoStack.shift();
+        }
+
+        // Clear redo stack when new action is performed
+        history.redoStack = [];
+      });
+    },
+
+    undoCanvasAction: (sessionId) => {
+      const state = get();
+      const history = state.canvasHistory[sessionId];
+
+      if (!history || history.undoStack.length === 0) {
+        return;
+      }
+
+      set((draft) => {
+        const currentHistory = draft.canvasHistory[sessionId];
+        if (!currentHistory) return;
+
+        const action = currentHistory.undoStack.pop();
+        if (!action) return;
+
+        // Save current state to redo stack before undoing
+        const currentObjects = [...(draft.canvasObjects[sessionId] || [])];
+
+        currentHistory.redoStack.push({
+          ...action,
+          objects: currentObjects,
+        });
+
+        // Restore previous state
+        if (action.objects) {
+          draft.canvasObjects[sessionId] = action.objects;
+        }
+
+        console.log('↩️ Undo action:', action.type);
+      });
+    },
+
+    redoCanvasAction: (sessionId) => {
+      const state = get();
+      const history = state.canvasHistory[sessionId];
+
+      if (!history || history.redoStack.length === 0) {
+        return;
+      }
+
+      set((draft) => {
+        const currentHistory = draft.canvasHistory[sessionId];
+        if (!currentHistory) return;
+
+        const action = currentHistory.redoStack.pop();
+        if (!action) return;
+
+        // Save current state to undo stack before redoing
+        const currentObjects = [...(draft.canvasObjects[sessionId] || [])];
+
+        currentHistory.undoStack.push({
+          ...action,
+          objects: currentObjects,
+        });
+
+        // Restore redo state
+        if (action.objects) {
+          draft.canvasObjects[sessionId] = action.objects;
+        }
+
+        console.log('↪️ Redo action:', action.type);
+      });
+    },
+
+    canUndo: (sessionId) => {
+      const state = get();
+      const history = state.canvasHistory[sessionId];
+      return !!(history && history.undoStack.length > 0);
+    },
+
+    canRedo: (sessionId) => {
+      const state = get();
+      const history = state.canvasHistory[sessionId];
+      return !!(history && history.redoStack.length > 0);
     }
     };
   })

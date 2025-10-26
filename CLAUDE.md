@@ -2,7 +2,18 @@
 
 **Maintained by**: Claude (AI Assistant)
 **Purpose**: Track all major changes, architectural decisions, and system updates
-**Last Updated**: 2025-10-25
+**Last Updated**: 2025-10-26
+
+---
+
+## Important Notes
+
+### Claude Sonnet 4.5 Model
+**Model ID**: `claude-sonnet-4-5-20250929`
+- This is a VALID model that exists and should be used
+- It's a newer, more powerful version of Claude Sonnet
+- If API errors occur claiming the model doesn't exist, this is likely a temporary issue or the API client needs updating
+- DO NOT change this model name - it is correct as specified
 
 ---
 

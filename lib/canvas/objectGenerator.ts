@@ -78,23 +78,17 @@ export class ObjectGenerator {
     turnId: string,
     referenceName?: string
   ): CodeObject {
-    // Calculate generous dimensions to show all code without scrolling
+    // Calculate better dimensions based on code length
     const lines = code.split('\n').length;
     const maxLineLength = Math.max(...code.split('\n').map(line => line.length));
-
+    
     let width, height;
     if (code.length > 1000) {
-      // Very long code - make it very wide and tall
-      width = Math.max(maxLineLength * 9, 900);
-      height = Math.max(lines * 22 + 80, 500);
-    } else if (code.length > 500) {
-      // Long code
-      width = Math.max(maxLineLength * 9, 750);
-      height = Math.max(lines * 20 + 70, 350);
-    } else {
-      // Medium/short code
-      width = Math.max(maxLineLength * 8, 600);
+      width = Math.min(Math.max(maxLineLength * 8, 500), 800);
       height = Math.max(lines * 20 + 60, 200);
+    } else {
+      width = Math.min(Math.max(maxLineLength * 8, 400), 600);
+      height = Math.max(lines * 18 + 50, 150);
     }
 
     return {
@@ -193,7 +187,7 @@ export class ObjectGenerator {
       id: generateObjectId(),
       type: 'diagram',
       position,
-      size: { width: 600, height: 450 }, // Large size for detailed diagrams
+      size: { width: 600, height: 450 }, // Larger default size for better visibility
       zIndex: 1,
       label: referenceName || 'Diagram',
       data: {

@@ -394,12 +394,6 @@ export class StreamingOrchestrator {
         hasFinalResponse: !!finalResponseText
       });
 
-      // DEBUG: Log the raw response text to see what Claude returned
-      logger.info('📄 Raw Claude response (first 500 chars):', {
-        responseLength: finalResponseText.length,
-        responsePreview: finalResponseText.substring(0, 500)
-      });
-
       // Now stream the final response with TTS
       const sentenceParser = new SentenceParser();
       let totalObjects = toolGeneratedObjects.length; // Start with MCP objects
@@ -407,15 +401,6 @@ export class StreamingOrchestrator {
 
       // Parse the final response to get narration and additional objects
       const agentResponse = this.parseResponse(finalResponseText);
-
-      // DEBUG: Log parsed response details
-      logger.info('🔍 Parsed response details:', {
-        hasNarration: !!agentResponse.narration,
-        narrationLength: agentResponse.narration?.length || 0,
-        objectsCount: agentResponse.objects?.length || 0,
-        objectTypes: agentResponse.objects?.map(obj => obj.type) || [],
-        referencesCount: agentResponse.references?.length || 0
-      });
 
       // Separate objects into priority (latex, graph) and regular for early rendering
       const priorityObjects = agentResponse.objects.filter(obj =>
@@ -646,35 +631,37 @@ export class StreamingOrchestrator {
       logger.info('Total objects:', totalObjects);
       logger.info('Total references:', totalReferences);
     } catch (error) {
-      // Check if this was an abort/cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
-        logger.info('Stream cancelled by client', { turnId });
-        yield {
-          type: 'interrupted',
-          timestamp: Date.now(),
-          data: {
-            message: 'Response generation was stopped',
-            code: 'USER_CANCELLED'
-          }
-        };
-      } else {
-        // Log the full error details
-        console.error('❌ STREAMING ERROR DETAILS:', {
-          message: error instanceof Error ? error.message : String(error),
-          name: error instanceof Error ? error.name : 'Unknown',
-          stack: error instanceof Error ? error.stack : undefined,
-          fullError: error
-        });
-        logger.error('Streaming error:', error);
-        yield {
-          type: 'error',
-          timestamp: Date.now(),
-          data: {
-            message: error instanceof Error ? error.message : 'Unknown error occurred'
-          }
-        };
+  let event;
+
+  if (error instanceof Error && error.name === 'AbortError') {
+    logger.info('Stream cancelled by client', { turnId });
+    event = {
+      type: 'interrupted',
+      timestamp: Date.now(),
+      data: {
+        message: 'Response generation was stopped',
+        code: 'USER_CANCELLED'
       }
-    } finally {
+    };
+  } else {
+    // Log the full error details
+    console.error('❌ STREAMING ERROR DETAILS:', {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : 'Unknown',
+      stack: error instanceof Error ? error.stack : undefined,
+      fullError: error
+    });
+    logger.error('Streaming error:', error);
+    event = {
+      type: 'error',
+      timestamp: Date.now(),
+      data: {
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      }
+    };
+  }
+}
+finally {
       // Clean up abort controller
       this.abortControllers.delete(turnId);
       logger.debug('Cleaned up abort controller for turn', { turnId });
@@ -896,7 +883,7 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
 
     // Extract objects
     const objects = [];
-    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/);
     for (const match of objectMatches) {
       const [_, type, id, content, meta] = match;
       if (type && content) {

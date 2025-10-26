@@ -81,7 +81,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           question: body.question,
           mode: body.mode || 'guided',
           highlightedObjects: body.highlightedObjects?.length || 0,
-          hasContext: !!body.context
+          hasContext: !!body.context,
+          images: body.images?.length || 0
         });
 
         // Get session
@@ -245,7 +246,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           body.context,
           { userName, explanationLevel }, // Pass user settings
           cachedIntroPlayed, // Pass cached intro info
-          brainResult.selectedBrain // Pass selected brain for MCP tool filtering
+          brainResult.selectedBrain, // Pass selected brain for MCP tool filtering
+          body.images // Pass image attachments for vision analysis
         );
 
         for await (const event of responseStream) {

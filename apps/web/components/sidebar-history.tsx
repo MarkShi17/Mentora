@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Settings, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
@@ -8,17 +8,18 @@ import { cn } from "@/lib/cn";
 import { SettingsDialog } from "@/components/settings-dialog";
 
 export function SidebarHistory() {
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const isCollapsed = useSessionStore((state) => !state.sidebarOpen);
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
   const createSession = useSessionStore((state) => state.createSession);
   const updateSessionTitle = useSessionStore((state) => state.updateSessionTitle);
   const deleteSession = useSessionStore((state) => state.deleteSession);
+  const setSidebarOpen = useSessionStore((state) => state.setSidebarOpen);
 
   const handleCreateSession = async () => {
     const now = new Date();
@@ -71,7 +72,7 @@ export function SidebarHistory() {
     <div className="absolute left-0 top-0 z-30 h-full pointer-events-none">
       {/* Toggle button */}
       <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
+        onClick={() => setSidebarOpen(isCollapsed)}
         className={cn(
           "pointer-events-auto absolute left-0 top-6 z-40 flex h-10 w-10 items-center justify-center rounded-r-2xl border border-l-0 border-white/50 glass-white text-slate-700 shadow-[0_8px_24px_rgba(0,0,0,0.12)] transition-all duration-300 hover:shadow-[0_12px_32px_rgba(0,0,0,0.16)] hover:text-slate-900 hover:scale-105 active:scale-95",
           isCollapsed ? "translate-x-0" : "translate-x-80"

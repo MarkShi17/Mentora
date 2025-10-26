@@ -134,3 +134,14 @@ export interface CanvasSnapshot {
   objects: CanvasObject[];
   viewport: Viewport;
 }
+
+export type ConnectionAnchor = 'north' | 'east' | 'south' | 'west';
+
+export interface ObjectConnection {
+  id: string;
+  sourceObjectId: string;
+  targetObjectId: string;
+  sourceAnchor: ConnectionAnchor;
+  targetAnchor: ConnectionAnchor;
+  createdAt: string;
+}

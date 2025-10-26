@@ -1,8 +1,10 @@
 'use client';
 
 import type { CSSProperties } from "react";
-import { CanvasObject } from "@/types";
+import { useEffect, useRef } from "react";
+import { CanvasObject, ConnectionAnchor } from "@/types";
 import { cn } from "@/lib/cn";
+import { getHoveredAnchor } from "@/lib/connection-utils";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -197,11 +199,14 @@ function renderObjectContent(object: CanvasObject) {
 type ObjectLayerProps = {
   objects: CanvasObject[];
   transform: { x: number; y: number; k: number };
-  onSelect: (id: string, event: React.MouseEvent) => void;
   onDragStart?: (id: string, event: React.PointerEvent) => void;
   onDragMove?: (id: string, event: React.PointerEvent) => void;
   onDragEnd?: (id: string, event: React.PointerEvent) => void;
   onContextMenu?: (id: string, event: React.MouseEvent) => void;
+  onDimensionsMeasured?: (id: string, width: number, height: number) => void;
+  onConnectionStart?: (id: string, anchor: ConnectionAnchor, event: React.PointerEvent) => void;
+  onAnchorHover?: (id: string, anchor: ConnectionAnchor | null) => void;
+  hoveredAnchor?: { objectId: string; anchor: ConnectionAnchor } | null;
   isDragging?: boolean;
   dragState?: {
     objectId: string;
@@ -212,17 +217,237 @@ type ObjectLayerProps = {
     currentDelta: { x: number; y: number };
     wasSelectedAtStart: boolean;
   } | null;
-  resizeState?: {
-    objectId: string;
-    corner: string;
-    startWorld: { x: number; y: number };
-    startDimensions: { x: number; y: number; width: number; height: number };
-    currentDimensions: { x: number; y: number; width: number; height: number };
-    textScale?: number;
-  } | null;
 };
 
-export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragMove, onDragEnd, onContextMenu, isDragging, dragState, resizeState }: ObjectLayerProps) {
+// Component for individual canvas object with dimension measurement
+function CanvasObjectItem({
+  object,
+  transform,
+  isDragging,
+  dragState,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onContextMenu,
+  onDimensionsMeasured,
+  onConnectionStart,
+  onAnchorHover,
+  hoveredAnchor
+}: {
+  object: CanvasObject;
+  transform: { x: number; y: number; k: number };
+  isDragging?: boolean;
+  dragState?: ObjectLayerProps['dragState'];
+  onDragStart?: (id: string, event: React.PointerEvent) => void;
+  onDragMove?: (id: string, event: React.PointerEvent) => void;
+  onDragEnd?: (id: string, event: React.PointerEvent) => void;
+  onContextMenu?: (id: string, event: React.MouseEvent) => void;
+  onDimensionsMeasured?: (id: string, width: number, height: number) => void;
+  onConnectionStart?: (id: string, anchor: ConnectionAnchor, event: React.PointerEvent) => void;
+  onAnchorHover?: (id: string, anchor: ConnectionAnchor | null) => void;
+  hoveredAnchor?: { objectId: string; anchor: ConnectionAnchor } | null;
+}) {
+  const objectRef = useRef<HTMLDivElement>(null);
+
+  // Measure actual DOM dimensions and report back
+  useEffect(() => {
+    if (!objectRef.current || !onDimensionsMeasured) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        // Only update if dimensions actually changed and are valid
+        if (width > 0 && height > 0 && (width !== object.width || height !== object.height)) {
+          onDimensionsMeasured(object.id, width, height);
+        }
+      }
+    });
+
+    resizeObserver.observe(objectRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [object.id, object.width, object.height, onDimensionsMeasured]);
+
+  // Check if this object is part of the group being dragged
+  const isBeingDragged = dragState?.selectedObjectIds?.includes(object.id) ?? false;
+  const dragTransform = isBeingDragged && dragState
+    ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
+    : undefined;
+
+  const dimensions = {
+    x: object.x,
+    y: object.y,
+    width: object.width,
+    height: object.height
+  };
+
+  // Use auto sizing if dimensions not yet measured, otherwise use measured/resized dimensions
+  const objectWidth = typeof dimensions.width === 'number' && dimensions.width > 0 ? dimensions.width : 'auto';
+  const objectHeight = typeof dimensions.height === 'number' && dimensions.height > 0 ? dimensions.height : 'auto';
+
+  return (
+    <div
+      ref={objectRef}
+      key={object.id}
+      data-canvas-object="true"
+      data-object-id={object.id}
+      className={cn(
+        "pointer-events-auto absolute transition-shadow duration-200",
+        isDragging ? "cursor-grabbing" : "cursor-grab",
+        object.selected ? "shadow-xl" : ""
+      )}
+      style={{
+        left: dimensions.x,
+        top: dimensions.y,
+        width: objectWidth,
+        height: objectHeight,
+        zIndex: object.zIndex || 0,
+        transform: dragTransform,
+        transition: 'box-shadow 0.2s ease'
+      }}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (onDragStart) {
+          onDragStart(object.id, event);
+        }
+      }}
+      onPointerMove={(event) => {
+        // Only call drag move if we're actually dragging
+        if (isDragging && onDragMove) {
+          event.stopPropagation();
+          event.preventDefault();
+          onDragMove(object.id, event);
+        }
+      }}
+      onPointerUp={(event) => {
+        event.stopPropagation();
+        if (onDragEnd) {
+          onDragEnd(object.id, event);
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (onContextMenu) {
+          onContextMenu(object.id, event);
+        }
+      }}
+    >
+      <div
+        className="flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl border border-slate-200 relative"
+      >
+        <div className="px-4 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-600 font-medium">
+              {object.type}
+            </p>
+            <h3 className="mt-1 text-base font-semibold text-slate-900">
+              {object.label}
+            </h3>
+          </div>
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
+        </div>
+        <div className="px-4 pb-4">
+          {object.generationState === 'generating' || object.placeholder ? (
+            <ObjectLoadingState type={object.type} />
+          ) : (
+            renderObjectContent(object)
+          )}
+        </div>
+        {object.metadata?.description ? (
+          <div className="px-4 pb-4 pt-2 border-t border-slate-200">
+            <p className="text-sm text-slate-600">
+              {String(object.metadata.description)}
+            </p>
+          </div>
+        ) : null}
+        
+        {/* Connection anchors - positioned at the outer border of the component */}
+        {onConnectionStart && (
+          <>
+            {/* North anchor - at the top border */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              style={{
+                left: '50%',
+                top: '0px'
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onConnectionStart(object.id, 'north', e);
+              }}
+              onPointerEnter={() => onAnchorHover?.(object.id, 'north')}
+              onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+            
+            {/* East anchor - at the right border */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              style={{
+                left: '100%',
+                top: '50%'
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onConnectionStart(object.id, 'east', e);
+              }}
+              onPointerEnter={() => onAnchorHover?.(object.id, 'east')}
+              onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+            
+            {/* South anchor - at the bottom border */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              style={{
+                left: '50%',
+                top: '100%'
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onConnectionStart(object.id, 'south', e);
+              }}
+              onPointerEnter={() => onAnchorHover?.(object.id, 'south')}
+              onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+            
+            {/* West anchor - at the left border */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              style={{
+                left: '0px',
+                top: '50%'
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onConnectionStart(object.id, 'west', e);
+              }}
+              onPointerEnter={() => onAnchorHover?.(object.id, 'west')}
+              onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function ObjectLayer({
+  objects,
+  transform,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+  onContextMenu,
+  onDimensionsMeasured,
+  onConnectionStart,
+  onAnchorHover,
+  hoveredAnchor,
+  isDragging,
+  dragState
+}: ObjectLayerProps) {
   const stageStyle: CSSProperties = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
     transformOrigin: "0 0"
@@ -237,104 +462,23 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
         className="relative h-full w-full"
         style={stageStyle}
       >
-        {sortedObjects.map((object) => {
-          // Check if this object is part of the group being dragged
-          const isBeingDragged = dragState?.selectedObjectIds?.includes(object.id) ?? false;
-          const dragTransform = isBeingDragged && dragState
-            ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
-            : undefined;
-
-          // Objects now auto-fit their content with no manual resizing
-          const objectX = object.x;
-          const objectY = object.y;
-
-          // All objects use auto dimensions to fit content snugly
-          const objectWidth = 'auto';
-          const objectHeight = 'auto';
-
-          return (
-          <div
+        {sortedObjects.map((object) => (
+          <CanvasObjectItem
             key={object.id}
-            data-canvas-object="true"
-            className={cn(
-              "pointer-events-auto absolute rounded-lg shadow-lg transition-colors",
-              isDragging ? "cursor-grabbing" : "cursor-grab"
-            )}
-            style={{
-              left: objectX,
-              top: objectY,
-              width: objectWidth,
-              height: objectHeight,
-              background: `${object.color}20`,
-              zIndex: object.zIndex || 0,
-              transform: dragTransform
-            }}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              event.preventDefault();
-              if (onDragStart) {
-                onDragStart(object.id, event);
-              }
-            }}
-            onPointerMove={(event) => {
-              // Only call drag move if we're actually dragging
-              if (isDragging && onDragMove) {
-                event.stopPropagation();
-                event.preventDefault();
-                onDragMove(object.id, event);
-              }
-            }}
-            onPointerUp={(event) => {
-              event.stopPropagation();
-              event.preventDefault();
-              if (onDragEnd) {
-                onDragEnd(object.id, event);
-              }
-            }}
-            onClick={(event) => {
-              event.stopPropagation();
-            }}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (onContextMenu) {
-                onContextMenu(object.id, event);
-              }
-            }}
-          >
-            <div className={cn(
-              "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl transition-colors",
-              object.selected ? "border-2 border-sky-400" : "border border-slate-200"
-            )}>
-              <div className="px-4 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-600 font-medium">
-                    {object.type}
-                  </p>
-                  <h3 className="mt-1 text-base font-semibold text-slate-900">
-                    {object.label}
-                  </h3>
-                </div>
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
-              </div>
-              <div className="px-4 pb-4">
-                {object.generationState === 'generating' || object.placeholder ? (
-                  <ObjectLoadingState type={object.type} />
-                ) : (
-                  renderObjectContent(object)
-                )}
-              </div>
-              {object.metadata?.description ? (
-                <div className="px-4 pb-4 pt-2 border-t border-slate-200">
-                  <p className="text-sm text-slate-600">
-                    {String(object.metadata.description)}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          </div>
-          );
-        })}
+            object={object}
+            transform={transform}
+            isDragging={isDragging}
+            dragState={dragState}
+            onDragStart={onDragStart}
+            onDragMove={onDragMove}
+            onDragEnd={onDragEnd}
+            onContextMenu={onContextMenu}
+            onDimensionsMeasured={onDimensionsMeasured}
+            onConnectionStart={onConnectionStart}
+            onAnchorHover={onAnchorHover}
+            hoveredAnchor={hoveredAnchor}
+          />
+        ))}
       </div>
     </div>
   );
