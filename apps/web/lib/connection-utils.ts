@@ -2,6 +2,7 @@ import type { CanvasObject, ConnectionAnchor } from "@/types";
 
 /**
  * Calculate the world position of an anchor point on an object
+ * Uses the object's stored dimensions for consistency
  */
 export function getAnchorPosition(
   object: CanvasObject,
@@ -18,6 +19,41 @@ export function getAnchorPosition(
       return { x: x + width / 2, y: y + height };
     case 'west':
       return { x, y: y + height / 2 };
+  }
+}
+
+/**
+ * Calculate the world position of an anchor point using actual DOM element
+ * This is more accurate as it uses the real rendered dimensions
+ */
+export function getAnchorPositionFromDOM(
+  element: HTMLElement,
+  anchor: ConnectionAnchor,
+  transform: { x: number; y: number; k: number }
+): { x: number; y: number } {
+  const rect = element.getBoundingClientRect();
+  const canvasRect = element.closest('[data-canvas-container]')?.getBoundingClientRect();
+  
+  if (!canvasRect) {
+    // Fallback to stored dimensions if no canvas container found
+    return { x: 0, y: 0 };
+  }
+
+  // Convert screen coordinates to world coordinates
+  const worldX = (rect.left - canvasRect.left - transform.x) / transform.k;
+  const worldY = (rect.top - canvasRect.top - transform.y) / transform.k;
+  const worldWidth = rect.width / transform.k;
+  const worldHeight = rect.height / transform.k;
+
+  switch (anchor) {
+    case 'north':
+      return { x: worldX + worldWidth / 2, y: worldY };
+    case 'east':
+      return { x: worldX + worldWidth, y: worldY + worldHeight / 2 };
+    case 'south':
+      return { x: worldX + worldWidth / 2, y: worldY + worldHeight };
+    case 'west':
+      return { x: worldX, y: worldY + worldHeight / 2 };
   }
 }
 
@@ -120,9 +156,9 @@ export function getHoveredAnchor(
     const dy = worldPos.y - anchorPos.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance <= anchorRadius) {
-      return anchor;
-    }
+          if (distance <= anchorRadius) {
+            return anchor;
+          }
   }
 
   return null;

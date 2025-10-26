@@ -4,11 +4,11 @@ import { useRef } from 'react';
 import { Paperclip } from 'lucide-react';
 
 type ImageUploadButtonProps = {
-  onImageSelect: (file: File) => void;
+  onFileSelect: (file: File) => void;
   disabled?: boolean;
 };
 
-export function ImageUploadButton({ onImageSelect, disabled }: ImageUploadButtonProps) {
+export function ImageUploadButton({ onFileSelect, disabled }: ImageUploadButtonProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = () => {
@@ -18,7 +18,16 @@ export function ImageUploadButton({ onImageSelect, disabled }: ImageUploadButton
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      onImageSelect(file);
+      // Validate file type
+      const validImageTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+      const validVideoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      
+      if (validImageTypes.includes(file.type) || validVideoTypes.includes(file.type)) {
+        onFileSelect(file);
+      } else {
+        alert('Please select an image or video file.');
+      }
+      
       // Reset input so same file can be selected again
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -31,7 +40,7 @@ export function ImageUploadButton({ onImageSelect, disabled }: ImageUploadButton
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+        accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,video/mp4,video/webm,video/ogg,video/quicktime"
         onChange={handleFileChange}
         className="hidden"
         disabled={disabled}
@@ -40,7 +49,7 @@ export function ImageUploadButton({ onImageSelect, disabled }: ImageUploadButton
         onClick={handleClick}
         disabled={disabled}
         className="flex items-center justify-center w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        title="Upload image"
+        title="Upload image or video"
         type="button"
       >
         <Paperclip className="w-5 h-5 text-slate-600" />

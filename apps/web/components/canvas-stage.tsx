@@ -9,10 +9,11 @@ import { ConnectionLayer } from "@/components/connection-layer";
 // ObjectContextMenu removed
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
-import type { CanvasObject, Pin, ConnectionAnchor } from "@/types";
+import type { CanvasObject, Pin } from "@/types";
+import type { ConnectionAnchor } from "@/types";
 import { getHoveredAnchor, getAnchorPosition } from "@/lib/connection-utils";
 import { useClipboardPaste } from "@/hooks/use-clipboard-paste";
-import { processImageFile } from "@/lib/image-upload";
+import { processImageFile, processVideoFile } from "@/lib/image-upload";
 
 const GRID_SIZE = 40;
 const MIN_SCALE = 0.25;
@@ -51,8 +52,19 @@ type DragState = {
 type ConnectionDragState = {
   sourceObjectId: string;
   sourceAnchor: ConnectionAnchor;
-  sourcePosition: { x: number; y: number }; // Fixed source position
   currentWorld: { x: number; y: number }; // Current mouse position
+};
+
+type ResizeDirection = 'nw' | 'ne' | 'sw' | 'se';
+
+type ResizeState = {
+  objectId: string;
+  direction: ResizeDirection;
+  startWorld: { x: number; y: number };
+  startScreen: { x: number; y: number };
+  startSize: { width: number; height: number };
+  startPosition: { x: number; y: number };
+  currentDelta: { x: number; y: number };
 };
 
 
@@ -97,6 +109,7 @@ const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
 const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
 const updateCanvasObjects = useSessionStore((state) => state.updateCanvasObjects);
 const deleteCanvasObjects = useSessionStore((state) => state.deleteCanvasObjects);
+const setSelectedObjects = useSessionStore((state) => state.setSelectedObjects);
 const bringToFront = useSessionStore((state) => state.bringToFront);
 const stageSize = useSessionStore((state) =>
   state.activeSessionId ? state.canvasViews[state.activeSessionId]?.stageSize : null
@@ -107,6 +120,7 @@ const connections = useSessionStore((state) =>
 const createConnection = useSessionStore((state) => state.createConnection);
 const deleteConnection = useSessionStore((state) => state.deleteConnection);
 const deleteConnectionsByObjectId = useSessionStore((state) => state.deleteConnectionsByObjectId);
+const getConnectionsByAnchor = useSessionStore((state) => state.getConnectionsByAnchor);
 
   const canvasModeRef = useRef(canvasMode);
   useEffect(() => {
@@ -145,11 +159,19 @@ const initialPinCenteredRef = useRef<string | null>(null);
   // Hovered anchor state
   const [hoveredAnchor, setHoveredAnchor] = useState<{ objectId: string; anchor: ConnectionAnchor } | null>(null);
 
+  // Resize state
+  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
+  const resizeStateRef = useRef<ResizeState | null>(null);
+  useEffect(() => {
+    resizeStateRef.current = resizeState;
+  }, [resizeState]);
+
   // Cleanup connection state when session changes or component unmounts
   useEffect(() => {
     return () => {
       setConnectionDragState(null);
       setHoveredAnchor(null);
+      setResizeState(null);
     };
   }, [activeSessionId]);
 
@@ -217,6 +239,100 @@ const initialPinCenteredRef = useRef<string | null>(null);
     } catch (error) {
       console.error('Failed to paste image:', error);
       alert(error instanceof Error ? error.message : 'Failed to paste image');
+    }
+  }, [activeSessionId, updateCanvasObject]);
+
+  // Handle file upload for images and videos
+  const handleFileUpload = useCallback(async (file: File) => {
+    if (!activeSessionId) return;
+
+    try {
+      console.log('📁 Processing uploaded file for canvas:', file.type);
+      
+      // Get viewport center in world coordinates
+      const container = containerRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      // Convert screen coordinates to world coordinates
+      const currentTransform = transformRef.current;
+      const worldX = (centerX - currentTransform.x) / currentTransform.k;
+      const worldY = (centerY - currentTransform.y) / currentTransform.k;
+
+      // Check if it's an image or video
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+
+      if (isImage) {
+        const imageData = await processImageFile(file);
+        
+        // Create canvas object for the uploaded image
+        const imageObject: CanvasObject = {
+          id: crypto.randomUUID(),
+          type: 'image',
+          label: file.name || 'Uploaded Image',
+          x: worldX - 150, // Center the 300px wide image
+          y: worldY - 150, // Center the 300px tall image
+          width: 300,
+          height: 300,
+          color: '#6b7280',
+          selected: false,
+          zIndex: 1,
+          data: {
+            content: imageData.base64 // Store base64 data URL
+          },
+          metadata: {
+            mimeType: imageData.mimeType,
+            size: imageData.size,
+            originalWidth: imageData.width,
+            originalHeight: imageData.height
+          }
+        };
+
+        // Add to canvas
+        updateCanvasObject(activeSessionId, imageObject);
+        console.log('✅ Uploaded image added to canvas at viewport center');
+
+      } else if (isVideo) {
+        const videoData = await processVideoFile(file);
+        
+        // Create canvas object for the uploaded video
+        const videoObject: CanvasObject = {
+          id: crypto.randomUUID(),
+          type: 'video',
+          label: file.name || 'Uploaded Video',
+          x: worldX - 150, // Center the 300px wide video
+          y: worldY - 150, // Center the 300px tall video
+          width: 300,
+          height: 300,
+          color: '#6b7280',
+          selected: false,
+          zIndex: 1,
+          data: {
+            type: 'video',
+            url: videoData.url,
+            alt: file.name || 'Uploaded video'
+          },
+          metadata: {
+            mimeType: videoData.mimeType,
+            size: videoData.size,
+            originalWidth: videoData.width,
+            originalHeight: videoData.height,
+            createdAt: Date.now()
+          }
+        };
+
+        // Add to canvas
+        updateCanvasObject(activeSessionId, videoObject);
+        console.log('✅ Uploaded video added to canvas at viewport center');
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to process uploaded file:', error);
+      alert(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }, [activeSessionId, updateCanvasObject]);
 
@@ -889,9 +1005,13 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
       }
 
-      // Release pointer capture
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
+      // Always release pointer capture and clear state, even if there was an error
+      try {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+      } catch (error) {
+        console.warn('Error releasing pointer capture:', error);
       }
 
       // Clear drag state
@@ -1084,26 +1204,27 @@ const initialPinCenteredRef = useRef<string | null>(null);
       event.stopPropagation();
       event.preventDefault();
 
-      // Clear any existing connection drag state first
-      setConnectionDragState(null);
-      setHoveredAnchor(null);
-
-      // Find the source object to get its anchor position
-      const sourceObject = canvasObjects.find(obj => obj.id === objectId);
-      if (!sourceObject) {
-        console.error('❌ Source object not found:', objectId);
+      // Check if there are existing connections on this anchor
+      const existingConnections = getConnectionsByAnchor(activeSessionId, objectId, anchor);
+      
+      if (existingConnections.length > 0) {
+        // Disconnect all existing connections on this anchor
+        existingConnections.forEach(conn => {
+          deleteConnection(activeSessionId, conn.id);
+        });
         return;
       }
 
-      // Use the actual anchor position instead of mouse cursor position
-      const anchorPos = getAnchorPosition(sourceObject, anchor);
-      console.log('🎯 Starting connection from:', { objectId, anchor, position: anchorPos });
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+      const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
 
       setConnectionDragState({
         sourceObjectId: objectId,
         sourceAnchor: anchor,
-        sourcePosition: { x: anchorPos.x, y: anchorPos.y }, // Store fixed source position
-        currentWorld: { x: anchorPos.x, y: anchorPos.y } // Start with source position
+        currentWorld: { x: worldX, y: worldY }
       });
 
       // Capture pointer for smooth dragging
@@ -1111,7 +1232,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
         containerRef.current.setPointerCapture(event.pointerId);
       }
     },
-    [activeSessionId, canvasObjects]
+    [activeSessionId, getConnectionsByAnchor, deleteConnection]
   );
 
   const handleConnectionMove = useCallback(
@@ -1126,14 +1247,13 @@ const initialPinCenteredRef = useRef<string | null>(null);
       const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
 
       // Update current position
-      const newDragState = {
+      setConnectionDragState({
         ...connDrag,
         currentWorld: { x: worldX, y: worldY }
-      };
-      setConnectionDragState(newDragState);
+      });
 
-      // Check if hovering over an anchor (scale radius with zoom for accuracy)
-      const anchorRadius = Math.max(16, 24 / transformRef.current.k);
+      // Check if hovering over an anchor
+      const anchorRadius = Math.max(12, 16 / transformRef.current.k);
       const hoveredObject = canvasObjects.find(obj => {
         if (obj.id === connDrag.sourceObjectId) return false; // Can't connect to self
         const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, anchorRadius);
@@ -1165,8 +1285,8 @@ const initialPinCenteredRef = useRef<string | null>(null);
       const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
       const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
 
-      // Check if we're over a valid target anchor (use same scaled radius as move)
-      const anchorRadius = Math.max(16, 24 / transformRef.current.k);
+      // Check if we're over a valid target anchor
+      const anchorRadius = Math.max(12, 16 / transformRef.current.k);
       const targetObject = canvasObjects.find(obj => {
         if (obj.id === connDrag.sourceObjectId) return false;
         const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, anchorRadius);
@@ -1197,26 +1317,22 @@ const initialPinCenteredRef = useRef<string | null>(null);
                 connDrag.sourceAnchor,
                 targetAnchor
               );
-              console.log('✅ Connection created successfully - now you can create connection maps!');
+              console.log('✅ Connection created successfully');
             } catch (error) {
               console.error('❌ Failed to create connection:', error);
             }
-          } else {
-            console.log('⚠️ Cannot create connection - duplicate connection exists');
           }
         }
       }
-
-      // Always clear connection drag state and hover state
-      setConnectionDragState(null);
-      setHoveredAnchor(null);
 
       // Release pointer capture
       if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
         containerRef.current.releasePointerCapture(event.pointerId);
       }
 
-      console.log('🔄 Connection drag ended, state cleared');
+      // Clear connection drag state
+      setConnectionDragState(null);
+      setHoveredAnchor(null);
     },
     [activeSessionId, canvasObjects, createConnection, connections]
   );
@@ -1230,6 +1346,100 @@ const initialPinCenteredRef = useRef<string | null>(null);
       }
     },
     []
+  );
+
+  // Resize handlers - simple proportional resize
+  const handleResizeStart = useCallback(
+    (objectId: string, direction: ResizeDirection, event: React.PointerEvent) => {
+      if (!activeSessionId) return;
+
+      event.stopPropagation();
+      event.preventDefault();
+
+      const object = canvasObjects.find(obj => obj.id === objectId);
+      if (!object) return;
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+      const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+
+      setResizeState({
+        objectId,
+        direction,
+        startWorld: { x: worldX, y: worldY },
+        startScreen: { x: event.clientX, y: event.clientY },
+        startSize: { width: object.width, height: object.height },
+        startPosition: { x: object.x, y: object.y },
+        currentDelta: { x: 0, y: 0 }
+      });
+
+      // Capture pointer for smooth resizing
+      if (containerRef.current) {
+        containerRef.current.setPointerCapture(event.pointerId);
+      }
+    },
+    [activeSessionId, canvasObjects]
+  );
+
+  const handleResizeMove = useCallback(
+    (objectId: string, event: React.PointerEvent) => {
+      const resize = resizeStateRef.current;
+      if (!resize || !activeSessionId || resize.objectId !== objectId) return;
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
+      const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+
+      const deltaX = worldX - resize.startWorld.x;
+      const deltaY = worldY - resize.startWorld.y;
+
+      let newWidth = resize.startSize.width;
+      let newHeight = resize.startSize.height;
+      let newX = resize.startPosition.x;
+      let newY = resize.startPosition.y;
+
+      // Simple resize logic - always resize from top-left corner (keep position fixed)
+      // This prevents any unwanted movement or scrolling
+      newWidth = Math.max(50, resize.startSize.width + deltaX);
+      newHeight = Math.max(50, resize.startSize.height + deltaY);
+      
+      // Always keep the original position - no position changes during resize
+      newX = resize.startPosition.x;
+      newY = resize.startPosition.y;
+
+      // Update the object with new dimensions and position
+      const currentObject = canvasObjects.find(obj => obj.id === resize.objectId);
+      if (currentObject) {
+        updateCanvasObject(activeSessionId, {
+          ...currentObject,
+          x: newX,
+          y: newY,
+          width: newWidth,
+          height: newHeight
+        });
+      }
+    },
+    [activeSessionId, updateCanvasObject, canvasObjects]
+  );
+
+  const handleResizeEnd = useCallback(
+    (objectId: string, event: React.PointerEvent) => {
+      const resize = resizeStateRef.current;
+      if (!resize || !activeSessionId || resize.objectId !== objectId) return;
+
+      // Release pointer capture
+      if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
+        containerRef.current.releasePointerCapture(event.pointerId);
+      }
+
+      // Clear resize state
+      setResizeState(null);
+    },
+    [activeSessionId]
   );
 
   const lassoRect = useMemo(() => {
@@ -1259,20 +1469,93 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   const canvasCursor = canvasMode === "pan" ? "grab" : "crosshair";
 
+  // Handle clicking on empty canvas to deselect all objects
+  const handleCanvasPointerDown = useCallback((event: React.PointerEvent) => {
+    // Only deselect if clicking directly on the canvas (not on objects)
+    if (event.target === event.currentTarget && activeSessionId) {
+      setSelectedObjects(activeSessionId, []);
+    }
+  }, [activeSessionId, setSelectedObjects]);
+
+  // Global pointer up handler to ensure drag operations are always properly ended
+  useEffect(() => {
+    const handleGlobalPointerUp = (event: PointerEvent) => {
+      if (dragState) {
+        // Force end any active drag operation
+        setDragState(null);
+        dragStateRef.current = null;
+        if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
+          containerRef.current.releasePointerCapture(event.pointerId);
+        }
+      }
+      if (resizeState) {
+        // Force end any active resize operation
+        setResizeState(null);
+        resizeStateRef.current = null;
+        if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
+          containerRef.current.releasePointerCapture(event.pointerId);
+        }
+      }
+      if (connectionDragState) {
+        // Force end any active connection drag
+        setConnectionDragState(null);
+        setHoveredAnchor(null);
+        if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
+          containerRef.current.releasePointerCapture(event.pointerId);
+        }
+      }
+    };
+
+    document.addEventListener('pointerup', handleGlobalPointerUp);
+    document.addEventListener('pointercancel', handleGlobalPointerUp);
+
+    return () => {
+      document.removeEventListener('pointerup', handleGlobalPointerUp);
+      document.removeEventListener('pointercancel', handleGlobalPointerUp);
+    };
+  }, [dragState, resizeState, connectionDragState]);
+
+  // Cleanup effect to clear all states when component unmounts or session changes
+  useEffect(() => {
+    return () => {
+      setDragState(null);
+      setResizeState(null);
+      setConnectionDragState(null);
+      setHoveredAnchor(null);
+      dragStateRef.current = null;
+      resizeStateRef.current = null;
+      connectionDragStateRef.current = null;
+    };
+  }, [activeSessionId]);
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-white">
       <div
         className="absolute inset-0"
         ref={containerRef}
-        onPointerDown={startPinPlacement}
+        data-canvas-container="true"
+        onPointerDown={(e) => {
+          handleCanvasPointerDown(e);
+          startPinPlacement(e);
+        }}
         onPointerMove={(e) => {
           if (connectionDragState) {
             handleConnectionMove(e);
+          } else if (resizeState) {
+            e.preventDefault();
+            e.stopPropagation();
+            handleResizeMove(resizeState.objectId, e);
           }
         }}
         onPointerUp={(e) => {
           if (connectionDragState) {
             handleConnectionEnd(e);
+          } else if (resizeState) {
+            e.preventDefault();
+            e.stopPropagation();
+            handleResizeEnd(resizeState.objectId, e);
+          } else if (dragState) {
+            handleObjectDragEnd(dragState.objectId, e);
           }
         }}
         style={{ cursor: canvasCursor }}
@@ -1298,14 +1581,22 @@ const initialPinCenteredRef = useRef<string | null>(null);
               onDragStart={handleObjectDragStart}
               onDragMove={handleObjectDragMove}
               onDragEnd={handleObjectDragEnd}
+              onResizeStart={handleResizeStart}
+              onResizeMove={handleResizeMove}
+              onResizeEnd={handleResizeEnd}
               onContextMenu={undefined}
               onDimensionsMeasured={handleDimensionsMeasured}
               isDragging={!!dragState}
-              isConnectionMode={true}
+              isResizing={!!resizeState}
+              isConnectionMode={!!connectionDragState}
               dragState={dragState}
+              resizeState={resizeState}
               onConnectionStart={handleConnectionStart}
               onAnchorHover={handleAnchorHover}
               hoveredAnchor={hoveredAnchor}
+              connections={connections}
+              getConnectionsByAnchor={getConnectionsByAnchor}
+              activeSessionId={activeSessionId}
             />
             <PinLayer
               pins={pins}

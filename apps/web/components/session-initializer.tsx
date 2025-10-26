@@ -20,20 +20,19 @@ export function SessionInitializer() {
       // Store object IDs for creating connections
       const objectIds: Record<string, string> = {};
 
-      // Create landing page layout - components spaced horizontally across the screen
-      // Layout: positioned between left sidebar and right edge, centered vertically
-      // Each component has its own space - like a proper landing page
+      // Create highly spaced layout - components very spread out, positioned far up and left
+      // Layout: positioned in upper-left area of viewport, maximum separation
       const placeholderObjects: CanvasObject[] = [
-        // ==================== HORIZONTAL LANDING PAGE LAYOUT ====================
-        // Welcome Introduction (Left)
+        // ==================== HIGHLY SPACED LAYOUT ====================
+        // Welcome Introduction (Top Left)
         {
           id: objectIds.hero = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Welcome',
-          x: 200, // Centered in screen
-          y: 200, // Centered vertically
-          width: 300,
-          height: 200,
+          x: 20, // Much further left
+          y: 40, // Much higher up
+          width: 280,
+          height: 180,
           color: '#6366f1', // Indigo
           selected: false,
           zIndex: 1,
@@ -49,35 +48,38 @@ Ask questions naturally and get instant spoken explanations with dynamic visual 
           },
         },
 
-        // Physics Formula (Center Left)
+        // Acceleration Video (Top Right)
         {
-          id: objectIds.formula = `obj-${nanoid(8)}`,
-          type: 'latex',
-          label: 'Example Formula',
-          x: 550, // Centered
-          y: 200,
-          width: 300,
-          height: 200,
+          id: objectIds.acceleration = `obj-${nanoid(8)}`,
+          type: 'video',
+          label: 'What is Acceleration?',
+          x: 500, // Much further right for maximum separation
+          y: 40, // Much higher up
+          width: 280,
+          height: 180,
           color: '#f59e0b', // Amber
           selected: false,
           zIndex: 2,
           data: {
-            latex: 'a = \\frac{\\Delta v}{\\Delta t} = \\frac{v_f - v_i}{t}',
+            type: 'video',
+            url: '/acceleration.gif', // Pre-loaded Manim animation
+            alt: 'Manim animation explaining acceleration concept'
           },
           metadata: {
-            description: 'Acceleration formula example',
+            description: 'Interactive Manim video explaining acceleration concept',
+            createdAt: Date.now()
           },
         },
 
-        // Features Overview (Center Right)
+        // Features Overview (Bottom Left)
         {
           id: objectIds.features = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Key Features',
-          x: 900, // Centered
-          y: 200,
-          width: 300,
-          height: 200,
+          x: 20, // Much further left
+          y: 300, // Much lower down for maximum vertical separation
+          width: 280,
+          height: 180,
           color: '#06b6d4', // Cyan
           selected: false,
           zIndex: 3,
@@ -98,15 +100,15 @@ Dynamic diagrams, equations, and animations.`,
           },
         },
 
-        // Get Started CTA (Right)
+        // Get Started CTA (Bottom Right)
         {
           id: objectIds.cta = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Get Started',
-          x: 1250, // Right side
-          y: 200,
-          width: 300,
-          height: 200,
+          x: 500, // Much further right for maximum separation
+          y: 300, // Much lower down for maximum vertical separation
+          width: 280,
+          height: 180,
           color: '#10b981', // Green
           selected: false,
           zIndex: 4,
@@ -116,6 +118,7 @@ Dynamic diagrams, equations, and animations.`,
 Click the microphone button to begin your conversation with Mentora.
 
 **Example questions to try:**
+- "What is acceleration?"
 - "Explain the water cycle"
 - "Show me how binary search works" 
 - "What is photosynthesis?"

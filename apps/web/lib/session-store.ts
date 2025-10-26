@@ -153,6 +153,7 @@ type SessionState = {
   deleteConnection: (sessionId: string, connectionId: string) => void;
   deleteConnectionsByObjectId: (sessionId: string, objectId: string) => void;
   getConnectionsForObject: (sessionId: string, objectId: string) => ObjectConnection[];
+  getConnectionsByAnchor: (sessionId: string, objectId: string, anchor: ConnectionAnchor) => ObjectConnection[];
   setBrainState: (sessionId: string, brain: BrainState) => void;
   addMCPToolStatus: (sessionId: string, tool: MCPToolStatus) => void;
   updateMCPToolStatus: (sessionId: string, toolName: string, updates: Partial<MCPToolStatus>) => void;
@@ -672,6 +673,15 @@ export const useSessionStore = create<SessionState>()(
       const connections = state.connections[sessionId] || [];
       return connections.filter(
         (conn) => conn.sourceObjectId === objectId || conn.targetObjectId === objectId
+      );
+    },
+    getConnectionsByAnchor: (sessionId, objectId, anchor) => {
+      const state = get();
+      const connections = state.connections[sessionId] || [];
+      return connections.filter(
+        (conn) => 
+          (conn.sourceObjectId === objectId && conn.sourceAnchor === anchor) ||
+          (conn.targetObjectId === objectId && conn.targetAnchor === anchor)
       );
     },
     setBrainState: (sessionId, brain) => {

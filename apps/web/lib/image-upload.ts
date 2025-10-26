@@ -4,7 +4,9 @@
  */
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB for videos
+const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
 
 export interface ImageValidationResult {
   valid: boolean;
@@ -19,12 +21,20 @@ export interface ImageData {
   height?: number;
 }
 
+export interface VideoData {
+  url: string;
+  mimeType: string;
+  size: number;
+  width?: number;
+  height?: number;
+}
+
 /**
  * Validate image file
  */
 export function validateImageFile(file: File): ImageValidationResult {
   // Check file type
-  if (!ALLOWED_TYPES.includes(file.type)) {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
     return {
       valid: false,
       error: `Invalid file type. Please upload PNG, JPG, GIF, or WebP images.`
@@ -34,6 +44,30 @@ export function validateImageFile(file: File): ImageValidationResult {
   // Check file size
   if (file.size > MAX_FILE_SIZE) {
     const sizeMB = (MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
+    return {
+      valid: false,
+      error: `File size exceeds ${sizeMB}MB limit.`
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validate video file
+ */
+export function validateVideoFile(file: File): ImageValidationResult {
+  // Check file type
+  if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
+    return {
+      valid: false,
+      error: `Invalid file type. Please upload MP4, WebM, OGG, or QuickTime videos.`
+    };
+  }
+
+  // Check file size
+  if (file.size > MAX_VIDEO_SIZE) {
+    const sizeMB = (MAX_VIDEO_SIZE / (1024 * 1024)).toFixed(0);
     return {
       valid: false,
       error: `File size exceeds ${sizeMB}MB limit.`
@@ -154,4 +188,59 @@ export function createPreviewURL(file: File): string {
  */
 export function revokePreviewURL(url: string): void {
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Get video dimensions from file
+ */
+export function getVideoDimensions(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    const url = URL.createObjectURL(file);
+
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve({
+        width: video.videoWidth,
+        height: video.videoHeight
+      });
+    };
+
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Failed to load video'));
+    };
+
+    video.src = url;
+  });
+}
+
+/**
+ * Process video file for upload
+ * Returns object URL and metadata
+ */
+export async function processVideoFile(file: File): Promise<VideoData> {
+  // Validate
+  const validation = validateVideoFile(file);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+
+  // Create object URL for video
+  const url = URL.createObjectURL(file);
+
+  // Get dimensions
+  let dimensions: { width: number; height: number } | undefined;
+  try {
+    dimensions = await getVideoDimensions(file);
+  } catch (error) {
+    console.warn('Could not get video dimensions:', error);
+  }
+
+  return {
+    url,
+    mimeType: file.type,
+    size: file.size,
+    ...(dimensions && { width: dimensions.width, height: dimensions.height })
+  };
 }
