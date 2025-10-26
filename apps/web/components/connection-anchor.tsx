@@ -27,31 +27,32 @@ export function ConnectionAnchor({
   onPointerEnter,
   onPointerLeave
 }: ConnectionAnchorProps) {
-  // Small, minimal connector that scales with zoom
-  const baseSize = 10 / scale;
-  const size = isHovered ? baseSize * 1.4 : baseSize;
+  // Refined sizing that scales properly with zoom
+  const baseSize = 12 / scale;
+  const size = isHovered || isActive ? baseSize * 1.3 : baseSize;
   const offset = size / 2;
 
-  // Clean, modern color scheme
-  const bgColor = hasConnection 
-    ? '#3b82f6' // blue when connected
+  // Enhanced color scheme with better contrast
+  const bgColor = hasConnection
+    ? '#3b82f6' // vibrant blue when connected
     : isActive || isHovered
-      ? '#8b5cf6' // purple when active/hovered
-      : 'rgba(0, 0, 0, 0.6)'; // subtle gray when idle
+      ? '#8b5cf6' // vibrant purple when active/hovered
+      : '#64748b'; // slate gray when idle
+
+  // Ring effect for better visibility
+  const ringColor = isActive || isHovered
+    ? 'rgba(139, 92, 246, 0.25)'
+    : 'rgba(100, 116, 139, 0.15)';
 
   return (
     <div
-      className="absolute pointer-events-auto rounded-full z-50 transition-all duration-200"
+      className="absolute pointer-events-auto z-50 transition-all duration-200 ease-out"
       style={{
         left: x - offset,
         top: y - offset,
         width: size,
         height: size,
-        backgroundColor: bgColor,
         cursor: 'pointer',
-        boxShadow: isHovered || isActive 
-          ? '0 0 0 2px white, 0 0 0 4px rgba(139, 92, 246, 0.3)' 
-          : '0 1px 3px rgba(0, 0, 0, 0.2)',
       }}
       onPointerDown={(e) => {
         e.stopPropagation();
@@ -66,7 +67,42 @@ export function ConnectionAnchor({
         e.stopPropagation();
         onPointerLeave?.(e);
       }}
-      title={hasConnection ? `Remove connection` : `Add connection`}
-    />
+      title={hasConnection ? `Connected` : `Connect to another object`}
+    >
+      {/* Outer ring for hover/active state */}
+      <div
+        className="absolute inset-0 rounded-full transition-all duration-200"
+        style={{
+          backgroundColor: ringColor,
+          transform: isHovered || isActive ? 'scale(1.8)' : 'scale(1.2)',
+          opacity: isHovered || isActive ? 1 : 0,
+        }}
+      />
+      {/* Main anchor circle */}
+      <div
+        className="absolute inset-0 rounded-full transition-all duration-200"
+        style={{
+          backgroundColor: bgColor,
+          boxShadow: isHovered || isActive
+            ? '0 0 0 2px white, 0 2px 8px rgba(0, 0, 0, 0.15)'
+            : '0 1px 3px rgba(0, 0, 0, 0.2)',
+          border: hasConnection ? '2px solid white' : 'none'
+        }}
+      />
+      {/* Inner dot for connected state */}
+      {hasConnection && (
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          <div
+            className="rounded-full bg-white transition-all duration-200"
+            style={{
+              width: size * 0.35,
+              height: size * 0.35,
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }

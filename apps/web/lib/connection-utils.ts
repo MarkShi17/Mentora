@@ -2,6 +2,7 @@ import type { CanvasObject, ConnectionAnchor } from "@/types";
 
 /**
  * Calculate the world position of an anchor point on an object
+ * Anchors are positioned exactly on the box edges (not inside)
  */
 export function getAnchorPosition(
   object: CanvasObject,
@@ -9,15 +10,19 @@ export function getAnchorPosition(
 ): { x: number; y: number } {
   const { x, y, width, height } = object;
 
+  // Ensure we have valid numeric dimensions (fallback to 0 if not yet measured)
+  const w = typeof width === 'number' ? width : 0;
+  const h = typeof height === 'number' ? height : 0;
+
   switch (anchor) {
     case 'north':
-      return { x: x + width / 2, y };
+      return { x: x + w / 2, y };
     case 'east':
-      return { x: x + width, y: y + height / 2 };
+      return { x: x + w, y: y + h / 2 };
     case 'south':
-      return { x: x + width / 2, y: y + height };
+      return { x: x + w / 2, y: y + h };
     case 'west':
-      return { x, y: y + height / 2 };
+      return { x, y: y + h / 2 };
   }
 }
 

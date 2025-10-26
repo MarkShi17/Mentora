@@ -1,6 +1,6 @@
 'use client';
 
-import { MoreHorizontal, Maximize2, Plus, Trash2, Unlink } from "lucide-react";
+import { MoreHorizontal, Trash2, Unlink } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 type ObjectContextMenuProps = {
@@ -37,8 +37,6 @@ export function ObjectContextMenu({ position, onClose, selectedObjectIds, onDele
   }, [onClose]);
 
   const menuItems = [
-    { icon: Maximize2, label: "Expand", action: () => console.log("Expand") },
-    { icon: Plus, label: "Add to Context", action: () => console.log("Add to Context") },
     ...(onDeleteConnections ? [{
       icon: Unlink,
       label: "Delete Connections",

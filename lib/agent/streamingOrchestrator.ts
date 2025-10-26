@@ -157,16 +157,6 @@ export class StreamingOrchestrator {
       const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
-      // Get model from selected brain
-      const model = selectedBrain?.model || 'claude-sonnet-4-5-20250929';
-
-      // NOTE: Tools parameter is commented out for now because:
-      // 1. The streaming orchestrator doesn't handle tool_use blocks yet
-      // 2. MCP servers need to be running to execute tool calls
-      // 3. The brain's promptEnhancement is sufficient to guide JSON responses
-      // TODO: Add tool execution handling to streaming orchestrator
-      // const tools = selectedBrain ? this.getToolsForBrain(selectedBrain) : MCP_TOOLS_FOR_CLAUDE;
-
       // MCP tool execution loop
       let messages: Anthropic.MessageParam[] = [
         {
@@ -735,9 +725,7 @@ IMPORTANT:
 
 Subject: ${session.subject}
 
-Be canvas-aware and create appropriate visuals for the subject area.
-
-${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${selectedBrain.promptEnhancement}` : ''}`;
+Be canvas-aware and create appropriate visuals for the subject area.`;
   }
 
   private buildUserPrompt(question: string, context: any): string {
