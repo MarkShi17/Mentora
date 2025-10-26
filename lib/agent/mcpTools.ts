@@ -88,6 +88,42 @@ The tool will return base64-encoded PNG images of any matplotlib plots created.`
     },
   },
   {
+    name: 'render_biology_diagram',
+    description: `Generate biology-focused schematics (cell structure, DNA transcription, photosynthesis) using curated matplotlib templates.
+
+Use this tool when you need to:
+- Illustrate organelle layouts within a eukaryotic cell
+- Explain transcription / translation visually
+- Show high-level photosynthesis flow inside a chloroplast
+
+Arguments allow selecting the template, providing a custom title, annotations, and highlight labels.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        diagram_type: {
+          type: 'string',
+          enum: ['cell_structure', 'dna_transcription', 'photosynthesis'],
+          description: 'Choose the built-in diagram template to render'
+        },
+        title: {
+          type: 'string',
+          description: 'Optional title rendered on the diagram'
+        },
+        annotations: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional bullet annotations placed below the diagram'
+        },
+        highlight: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Structures to emphasize (e.g., ["nucleus", "mitochondria"])'
+        }
+      },
+      required: ['diagram_type']
+    },
+  },
+  {
     name: 'sequential_thinking',
     description: `Use structured sequential thinking to break down complex problems into steps.
 
@@ -132,6 +168,7 @@ This tool helps you think through problems systematically before explaining them
 export const TOOL_TO_SERVER_MAP: Record<string, string> = {
   execute_python: 'python',
   render_animation: 'manim',
+  render_biology_diagram: 'python',
   sequential_thinking: 'sequential-thinking',
 };
 
@@ -139,7 +176,7 @@ export const TOOL_TO_SERVER_MAP: Record<string, string> = {
  * Check if a tool is a visualization tool that should create canvas objects
  */
 export function isVisualizationTool(toolName: string): boolean {
-  return toolName === 'execute_python' || toolName === 'render_animation';
+  return toolName === 'execute_python' || toolName === 'render_animation' || toolName === 'render_biology_diagram';
 }
 
 /**

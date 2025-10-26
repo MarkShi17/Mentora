@@ -3,9 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { cn } from "@/lib/cn";
 import { useContinuousAI } from "@/hooks/use-continuous-ai";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useSessionStore } from "@/lib/session-store";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
-import { Brain, StopCircle } from "lucide-react";
+import { Brain } from "lucide-react";
 
 export function ContinuousAI() {
   const [isActive, setIsActive] = useState(false);
@@ -13,30 +14,40 @@ export function ContinuousAI() {
   const [interrupted, setInterrupted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const sessions = useSessionStore((state) => state.sessions);
+  const allMessages = useSessionStore((state) => state.messages);
+  const voiceInputState = useSessionStore((state) => state.voiceInputState);
+
+  // Live Tutor mode (continuous AI with question detection)
   const {
-    isListening,
-    currentTranscript,
+    isListening: liveTutorListening,
+    currentTranscript: liveTutorTranscript,
     conversationContext,
-    supported,
-    error,
-    startListening,
-    stopListening,
+    supported: liveTutorSupported,
+    error: liveTutorError,
+    startListening: startLiveTutor,
+    stopListening: stopLiveTutor,
     pauseListening,
     resumeListening,
     setQuestionCallback,
     forceProcessTranscript
   } = useContinuousAI();
 
-  const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const sessions = useSessionStore((state) => state.sessions);
-  const allMessages = useSessionStore((state) => state.messages);
+  // Simple spacebar push-to-talk mode (no question detection)
+  const spacebarRecognition = useSpeechRecognition();
+
+  // Determine which mode is active
+  const isListening = voiceInputState.isLiveTutorOn ? liveTutorListening : spacebarRecognition.listening;
+  const currentTranscript = voiceInputState.isLiveTutorOn ? liveTutorTranscript : spacebarRecognition.transcript;
+  const supported = liveTutorSupported || spacebarRecognition.supported;
+  const error = liveTutorError || spacebarRecognition.error;
   const createSession = useSessionStore((state) => state.createSession);
   const addMessage = useSessionStore((state) => state.addMessage);
   const updateMessage = useSessionStore((state) => state.updateMessage);
   const removeMessage = useSessionStore((state) => state.removeMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
-  const voiceInputState = useSessionStore((state) => state.voiceInputState);
   const setLiveTutorOn = useSessionStore((state) => state.setLiveTutorOn);
   const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
   const setIsPushToTalkActive = useSessionStore((state) => state.setIsPushToTalkActive);
@@ -251,32 +262,33 @@ export function ContinuousAI() {
   // Register stop streaming callback
   useEffect(() => {
     setStopStreamingCallback(() => {
-      console.log('🛑 Stop callback invoked');
+      console.log('🛑 Stop callback invoked - completely stopping AI');
 
-      // Stop streaming and audio
+      // Stop streaming and audio IMMEDIATELY
       streamingQA.stopStreaming();
 
-      // Update thinking message to "Stopped" instead of deleting
+      // DELETE the thinking message completely
       const thinkingMessageId = thinkingMessageIdRef.current;
       const sessionId = currentSessionRef.current;
       if (sessionId && thinkingMessageId) {
-        updateMessage(sessionId, thinkingMessageId, {
-          content: "Stopped"
-        });
+        console.log('🗑️ Deleting thinking message:', thinkingMessageId);
+        removeMessage(sessionId, thinkingMessageId);
         thinkingMessageIdRef.current = null;
       }
 
-      // Reset refs
+      // Reset ALL refs to allow new questions immediately
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
+
+      console.log('✅ Stop complete - ready for new questions');
     });
 
     // Cleanup on unmount
     return () => {
       setStopStreamingCallback(null);
     };
-  }, [streamingQA, setStopStreamingCallback, updateMessage]);
+  }, [streamingQA, setStopStreamingCallback, removeMessage]);
 
   // Register rerun question callback
   useEffect(() => {
@@ -310,22 +322,22 @@ export function ContinuousAI() {
     }
   }, [streamingQA.currentText, updateMessage]);
 
-  // Pause microphone when AI is speaking to prevent feedback loop
+  // Pause microphone when AI is speaking to prevent feedback loop (only for live tutor mode)
   useEffect(() => {
     const isAISpeaking = streamingQA.audioState.isPlaying;
 
-    if (isAISpeaking && isListening && isActive) {
+    if (isAISpeaking && liveTutorListening && isActive && voiceInputState.isLiveTutorOn) {
       // AI started speaking - pause the microphone
       console.log('🔇 Pausing microphone (AI speaking)');
       pauseListening();
       setWasListeningBeforeSpeech(true);
-    } else if (!isAISpeaking && wasListeningBeforeSpeech && isActive) {
+    } else if (!isAISpeaking && wasListeningBeforeSpeech && isActive && voiceInputState.isLiveTutorOn) {
       // AI stopped speaking - resume the microphone
       console.log('🎤 Resuming microphone (AI finished)');
       resumeListening();
       setWasListeningBeforeSpeech(false);
     }
-  }, [streamingQA.audioState.isPlaying, isListening, isActive, wasListeningBeforeSpeech, pauseListening, resumeListening]);
+  }, [streamingQA.audioState.isPlaying, liveTutorListening, isActive, wasListeningBeforeSpeech, pauseListening, resumeListening, voiceInputState.isLiveTutorOn]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -339,22 +351,24 @@ export function ContinuousAI() {
     if (newState) {
       // Turning Live Tutor ON - start continuous question detection
       console.log('🔒 Live Tutor ON - Continuous question detection enabled');
-      startListening();
+      startLiveTutor();
       setIsActive(true);
     } else {
       // Turning Live Tutor OFF - stop listening
       console.log('🔓 Live Tutor OFF - Push-to-talk mode enabled');
-      stopListening();
+      stopLiveTutor();
+      spacebarRecognition.stop();
       setIsActive(false);
     }
-  }, [voiceInputState.isLiveTutorOn, setLiveTutorOn, stopListening, startListening]);
+  }, [voiceInputState.isLiveTutorOn, setLiveTutorOn, stopLiveTutor, startLiveTutor, spacebarRecognition]);
 
-  // Sync currentTranscript to store when spacebar is held (not in Live Tutor mode)
+  // Sync spacebar transcript to store when spacebar is held (ALWAYS use spacebar recognition)
   useEffect(() => {
-    if (voiceInputState.isPushToTalkActive && !voiceInputState.isLiveTutorOn) {
-      setSpacebarTranscript(currentTranscript);
+    if (voiceInputState.isPushToTalkActive) {
+      // Always use spacebar recognition transcript when push-to-talk is active
+      setSpacebarTranscript(spacebarRecognition.transcript);
     }
-  }, [currentTranscript, voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, setSpacebarTranscript]);
+  }, [spacebarRecognition.transcript, voiceInputState.isPushToTalkActive, setSpacebarTranscript]);
 
   // Push-to-talk: Hold spacebar to speak, release to submit (ONLY when Live Tutor is OFF)
   useEffect(() => {
@@ -386,12 +400,12 @@ export function ContinuousAI() {
             setTimeout(() => setInterrupted(false), 1500);
           }
 
-          // Start push-to-talk for prompt input
-          console.log('🎤 Push-to-talk activated (input mode)');
+          // Start push-to-talk for prompt input (simple mode, no question detection)
+          console.log('🎤 Push-to-talk activated (spacebar mode only)');
           setIsPushToTalkActive(true);
           setSpacebarTranscript(''); // Clear previous
-          startListening();
-          setIsActive(true);
+          spacebarRecognition.start();
+          // DON'T set isActive - that's only for Live Tutor mode
         }
       }
     };
@@ -407,11 +421,17 @@ export function ContinuousAI() {
           event.preventDefault();
 
           console.log('🔇 Push-to-talk released - transcript will auto-submit');
-          setIsPushToTalkActive(false);
-          stopListening();
-          setIsActive(false);
 
-          // Transcript is in the store, prompt-bar will pick it up and auto-submit
+          // Get the EXACT transcript - NO TRIMMING, NO CLEANING
+          const finalTranscript = spacebarRecognition.transcript;
+
+          setIsPushToTalkActive(false);
+          spacebarRecognition.stop();
+          // Don't touch isActive - that's only for Live Tutor mode
+
+          // Submit EVERYTHING that was heard, even if empty
+          console.log('📤 Submitting EXACT spacebar transcript:', finalTranscript);
+          setSpacebarTranscript(finalTranscript || '');  // Send even if empty
         }
       }
     };
@@ -422,10 +442,10 @@ export function ContinuousAI() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, startListening, stopListening, streamingQA, setIsPushToTalkActive, setSpacebarTranscript]);
+  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, spacebarRecognition, streamingQA, setIsPushToTalkActive, setSpacebarTranscript]);
 
   const isQuestionDetected = currentTranscript &&
-    currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor)/);
+    currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor|generate)/);
 
   // Determine current status
   const speaking = streamingQA.audioState.isPlaying;
@@ -437,49 +457,50 @@ export function ContinuousAI() {
       {/* Live Transcript Panel - Fixed position to left of controls */}
       {isActive && (
         <div className="pointer-events-auto animate-in fade-in duration-300">
-          <div className="relative overflow-hidden rounded-2xl border border-cyan-400/30 bg-white/95 backdrop-blur-xl shadow-2xl max-w-md">
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400/5 to-transparent animate-shimmer" />
+          <div className="relative overflow-hidden rounded-3xl glass-white shadow-[0_8px_32px_rgba(0,0,0,0.12)] max-w-md border border-white/40">
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/10 via-transparent to-blue-400/10" />
+            <div className="pointer-events-none absolute inset-0 shimmer" />
 
-            <div className="relative p-4 space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                <div className="flex items-center gap-2">
+            <div className="relative p-5 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/30">
+                <div className="flex items-center gap-2.5">
                   <div className={cn(
-                    "h-2 w-2 rounded-full",
-                    isListening ? "bg-cyan-400 animate-pulse" : "bg-slate-600"
+                    "h-2.5 w-2.5 rounded-full shadow-lg transition-all duration-300",
+                    isListening ? "bg-gradient-to-r from-cyan-400 to-blue-500 animate-pulse shadow-cyan-400/50" : "bg-slate-400"
                   )} />
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
                     {speaking ? "Speaking" : isListening ? "Listening" : "Standby"}
                   </span>
                 </div>
               </div>
 
               {currentTranscript ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <div className={cn(
-                    "rounded-xl p-3 transition-all duration-300",
+                    "rounded-2xl p-4 transition-all duration-500 backdrop-blur-sm",
                     isQuestionDetected
-                      ? "bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-400/30"
-                      : "bg-slate-50 border border-slate-200"
+                      ? "bg-gradient-to-br from-cyan-400/15 to-blue-500/15 border border-cyan-400/40 shadow-lg shadow-cyan-400/20"
+                      : "bg-white/60 border border-slate-200/60 shadow-sm"
                   )}>
-                    <p className="text-sm text-slate-900 leading-relaxed">
+                    <p className="text-sm text-slate-900 leading-relaxed font-medium">
                       {currentTranscript}
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     {isQuestionDetected ? (
                       <>
-                        <Brain className="h-3 w-3 text-cyan-400 animate-pulse" />
-                        <span className="text-xs font-semibold text-cyan-400">
+                        <Brain className="h-3.5 w-3.5 text-cyan-500 animate-pulse drop-shadow-sm" />
+                        <span className="text-xs font-bold text-cyan-600 tracking-wide">
                           Question detected • Processing...
                         </span>
                       </>
                     ) : (
                       <>
-                        <div className="h-3 w-3 flex items-center justify-center">
-                          <div className="h-1 w-1 rounded-full bg-slate-500" />
+                        <div className="h-3.5 w-3.5 flex items-center justify-center">
+                          <div className="h-1.5 w-1.5 rounded-full bg-slate-400 shadow-sm" />
                         </div>
-                        <span className="text-xs text-slate-500">
+                        <span className="text-xs text-slate-500 font-medium">
                           Listening for questions
                         </span>
                       </>
@@ -487,39 +508,41 @@ export function ContinuousAI() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="flex gap-1">
+                <div className="flex items-center gap-4 py-3">
+                  <div className="flex gap-1.5">
                     {[0, 1, 2].map((i) => (
                       <div
                         key={i}
                         className={cn(
-                          "w-1 rounded-full bg-cyan-400 transition-all duration-300",
-                          isListening ? "animate-pulse" : "opacity-30"
+                          "w-1.5 rounded-full transition-all duration-300 shadow-sm",
+                          isListening
+                            ? "bg-gradient-to-t from-cyan-400 to-blue-500 animate-pulse"
+                            : "bg-slate-300 opacity-40"
                         )}
                         style={{
-                          height: isListening ? `${Math.random() * 12 + 8}px` : '6px',
+                          height: isListening ? `${Math.random() * 16 + 10}px` : '8px',
                           animationDelay: `${i * 150}ms`
                         }}
                       />
                     ))}
                   </div>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-slate-600 font-medium">
                     Start speaking to ask a question...
                   </span>
                 </div>
               )}
 
               {conversationContext.topics.length > 0 && (
-                <div className="pt-2 border-t border-slate-200">
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Brain className="h-3 w-3 text-purple-600" />
-                    <span className="text-xs font-semibold text-slate-600">Active Topics</span>
+                <div className="pt-3 border-t border-white/30">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <Brain className="h-3.5 w-3.5 text-purple-600 drop-shadow-sm" />
+                    <span className="text-xs font-bold text-slate-700">Active Topics</span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-2">
                     {conversationContext.topics.slice(-3).map((topic, index) => (
                       <span
                         key={index}
-                        className="text-xs px-2 py-1 rounded-full bg-purple-500/10 text-purple-700 border border-purple-500/20"
+                        className="text-xs px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500/15 to-pink-500/15 text-purple-700 border border-purple-400/30 font-medium shadow-sm backdrop-blur-sm transition-all duration-300 hover:scale-105"
                       >
                         {topic}
                       </span>
@@ -534,22 +557,22 @@ export function ContinuousAI() {
 
 
       {/* Microphone Control */}
-      <div className="pointer-events-auto flex flex-col items-center gap-2">
+      <div className="pointer-events-auto flex flex-col items-center gap-3">
         <div className={cn(
-          "flex items-center gap-1.5 rounded-full px-3 py-1 backdrop-blur-sm border transition-colors",
+          "flex items-center gap-2 rounded-full px-4 py-1.5 backdrop-blur-xl border transition-all duration-300 shadow-lg",
           voiceInputState.isLiveTutorOn
-            ? "bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-400/20"
+            ? "bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-green-400/40 shadow-green-400/20"
             : voiceInputState.isPushToTalkActive
-            ? "bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border-yellow-400/20"
-            : "bg-gradient-to-r from-slate-500/10 to-slate-500/10 border-slate-400/20"
+            ? "bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-yellow-400/40 shadow-yellow-400/20"
+            : "glass-white border-white/40"
         )}>
           <span className={cn(
-            "text-xs font-semibold tracking-wide transition-colors",
+            "text-[10px] font-black tracking-widest transition-colors uppercase",
             voiceInputState.isLiveTutorOn
-              ? "text-green-400"
+              ? "text-green-600"
               : voiceInputState.isPushToTalkActive
-              ? "text-yellow-400"
-              : "text-slate-400"
+              ? "text-yellow-600"
+              : "text-slate-500"
           )}>
             {voiceInputState.isLiveTutorOn
               ? "LIVE TUTOR ON"
@@ -563,11 +586,11 @@ export function ContinuousAI() {
           onClick={toggleAI}
           disabled={!supported}
           className={cn(
-            "group relative flex h-14 w-14 items-center justify-center rounded-xl transition-all duration-300",
-            "hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg",
+            "group relative flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-300",
+            "hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed",
             isActive
-              ? "bg-gradient-to-br from-cyan-400 to-blue-500"
-              : "bg-white hover:bg-slate-50 border border-slate-200"
+              ? "bg-gradient-to-br from-cyan-400 via-cyan-500 to-blue-600 shadow-[0_8px_32px_rgba(6,182,212,0.4)]"
+              : "glass-white shadow-[0_8px_24px_rgba(0,0,0,0.12)] hover:shadow-[0_12px_32px_rgba(0,0,0,0.16)] border border-white/50"
           )}
         >
           <svg
@@ -602,21 +625,29 @@ export function ContinuousAI() {
 
           {isActive && isListening && (
             <>
-              <div className="absolute inset-0 rounded-xl bg-cyan-400 opacity-50 animate-ping" />
-              <div className="absolute -inset-1 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 opacity-20 blur animate-pulse" />
+              <div className="absolute inset-0 rounded-2xl bg-cyan-400 opacity-40 animate-ping" />
+              <div className="absolute -inset-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 opacity-30 blur-xl animate-pulse" />
+            </>
+          )}
+
+          {/* Question detected animation - special pulsing effect */}
+          {isQuestionDetected && (
+            <>
+              <div className="absolute inset-0 rounded-2xl bg-purple-500 opacity-60 animate-ping" />
+              <div className="absolute -inset-3 rounded-2xl bg-gradient-to-r from-purple-400 via-pink-400 to-purple-500 opacity-30 blur-2xl animate-pulse" />
             </>
           )}
 
           <div
             className={cn(
-              "absolute -top-1 -right-1 h-3 w-3 rounded-full border-2 border-slate-950 transition-all",
+              "absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full border-[3px] border-white shadow-lg transition-all duration-300",
               error
-                ? "bg-red-500"
+                ? "bg-red-500 shadow-red-500/50"
                 : isActive && isListening
-                ? "bg-green-400 animate-pulse"
+                ? "bg-green-400 animate-pulse shadow-green-400/50"
                 : isActive
-                ? "bg-cyan-400"
-                : "bg-slate-600"
+                ? "bg-cyan-400 shadow-cyan-400/50"
+                : "bg-slate-400"
             )}
           />
         </button>
@@ -624,12 +655,12 @@ export function ContinuousAI() {
         {isActive && (
           <div className="text-center">
             <p className={cn(
-              "text-xs font-medium transition-colors duration-300",
+              "text-xs font-bold transition-colors duration-300 tracking-wide drop-shadow-sm",
               isListening
-                ? voiceInputState.isLiveTutorOn ? "text-green-400" : "text-yellow-400"
+                ? voiceInputState.isLiveTutorOn ? "text-green-600" : "text-yellow-600"
                 : speaking
-                ? "text-green-400"
-                : "text-slate-400"
+                ? "text-green-600"
+                : "text-slate-500"
             )}>
               {speaking ? "AI Speaking" : isListening ? (voiceInputState.isLiveTutorOn ? "Listening (Live)" : "Recording") : "Active"}
             </p>

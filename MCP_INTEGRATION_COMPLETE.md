@@ -11,9 +11,10 @@ Successfully integrated Model Context Protocol (MCP) servers with Claude's tool 
 
 ### 1. MCP Tool Definitions for Claude
 
-Created [`lib/agent/mcpTools.ts`](lib/agent/mcpTools.ts) with three tools:
+Created [`lib/agent/mcpTools.ts`](lib/agent/mcpTools.ts) with four tools:
 
 - **execute_python**: Execute Python code with matplotlib/numpy/pandas for visualizations
+- **render_biology_diagram**: Generate curated biology schematics (cell structure, DNA transcription, photosynthesis)
 - **render_animation**: Create Manim mathematical animations
 - **sequential_thinking**: Structured step-by-step reasoning for complex problems
 
@@ -247,7 +248,7 @@ Claude uses the tools autonomously based on the user's question. The flow is:
 
 **Two Sources of Canvas Objects:**
 
-1. **MCP Tools** (execute_python, render_animation)
+1. **MCP Tools** (execute_python, render_biology_diagram, render_animation)
    - Generate actual visualizations/animations
    - Converted to ImageObject or VideoObject
    - Tagged with metadata: source='mcp', toolName, mimeType

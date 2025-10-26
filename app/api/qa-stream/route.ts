@@ -116,8 +116,10 @@ export async function POST(request: NextRequest): Promise<Response> {
         // Generate assistant turn ID
         const assistantTurnId = generateTurnId();
 
-        // Voice selection (use nova for warmer teaching tone)
-        const voice = 'nova';
+        // Voice selection - use user's preference or default to nova
+        const voice = (body as any).voice || 'nova';
+        const userName = (body as any).userName || '';
+        const explanationLevel = (body as any).explanationLevel || 'intermediate';
 
         logger.info('🤖 Starting AI response generation', {
           assistantTurnId,
@@ -164,7 +166,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           body.mode || 'guided',
           assistantTurnId,
           voice,
-          body.context
+          body.context,
+          { userName, explanationLevel } // Pass user settings
         );
 
         for await (const event of responseStream) {

@@ -32,6 +32,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
   const setBrainState = useSessionStore((state) => state.setBrainState);
   const addMCPToolStatus = useSessionStore((state) => state.addMCPToolStatus);
   const updateMCPToolStatus = useSessionStore((state) => state.updateMCPToolStatus);
+  const settings = useSessionStore((state) => state.settings);
 
   /**
    * Start streaming QA request
@@ -88,6 +89,10 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
           mode: options?.mode || 'guided',
           context: options?.context,
           stream: true,
+          // Include user settings
+          userName: settings.preferredName || '',
+          voice: settings.voice || 'nova',
+          explanationLevel: settings.explanationLevel || 'intermediate',
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -256,22 +261,31 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
    * Stop streaming
    */
   const stopStreaming = useCallback(() => {
+    console.log('🛑 Stopping streaming completely');
+
+    // Close event source
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
+    // Abort any pending requests
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
 
+    // Stop audio playback
     audioQueue.stop();
 
-    setState(prev => ({
-      ...prev,
+    // Clear all state immediately
+    setState({
       isStreaming: false,
-    }));
+      currentText: '',  // Clear the text too
+      error: null,
+    });
+
+    console.log('✅ Streaming stopped and state cleared');
   }, [audioQueue]);
 
   return {
