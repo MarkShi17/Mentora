@@ -358,10 +358,8 @@ export function PromptBar() {
     currentSessionRef.current = sessionId;
 
     const { canvasObjects } = state;
-    // Send full object data, not just IDs, so backend can use content for RAG
-    const selectedObjectsData =
-      canvasObjects[sessionId]?.filter((object) => object.selected) ?? [];
-    const selectedObjectIds = selectedObjectsData.map((object) => object.id);
+    const selectedObjects =
+      canvasObjects[sessionId]?.filter((object) => object.selected).map((object) => object.id) ?? [];
 
     // Always use streaming mode
     try {
@@ -374,8 +372,7 @@ export function PromptBar() {
       }));
 
       await streamingQA.startStreaming(sessionId, prompt, {
-        highlightedObjects: selectedObjectIds,
-        highlightedObjectsData: selectedObjectsData,
+        highlightedObjects: selectedObjects,
         mode: "guided",
         images: images.length > 0 ? images : undefined
       });

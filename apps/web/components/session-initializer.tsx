@@ -30,15 +30,15 @@ export function SessionInitializer() {
       const placeholderObjects: CanvasObject[] = [
         // ==================== HORIZONTAL TREE LAYOUT (LEFT TO RIGHT) ====================
 
-        // 1. Main Title (VISIBLE - Root node) - CENTER LEFT
+        // 1. Main Title (VISIBLE - Root node) - CENTER SCREEN
         {
           id: objectIds.title = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Mentora Platform',
-          x: 100,
-          y: 300,
-          width: 400,
-          height: 150,
+          x: 400,
+          y: 200,
+          width: 800,
+          height: 300,
           color: '#6366f1', // Indigo
           selected: false,
           zIndex: 1,
@@ -63,7 +63,7 @@ Ask me questions to explore the platform!`,
           id: objectIds.architecture = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Architecture',
-          x: 600,
+          x: 1300,
           y: 200,
           width: 500,
           height: 200,
@@ -102,7 +102,7 @@ OpenAI TTS-1 (Text-to-Speech)
           id: objectIds.howItWorks = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'How It Works',
-          x: 1200,
+          x: 1900,
           y: 200,
           width: 500,
           height: 200,
@@ -131,164 +131,104 @@ OpenAI TTS-1 (Text-to-Speech)
           },
         },
 
-        // ==================== CONTINUATION OF TREE (STAGE 2) ====================
-
-        // 4. Key Features (HIDDEN - Reveal on "what are your features?") - CONTINUES TREE
+        // 4. Key Features (HIDDEN - Reveal on "what are you") - CONTINUES TREE
         {
-          id: objectIds.features = `obj-${nanoid(8)}`,
+          id: objectIds.keyFeatures = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Key Features',
-          x: 1800,
+          x: 2500,
           y: 200,
           width: 500,
-          height: 200,
-          color: '#f59e0b', // Amber
+          height: 250,
+          color: '#10b981', // Green
           selected: false,
           zIndex: 4,
-          hidden: true,  // Reveal on trigger 2
-          demoGroup: 'features',
+          hidden: true,  // Reveal on trigger 1
+          demoGroup: 'architecture',
           data: {
             content: `# **Key Features**
 
-## **Voice-Interactive Learning**
-- Real-time speech-to-text (Whisper)
-- Natural text-to-speech responses
-- Conversational teaching experience
+## **Interactive Canvas**
+- Drag, resize, and manipulate objects
+- Real-time visual demonstrations
+- Spatial learning environment
 
-## **Specialized AI Brains**
-- **Math**: LaTeX equations, graphs, proofs
-- **Biology**: Diagrams, pathways, molecular structures
-- **Code**: Syntax highlighting, algorithms, data structures
-- **Design**: Visual concepts, patterns, workflows
+## **Voice Integration**
+- Natural language questions
+- Audio responses with context
+- Hands-free interaction
 
-## **Infinite Canvas Workspace**
-- Create & arrange objects spatially
-- LaTeX, graphs, code, diagrams, text, videos
-- Drag, zoom, pan interactions
-- Contextual object references
+## **Multi-Subject Support**
+- Mathematics with LaTeX
+- Physics with simulations
+- Biology with diagrams
+- Computer Science with code
 
-## **MCP Tool Integration**
-- Python for biology visualizations
-- Mermaid for flowcharts
-- ChatMol for molecular structures
-- Extensible architecture for new tools`,
+## **AI-Powered**
+- Claude Sonnet 4.5 intelligence
+- Context-aware responses
+- Adaptive explanations
+
+**Experience learning like never before!**`,
           },
           metadata: {
-            description: 'Application scenarios',
+            description: 'Key features overview',
           },
         },
 
-        // 5. Use Cases (HIDDEN - Reveal on "what are your features?") - CONTINUES TREE
+        // ==================== CONTINUATION OF TREE (STAGE 2) ====================
+
+        // 5. LaTeX Component (HIDDEN - Reveal on "show me what you can do for math") - BRANCHES DOWN
         {
-          id: objectIds.useCases = `obj-${nanoid(8)}`,
-          type: 'note',
-          label: 'Use Cases',
-          x: 2400,
-          y: 200,
-          width: 500,
+          id: objectIds.latex = `obj-${nanoid(8)}`,
+          type: 'latex',
+          label: 'Quadratic Formula',
+          x: 2500,
+          y: 500,
+          width: 400,
           height: 200,
-          color: '#ec4899', // Pink
+          color: '#f59e0b', // Amber
           selected: false,
           zIndex: 5,
           hidden: true,  // Reveal on trigger 2
           demoGroup: 'features',
           data: {
-            content: `# **Real-World Use Cases**
-
-## **Math Tutoring**
-"Explain the quadratic formula"
-- LaTeX equation + interactive graph + step-by-step derivation
-
-## **Biology Learning**
-"Show me cellular respiration"
-- Pathway diagram + molecular structures + spoken explanation
-
-## **Code Education**
-"How does recursion work?"
-- Code examples + tree visualization + execution walkthrough
-
-## **Design Concepts**
-"Explain design patterns"
-- Visual diagrams + real examples + best practices
-
-**Perfect for STEM education, coding bootcamps, and self-study!**`,
+            latex: 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}',
+            rendered: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGV4dCB4PSIyMDAiIHk9IjUwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iTWF0aCJzPnggPSA8L3RleHQ+PC9zdmc+'
           },
           metadata: {
-            description: 'Teaching approaches',
+            description: 'LaTeX quadratic formula example',
           },
         },
 
-        // 6. Teaching Modes (HIDDEN - Reveal on "what are your features?") - CONTINUES TREE
+        // 6. Manim Video Component (HIDDEN - Reveal on "show me what you can do for math") - BRANCHES DOWN
         {
-          id: objectIds.teachingModes = `obj-${nanoid(8)}`,
-          type: 'note',
-          label: 'Teaching Modes',
-          x: 3000,
-          y: 200,
+          id: objectIds.manim = `obj-${nanoid(8)}`,
+          type: 'video',
+          label: 'Manim Animation',
+          x: 2500,
+          y: 600,
           width: 500,
-          height: 200,
-          color: '#06b6d4', // Cyan
+          height: 300,
+          color: '#ec4899', // Pink
           selected: false,
           zIndex: 6,
           hidden: true,  // Reveal on trigger 2
           demoGroup: 'features',
           data: {
-            content: `# **Two Teaching Modes**
-
-## **Socratic Mode** (Guided Discovery)
-- Asks guiding questions
-- Breaks concepts into small steps
-- Checks understanding at checkpoints
-- Perfect for deep learning
-
-## **Direct Mode** (Quick Answers)
-- Clear explanations
-- Step-by-step solutions
-- Fast reference
-- Perfect for review`,
+            type: 'video',
+            url: '/download.mp4',
+            alt: 'Manim mathematical animation'
           },
           metadata: {
-            description: 'Teaching approaches',
+            mimeType: 'video/mp4',
+            size: 1024000,
+            originalWidth: 500,
+            originalHeight: 300,
+            createdAt: Date.now()
           },
         },
 
-        // 7. Try It Now! (HIDDEN - Reveal on "what are your features?") - COMPLETES TREE
-        {
-          id: objectIds.demo = `obj-${nanoid(8)}`,
-          type: 'note',
-          label: 'Try It Now!',
-          x: 3600,
-          y: 200,
-          width: 500,
-          height: 200,
-          color: '#10b981', // Green
-          selected: false,
-          zIndex: 7,
-          hidden: true,  // Reveal on trigger 2
-          demoGroup: 'features',
-          data: {
-            content: `# **Try It Now!**
-
-**Getting Started:**
-1. Click "New Session" to start fresh
-2. Choose a subject (Math/Bio/Code/Design)
-3. Ask a question via text or voice
-4. Watch AI create visual objects on canvas
-5. Interact with objects (drag, zoom, pan)
-6. Ask follow-up questions
-
-**Example Questions:**
-- "What's the derivative of x squared?"
-- "Explain photosynthesis with diagrams"
-- "Show me how bubble sort works"
-- "What is recursion?"
-
-**The AI references existing canvas objects and maintains spatial awareness!**`,
-          },
-          metadata: {
-            description: 'Quick start guide',
-          },
-        },
       ];
 
       // Add objects to the session

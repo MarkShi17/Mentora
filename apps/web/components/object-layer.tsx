@@ -35,8 +35,8 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
         }
       }
 
-      // Use stored fontSize from object data, default to 18px for better readability
-      const baseFontSize = object.data.fontSize || 18;
+      // Use stored fontSize from object data, default to 14px for better readability
+      const baseFontSize = object.data.fontSize || 14;
 
       return (
         <div
@@ -211,11 +211,6 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
           src={object.data.url || object.data.content}
           alt={object.data.alt || 'Generated image'}
           className="rounded"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain'  // Scale to fit without clipping
-          }}
         />
       );
 
@@ -231,8 +226,8 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
         : `${videoUrl}${videoUrl?.includes('?') ? '&' : '?'}t=${object.metadata?.createdAt || Date.now()}`;
 
       return (
-        <div
-          className="bg-white rounded-lg p-4 shadow-lg h-full flex items-center justify-center select-none"
+        <div 
+          className="bg-white rounded-lg p-4 shadow-lg h-full overflow-hidden flex items-center justify-center select-none"
           style={{
             width: '100%',
             height: '100%'
@@ -243,10 +238,11 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
               src={cacheBustedUrl}
               alt={object.data.alt || 'Animation'}
               className="rounded"
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain'  // Scale to fit without clipping
+              style={{ 
+                maxHeight: '100%', 
+                maxWidth: '100%',
+                transform: `scale(${scaleFactor})`,
+                transformOrigin: 'center'
               }}
               onPointerDown={(e) => e.stopPropagation()}
               onPointerMove={(e) => e.stopPropagation()}
@@ -258,10 +254,11 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
               loop
               autoPlay
               className="rounded"
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain'  // Scale to fit without clipping
+              style={{ 
+                maxHeight: '100%', 
+                maxWidth: '100%',
+                transform: `scale(${scaleFactor})`,
+                transformOrigin: 'center'
               }}
               onPointerDown={(e) => e.stopPropagation()}
               onPointerMove={(e) => e.stopPropagation()}

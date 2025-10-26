@@ -58,7 +58,6 @@ export function ContinuousAI() {
   const setIsPushToTalkActive = useSessionStore((state) => state.setIsPushToTalkActive);
   const setStopStreamingCallback = useSessionStore((state) => state.setStopStreamingCallback);
   const setRerunQuestionCallback = useSessionStore((state) => state.setRerunQuestionCallback);
-  const settings = useSessionStore((state) => state.settings);
   const { startSequence, addObjectToSequence, endSequence } = useSequentialConnections();
 
   // Get messages for active session
@@ -70,9 +69,6 @@ export function ContinuousAI() {
   const objectsInCurrentResponse = useRef<string[]>([]);  // Track objects created in current response
   const thinkingMessageIdRef = useRef<string | null>(null);  // Track thinking message to replace it
   const sequenceKeyRef = useRef<string | null>(null);
-  // Separate refs for tracking audio completion (not cleared until audio finishes)
-  const audioCompletionSessionRef = useRef<string | null>(null);
-  const audioCompletionMessageIdRef = useRef<string | null>(null);
 
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
@@ -87,11 +83,7 @@ export function ContinuousAI() {
           interrupted: true,
           interruptedAt: new Date().toISOString(),
           isStreaming: false,
-          isPlayingAudio: false,
-          audioComplete: false,
-          narrationText: undefined,
-          narrationVoice: undefined,
-          narrationUpdatedAt: undefined
+          isPlayingAudio: false
         });
         console.log('⚠️ Message marked as interrupted');
 
@@ -101,13 +93,11 @@ export function ContinuousAI() {
         });
       }
 
-      // Reset all refs (including audio completion refs since we interrupted)
+      // Reset refs
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
       thinkingMessageIdRef.current = null;
-      audioCompletionSessionRef.current = null;
-      audioCompletionMessageIdRef.current = null;
       endSequence();
       sequenceKeyRef.current = null;
     }, [updateMessage, appendTimelineEvent, endSequence]),
@@ -164,52 +154,23 @@ export function ContinuousAI() {
       const thinkingMessageId = thinkingMessageIdRef.current;
 
       if (sessionId && finalText.trim()) {
-        const timestamp = new Date().toISOString();
-
         if (thinkingMessageId) {
           // Replace the "Thinking..." message with the actual response
           updateMessage(sessionId, thinkingMessageId, {
             content: finalText,
             canvasObjectIds: objectIds.length > 0 ? objectIds : undefined,
             isStreaming: false,
-            isPlayingAudio: streamingQA.audioState.isPlaying, // Explicitly set based on current audio state
-            audioComplete: streamingQA.audioState.isPlaying ? false : true,
-            narrationText: finalText,
-            narrationVoice: settings.voice,
-            narrationUpdatedAt: timestamp
+            isPlayingAudio: false
           });
           console.log('✅ Updated thinking message with final response');
-
-          if (streamingQA.audioState.isPlaying) {
-            // Store message ID for audio completion tracking (don't clear until audio finishes)
-            audioCompletionSessionRef.current = sessionId;
-            audioCompletionMessageIdRef.current = thinkingMessageId;
-          } else {
-            audioCompletionSessionRef.current = null;
-            audioCompletionMessageIdRef.current = null;
-          }
         } else {
           // Fallback: add new message if thinking message wasn't created
-          const messageId = addMessage(sessionId, {
+          addMessage(sessionId, {
             role: "assistant",
             content: finalText,
-            canvasObjectIds: objectIds.length > 0 ? objectIds : undefined,
-            isStreaming: false,
-            isPlayingAudio: streamingQA.audioState.isPlaying,
-            audioComplete: streamingQA.audioState.isPlaying ? false : true,
-            narrationText: finalText,
-            narrationVoice: settings.voice,
-            narrationUpdatedAt: timestamp
+            canvasObjectIds: objectIds.length > 0 ? objectIds : undefined
           });
           console.log('💬 Assistant message added to chat history from onComplete');
-
-          if (streamingQA.audioState.isPlaying) {
-            audioCompletionSessionRef.current = sessionId;
-            audioCompletionMessageIdRef.current = messageId;
-          } else {
-            audioCompletionSessionRef.current = null;
-            audioCompletionMessageIdRef.current = null;
-          }
         }
 
         appendTimelineEvent(sessionId, {
@@ -222,14 +183,14 @@ export function ContinuousAI() {
         setLastAIMessage(finalText);
       }
 
-      // Reset streaming refs (but keep audio completion refs for audio finish detection)
+      // Reset refs
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
       thinkingMessageIdRef.current = null;
       endSequence();
       sequenceKeyRef.current = null;
-    }, [addMessage, updateMessage, appendTimelineEvent, endSequence, setLastAIMessage, settings.voice]),
+    }, [addMessage, updateMessage, appendTimelineEvent, endSequence]),
     onError: useCallback(() => {
       endSequence();
       sequenceKeyRef.current = null;
@@ -396,11 +357,7 @@ export function ContinuousAI() {
             interrupted: true,
             interruptedAt: new Date().toISOString(),
             isStreaming: false,
-            isPlayingAudio: false,
-            audioComplete: false,
-            narrationText: undefined,
-            narrationVoice: undefined,
-            narrationUpdatedAt: undefined
+            isPlayingAudio: false
           });
         } else {
           console.log('🗑️ Removing empty thinking message');
@@ -418,8 +375,6 @@ export function ContinuousAI() {
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
-      audioCompletionSessionRef.current = null;
-      audioCompletionMessageIdRef.current = null;
 
       console.log('✅ Stop complete - ready for new questions');
     });
@@ -445,53 +400,25 @@ export function ContinuousAI() {
   }, [handleQuestionDetected, setRerunQuestionCallback]);
 
   // Track streaming text in ref so onComplete can access it
-  // AND update the message in real-time as text streams in (including audio state)
+  // AND update the message in real-time as text streams in
   useEffect(() => {
     if (streamingQA.currentText) {
       completeTextRef.current = streamingQA.currentText;
-    }
 
-    // Update the message in real-time with streaming and audio state
-    // Use streaming refs while streaming, or audio completion refs after streaming ends
-    const thinkingMessageId = thinkingMessageIdRef.current || audioCompletionMessageIdRef.current;
-    const sessionId = currentSessionRef.current || audioCompletionSessionRef.current;
+      // Update the thinking message in real-time as text streams in
+      const thinkingMessageId = thinkingMessageIdRef.current;
+      const sessionId = currentSessionRef.current;
 
-    if (sessionId && thinkingMessageId) {
-      const content = streamingQA.currentText?.trim() || "Thinking...";
-      updateMessage(sessionId, thinkingMessageId, {
-        content: content,
-        isStreaming: streamingQA.isStreaming,
-        isPlayingAudio: streamingQA.audioState.isPlaying
-      });
-    }
-  }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
-
-  // Detect when audio finishes naturally (not interrupted) and set audioComplete flag
-  const prevIsPlayingRef = useRef<boolean>(false);
-  useEffect(() => {
-    const isPlaying = streamingQA.audioState.isPlaying;
-    const wasPlaying = prevIsPlayingRef.current;
-
-    // Audio finished: was playing, now stopped
-    if (wasPlaying && !isPlaying) {
-      const sessionId = audioCompletionSessionRef.current;
-      const messageId = audioCompletionMessageIdRef.current;
-
-      if (sessionId && messageId) {
-        console.log('✅ Audio playback completed naturally - setting audioComplete flag');
-        updateMessage(sessionId, messageId, {
-          audioComplete: true,
-          isPlayingAudio: false
+      if (sessionId && thinkingMessageId) {
+        const content = streamingQA.currentText.trim() || "Thinking...";
+        updateMessage(sessionId, thinkingMessageId, {
+          content: content,
+          isStreaming: streamingQA.isStreaming,
+          isPlayingAudio: streamingQA.audioState.isPlaying
         });
-
-        // Clear audio completion refs now that audio is done
-        audioCompletionSessionRef.current = null;
-        audioCompletionMessageIdRef.current = null;
       }
     }
-
-    prevIsPlayingRef.current = isPlaying;
-  }, [streamingQA.audioState.isPlaying, updateMessage]);
+  }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
 
   // Keep microphone ALWAYS ACTIVE in live tutor mode - allow natural voice interruption
   // Question detection will filter out non-questions, so AI's voice won't cause false interrupts

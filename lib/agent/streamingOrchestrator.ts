@@ -86,7 +86,6 @@ export class StreamingOrchestrator {
     question: string,
     session: Session,
     highlightedObjectIds: string[] = [],
-    highlightedObjectsData: CanvasObject[] = [],  // Full object data from frontend
     mode: TeachingMode = 'guided',
     turnId: string,
     voice: VoiceOption = 'alloy',
@@ -126,9 +125,6 @@ export class StreamingOrchestrator {
       userQuestion: question
     };
 
-    // Track last generated object for simple chain connection
-    let lastGeneratedObjectId: string | null = null;
-
     try {
       // Initialize MCP system
       await initializeMCP();
@@ -155,23 +151,7 @@ export class StreamingOrchestrator {
       });
 
       // Build context from session (now async due to RAG)
-      const sessionContext = await contextBuilder.buildContext(
-        session,
-        question,
-        highlightedObjectIds,
-        highlightedObjectsData  // Pass full object data for RAG
-      );
-
-      // Log RAG context for debugging
-      if (sessionContext.ragContext) {
-        logger.info('🤖 CLAUDE PROMPT CONTEXT', {
-          hasRAGContext: true,
-          ragContextLength: sessionContext.ragContext.length,
-          ragContextPreview: sessionContext.ragContext.substring(0, 200) + '...',
-          conversationHistoryLength: sessionContext.conversationHistory.length,
-          highlightedObjectsCount: highlightedObjectIds.length
-        });
-      }
+      const sessionContext = await contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system and user prompts with user settings (include RAG context)
       const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
@@ -294,12 +274,7 @@ export class StreamingOrchestrator {
               const sentenceParser = new SentenceParser();
               const sentences = sentenceParser.addChunk(agentResponse.narration);
 
-              // OPTIMIZATION: Skip pre-tool TTS to make objects arrive faster
-              // Stream text chunks immediately without waiting for TTS
-              logger.info('⚡ Streaming text without TTS for faster object rendering', {
-                sentenceCount: sentences.length
-              });
-
+              // Stream each sentence with TTS
               for (const sentence of sentences) {
                 yield {
                   type: 'text_chunk',
@@ -309,6 +284,24 @@ export class StreamingOrchestrator {
                     sentenceIndex: sentence.index
                   }
                 };
+
+                try {
+                  const audioResult = await ttsService.generateSentenceSpeech(
+                    sentence.text,
+                    voice,
+                    sentence.index
+                  );
+                  yield {
+                    type: 'audio_chunk',
+                    timestamp: Date.now(),
+                    data: audioResult
+                  };
+                } catch (error) {
+                  logger.warn('TTS generation failed during pre-tool streaming', {
+                    sentenceIndex: sentence.index,
+                    error: error instanceof Error ? error.message : 'Unknown'
+                  });
+                }
               }
 
               // Flush final sentence
@@ -322,9 +315,22 @@ export class StreamingOrchestrator {
                     sentenceIndex: finalSentence.index
                   }
                 };
-              }
 
-              // TTS will be generated later with final narration to avoid duplication
+                try {
+                  const audioResult = await ttsService.generateSentenceSpeech(
+                    finalSentence.text,
+                    voice,
+                    finalSentence.index
+                  );
+                  yield {
+                    type: 'audio_chunk',
+                    timestamp: Date.now(),
+                    data: audioResult
+                  };
+                } catch (error) {
+                  logger.warn('TTS generation failed for final sentence', { error });
+                }
+              }
             }
 
             logger.info('✅ Narration streamed, now executing tools');
@@ -579,28 +585,19 @@ export class StreamingOrchestrator {
                   size: obj.size
                 }))
               },
-              { width: 900, height: 400 }
+              { width: 400, height: 200 }
             );
-
-            // Determine parent connections for simple chain
-            const parentIds = lastGeneratedObjectId
-              ? [lastGeneratedObjectId]    // Chain to previous object
-              : highlightedObjectIds;       // First object connects to highlighted
 
             const canvasObject = objectGenerator.generateObject(
               {
                 type: request.type,
                 content: request.content,
                 referenceName: request.referenceName,
-                parentObjectIds: parentIds,
                 metadata: request.metadata
               },
               position,
               turnId
             );
-
-            // Track this object for next iteration (chain)
-            lastGeneratedObjectId = canvasObject.id;
 
             streamingContext.existingObjects.push(canvasObject);
 
@@ -703,17 +700,13 @@ export class StreamingOrchestrator {
         );
       }
 
-      // OPTIMIZATION: Pre-calculate all priority objects before yielding
-      // This batches layout calculations and allows rapid-fire yielding
+      // Emit priority objects BEFORE TTS starts for immediate visual feedback
       if (priorityObjects.length > 0) {
-        logger.info('🎯 Pre-calculating priority objects for batch emission', {
+        logger.info('🎯 Emitting priority objects before TTS', {
           priorityObjectCount: priorityObjects.length,
           types: priorityObjects.map(obj => obj.type)
         });
 
-        const preparedObjects: Array<{ canvasObject: CanvasObject; placement: ObjectPlacement }> = [];
-
-        // Pre-calculate all positions and generate all objects first
         for (const request of priorityObjects) {
           try {
             const position = layoutEngine.calculatePosition(
@@ -724,28 +717,19 @@ export class StreamingOrchestrator {
                   size: obj.size
                 }))
               },
-              { width: 900, height: 400 }
+              { width: 400, height: 200 }
             );
-
-            // Determine parent connections for simple chain
-            const parentIds = lastGeneratedObjectId
-              ? [lastGeneratedObjectId]    // Chain to previous object
-              : highlightedObjectIds;       // First object connects to highlighted
 
             const canvasObject = objectGenerator.generateObject(
               {
                 type: request.type,
                 content: request.content,
                 referenceName: request.referenceName,
-                parentObjectIds: parentIds,
                 metadata: request.metadata
               },
               position,
               turnId
             );
-
-            // Track this object for next iteration (chain)
-            lastGeneratedObjectId = canvasObject.id;
 
             streamingContext.existingObjects.push(canvasObject);
 
@@ -753,10 +737,15 @@ export class StreamingOrchestrator {
               objectId: canvasObject.id,
               position: canvasObject.position,
               animateIn: 'fade',
-              timing: totalObjects * 50  // Reduced from 300ms to 50ms for rapid succession
+              timing: totalObjects * 300
             };
 
-            preparedObjects.push({ canvasObject, placement });
+            yield {
+              type: 'canvas_object',
+              timestamp: Date.now(),
+              data: { object: canvasObject, placement }
+            };
+
             totalObjects++;
           } catch (error) {
             // Skip empty text objects or other generation errors
@@ -767,23 +756,6 @@ export class StreamingOrchestrator {
             continue;
           }
         }
-
-        // Now yield all prepared objects in rapid succession (no blocking operations)
-        logger.info('⚡ Yielding all priority objects in rapid succession', {
-          objectCount: preparedObjects.length
-        });
-
-        for (const { canvasObject, placement } of preparedObjects) {
-          yield {
-            type: 'canvas_object',
-            timestamp: Date.now(),
-            data: { object: canvasObject, placement }
-          };
-        }
-
-        logger.info('✅ All priority objects yielded', {
-          objectCount: preparedObjects.length
-        });
       }
 
       // Stream narration sentence-by-sentence with TTS
@@ -794,60 +766,71 @@ export class StreamingOrchestrator {
 
         // Split narration into sentences
         const sentences = sentenceParser.addChunk(agentResponse.narration);
-        const finalSentence = sentenceParser.flush();
-        if (finalSentence) {
-          sentences.push(finalSentence);
-        }
 
-        // OPTIMIZATION: Generate TTS in parallel batches of 3 sentences
-        const BATCH_SIZE = 3;
-        logger.info('⚡ Generating TTS in parallel batches', {
-          totalSentences: sentences.length,
-          batchSize: BATCH_SIZE
-        });
+        // Process each sentence
+        for (const sentence of sentences) {
+          logger.debug('Processing narration sentence', {
+            sentenceIndex: sentence.index,
+            text: sentence.text.substring(0, 100)
+          });
 
-        for (let i = 0; i < sentences.length; i += BATCH_SIZE) {
-          const batch = sentences.slice(i, i + BATCH_SIZE);
+          // Send text chunk event
+          yield {
+            type: 'text_chunk',
+            timestamp: Date.now(),
+            data: {
+              text: sentence.text,
+              sentenceIndex: sentence.index
+            }
+          };
 
-          // First, yield all text chunks immediately (non-blocking)
-          for (const sentence of batch) {
-            yield {
-              type: 'text_chunk',
-              timestamp: Date.now(),
-              data: {
-                text: sentence.text,
-                sentenceIndex: sentence.index
-              }
-            };
-          }
-
-          // Then generate TTS for all sentences in batch in parallel
+          // Generate TTS for the sentence
           try {
-            const audioPromises = batch.map(sentence =>
-              ttsService.generateSentenceSpeech(sentence.text, voice, sentence.index)
-                .catch(error => {
-                  logger.warn('TTS generation failed for sentence', {
-                    sentenceIndex: sentence.index,
-                    error: error instanceof Error ? error.message : 'Unknown'
-                  });
-                  return null;
-                })
+            const audioResult = await ttsService.generateSentenceSpeech(
+              sentence.text,
+              voice,
+              sentence.index
             );
 
-            const audioResults = await Promise.all(audioPromises);
-
-            // Yield audio chunks for successfully generated TTS
-            for (const audioResult of audioResults) {
-              if (audioResult) {
-                yield {
-                  type: 'audio_chunk',
-                  timestamp: Date.now(),
-                  data: audioResult
-                };
-              }
-            }
+            yield {
+              type: 'audio_chunk',
+              timestamp: Date.now(),
+              data: audioResult
+            };
           } catch (error) {
-            logger.warn('Batch TTS generation failed', { error });
+            logger.warn('TTS generation failed for sentence', {
+              sentenceIndex: sentence.index,
+              error: error instanceof Error ? error.message : 'Unknown'
+            });
+          }
+        }
+
+        // Flush any remaining sentence
+        const finalSentence = sentenceParser.flush();
+        if (finalSentence) {
+          yield {
+            type: 'text_chunk',
+            timestamp: Date.now(),
+            data: {
+              text: finalSentence.text,
+              sentenceIndex: finalSentence.index
+            }
+          };
+
+          try {
+            const audioResult = await ttsService.generateSentenceSpeech(
+              finalSentence.text,
+              voice,
+              finalSentence.index
+            );
+
+            yield {
+              type: 'audio_chunk',
+              timestamp: Date.now(),
+              data: audioResult
+            };
+          } catch (error) {
+            logger.warn('TTS generation failed for final sentence', { error });
           }
         }
       }
@@ -888,25 +871,16 @@ export class StreamingOrchestrator {
             enhancedContent = `${request.content} - Context: ${question}`;
           }
 
-          // Determine parent connections for simple chain
-          const parentIds = lastGeneratedObjectId
-            ? [lastGeneratedObjectId]    // Chain to previous object
-            : highlightedObjectIds;       // First object connects to highlighted
-
           const canvasObject = objectGenerator.generateObject(
             {
               type: request.type,
               content: enhancedContent,
               referenceName: request.referenceName,
-              parentObjectIds: parentIds,
               metadata: request.metadata
             },
             position,
             turnId
           );
-
-          // Track this object for next iteration (chain)
-          lastGeneratedObjectId = canvasObject.id;
 
           streamingContext.existingObjects.push(canvasObject);
 
@@ -1491,12 +1465,9 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       // Handle image content (from Python MCP matplotlib)
       // Require minimum 100 bytes to filter out blank/empty images (typical blank PNG is 40-80 bytes)
       if (content.type === 'image' && content.data && content.data.trim().length > 100 && content.mimeType) {
-        // Use dimensions from MCP response if available (Python MCP sends actual pixel dimensions)
-        // Add padding to account for component chrome (header ~50px + padding 32px)
-        const HEADER_HEIGHT = 50;
-        const PADDING = 32;
-        const imageWidth = (content.width || 600) + PADDING;
-        const imageHeight = (content.height || 450) + HEADER_HEIGHT + PADDING;
+        // Use dimensions from MCP response if available, otherwise default to 600x400
+        const imageWidth = content.width || 600;
+        const imageHeight = content.height || 400;
 
         const position = layoutEngine.calculatePosition(
           {
@@ -1528,24 +1499,8 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             source: 'mcp',
             toolName,
             mimeType: content.mimeType,
-            ...(highlightedObjectIds && highlightedObjectIds.length > 0 ? {
-              parentObjectIds: lastGeneratedObjectId
-                ? [lastGeneratedObjectId]
-                : highlightedObjectIds,
-              connections: (lastGeneratedObjectId
-                ? [lastGeneratedObjectId]
-                : highlightedObjectIds
-              ).map(id => ({
-                targetId: id,
-                type: 'parent' as const,
-                label: 'derived from'
-              }))
-            } : {}),
           },
         };
-
-        // Track this object for next iteration (chain)
-        lastGeneratedObjectId = imageObject.id;
 
         objects.push(imageObject);
       }
@@ -1564,22 +1519,15 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
         if (isVideo || isImage) {
           // Use proper dimensions based on content type
-          // Add padding to account for component chrome (header ~50px + padding 32px)
-          const HEADER_HEIGHT = 50;
-          const PADDING = 32; // 16px on each side
-
-          let resourceWidth: number;
-          let resourceHeight: number;
+          // Videos (Manim): Default 1280×720 (medium quality default)
+          // Images: Use content dimensions if available, otherwise larger default
+          let resourceWidth = 1280;
+          let resourceHeight = 720;
 
           if (isImage) {
-            // For images from content (Python MCP sends actual dimensions)
-            // Add padding to the actual content dimensions
-            resourceWidth = (content.width || 1600) + PADDING;
-            resourceHeight = (content.height || 1200) + HEADER_HEIGHT + PADDING;
-          } else {
-            // Videos (Manim): Default 1280×720 + padding
-            resourceWidth = 1280 + PADDING;
-            resourceHeight = 720 + HEADER_HEIGHT + PADDING;
+            // For images, prefer 1600×1200 default (4:3 aspect ratio for graphs)
+            resourceWidth = content.width || 1600;
+            resourceHeight = content.height || 1200;
           }
 
           const position = layoutEngine.calculatePosition(
@@ -1635,25 +1583,8 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 mimeType: resource.mimeType,
                 uri: resource.uri,
                 usedBase64: !!resource.text,  // Track if we used base64
-                ...(highlightedObjectIds && highlightedObjectIds.length > 0 ? {
-                  parentObjectIds: lastGeneratedObjectId
-                    ? [lastGeneratedObjectId]
-                    : highlightedObjectIds,
-                  connections: (lastGeneratedObjectId
-                    ? [lastGeneratedObjectId]
-                    : highlightedObjectIds
-                  ).map(id => ({
-                    targetId: id,
-                    type: 'parent' as const,
-                    label: 'derived from'
-                  }))
-                } : {}),
               },
             };
-
-            // Track this object for next iteration (chain)
-            lastGeneratedObjectId = videoObject.id;
-
             objects.push(videoObject);
           } else {
             const imageObject: CanvasObject = {
@@ -1676,27 +1607,8 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 toolName,
                 mimeType: resource.mimeType,
                 uri: resource.uri,
-                ...(highlightedObjectIds && highlightedObjectIds.length > 0 ? {
-                  parentObjectIds: firstGeneratedObjectId
-                    ? [firstGeneratedObjectId]
-                    : highlightedObjectIds,
-                  connections: (firstGeneratedObjectId
-                    ? [firstGeneratedObjectId]
-                    : highlightedObjectIds
-                  ).map(id => ({
-                    targetId: id,
-                    type: 'parent' as const,
-                    label: 'derived from'
-                  }))
-                } : {}),
               },
             };
-
-            // Track first object for clean connection tree
-            if (!firstGeneratedObjectId) {
-              firstGeneratedObjectId = imageObject.id;
-            }
-
             objects.push(imageObject);
           }
         }

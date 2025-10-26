@@ -4,6 +4,19 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useSessionStore } from '@/lib/session-store';
 import { useOpenAITTS } from './use-openai-tts';
 
+// Cached demo responses - completely hardcoded
+const DEMO_RESPONSES = {
+  architecture: {
+    text: "I'm Mentora, an AI-powered tutoring platform. Let me show you how I work by breaking down my technical foundation.",
+  },
+  features: {
+    text: "Let me show you what I can do for math! I can create beautiful LaTeX equations and generate interactive Manim animations to help you visualize mathematical concepts. Here are some examples of my mathematical capabilities.",
+  }
+};
+
+// Audio cache for instant playback
+const audioCache = new Map<string, HTMLAudioElement>();
+
 /**
  * Hook for detecting voice triggers in the demo session and revealing canvas objects.
  *
@@ -40,9 +53,71 @@ export function useDemoVoiceHandler(sessionId: string | null) {
     return addMessage(sessionId, message);
   }, [addMessage]);
 
+
+  // Pre-generate and cache TTS audio
+  const preGenerateTTS = useCallback(async (voice: string) => {
+    console.log('🎵 Pre-generating TTS audio for demo responses...');
+    
+    for (const [key, response] of Object.entries(DEMO_RESPONSES)) {
+      const cacheKey = `${response.text}-${voice}`;
+      
+      if (!audioCache.has(cacheKey)) {
+        try {
+          const ttsResponse = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: response.text, voice })
+          });
+          
+          if (ttsResponse.ok) {
+            const data = await ttsResponse.json();
+            const audio = new Audio();
+            
+            // Convert base64 to blob URL
+            const binaryString = atob(data.audio);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: 'audio/mp3' });
+            const audioUrl = URL.createObjectURL(blob);
+            
+            audio.src = audioUrl;
+            audioCache.set(cacheKey, audio);
+            console.log(`✅ Cached TTS audio for ${key}`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ Failed to pre-generate TTS for ${key}:`, error);
+        }
+      }
+    }
+  }, []);
+
+  // Cached TTS function - uses pre-generated audio
+  const speakCached = useCallback((text: string, voice: string, onComplete?: () => void) => {
+    const cacheKey = `${text}-${voice}`;
+    
+    // Check if we have cached audio
+    if (audioCache.has(cacheKey)) {
+      const audio = audioCache.get(cacheKey)!;
+      audio.currentTime = 0;
+      audio.play();
+      
+      if (onComplete) {
+        audio.onended = onComplete;
+      }
+      console.log('🎵 Playing cached audio');
+      return;
+    }
+
+    // Fallback to regular TTS if not cached
+    console.warn('⚠️ Audio not cached, using fallback TTS');
+    speak(text, voice as any, onComplete);
+  }, [speak]);
+
   // Stable callback for speaking
-  const speakCallback = useCallback((text: string, voice: string) => {
-    speak(text, voice);
+  const speakCallback = useCallback((text: string, voice: string, onComplete?: () => void) => {
+    speak(text, voice as any, onComplete);
   }, [speak]);
 
   // Detect trigger phrases in text
@@ -50,19 +125,19 @@ export function useDemoVoiceHandler(sessionId: string | null) {
     const lowerText = text.toLowerCase();
     console.log('🔍 Detecting trigger for text:', lowerText);
 
-    // Trigger 2: "What are your features?" - reveals features, use cases, try it now
-    // Check this FIRST because "what are your features" contains "what are you"
+    // Trigger 2: "Show me what you can do for math" - reveals math examples with LaTeX and Manim
+    // Check this FIRST because "show me what you can do" contains "what are you"
     const featureTriggers = [
-      'what are your features',
-      'what features',
-      'features',
-      'what can you do',
-      'show me features',
-      'your capabilities',
-      'what capabilities',
-      'show me what you can do',
-      'tell me your features',
-      'capabilities'
+      'show me what you can do for math',
+      'what can you do for math',
+      'show me math examples',
+      'math capabilities',
+      'mathematical examples',
+      'latex examples',
+      'manim examples',
+      'show me latex',
+      'show me manim',
+      'math features'
     ];
 
     if (featureTriggers.some((trigger) => lowerText.includes(trigger))) {
@@ -169,13 +244,12 @@ export function useDemoVoiceHandler(sessionId: string | null) {
       if (sourceObject) {
         console.log(`✅ Found source object: ${sourceObject.id}, revealing objects...`);
 
-        // In demo mode, we add the hardcoded response to chat AND speak it
-        console.log('🎭 Demo mode - adding hardcoded response to chat and speaking it');
-        
-        // Get the hardcoded response
-        const responseMessage = trigger === 'architecture'
-          ? "I can definitely help with that! I'm Mentora, an AI tutor designed to help you learn through interactive, visual explanations on this infinite canvas workspace. Think of me as your personal teaching assistant who can create visual content in real-time to help concepts click. Let me show you what makes me unique by breaking down my core capabilities."
-          : "I have several powerful features to help you learn effectively! I offer live voice tutoring with real-time conversation, create interactive visual content like diagrams and equations, integrate with specialized MCP tools for different subjects, and use advanced brain systems to adapt my teaching style. I support multiple subjects and can generate everything from mathematical graphs to molecular structures to help you understand complex topics.";
+         // In demo mode, we add the hardcoded response to chat AND speak it
+         console.log('🎭 Demo mode - adding hardcoded response to chat and speaking it');
+         
+         // Get the hardcoded response
+         const response = DEMO_RESPONSES[trigger];
+         const responseSentences = response.text.split('. ').map(s => s.trim() + (s.endsWith('.') ? '' : '.'));
 
         // Add "Thinking..." message first (like real system) and get its ID
         const thinkingMessageId = addMessageCallback(sessionId, {
@@ -183,45 +257,85 @@ export function useDemoVoiceHandler(sessionId: string | null) {
           content: 'Thinking...',
         });
 
-        // Wait 2.5 seconds to simulate processing time
-        setTimeout(() => {
-          // Update the same message with the actual response
-          updateMessage(sessionId, thinkingMessageId, {
-            content: responseMessage,
-          });
+         // Wait 1 second to simulate processing time (much shorter)
+         setTimeout(() => {
+           // Update with full response immediately
+           updateMessage(sessionId, thinkingMessageId, {
+             content: response.text,
+           });
 
-          // Speak the hardcoded response using TTS immediately (no delay)
-          speakCallback(responseMessage, settings.voice);
-          
-          // For features trigger, find the last revealed object to continue the chain
-          let sourceObjectId = sourceObject.id;
-          if (trigger === 'features') {
-            // Find the last revealed object (How It Works) to continue the chain from
-            const lastRevealedObject = canvasObjects.find(
-              (obj) => obj.demoGroup === 'architecture' && !obj.hidden && obj.label === 'How It Works'
-            );
-            if (lastRevealedObject) {
-              sourceObjectId = lastRevealedObject.id;
-              console.log('🔗 Continuing tree from last revealed object:', lastRevealedObject.label);
-            }
-          }
-          
-          // Reveal the demo objects with connections
-          revealDemoObjects(sessionId, trigger, sourceObjectId);
-        }, 2500);
+           // Start TTS immediately
+           if (trigger === 'architecture') {
+             // Architecture: TTS for entire response with completion callback
+             speakCached(response.text, settings.voice, () => {
+               console.log('🎤 TTS completed, revealing architecture components');
+               console.log('🏗️ Revealing Architecture component after TTS completes');
+               revealDemoObjects(sessionId, 'architecture', sourceObject.id);
+               
+               // Also reveal Key Features component after a short delay
+               setTimeout(() => {
+                 console.log('🎯 Revealing Key Features component');
+                 const architectureObject = canvasObjects.find(
+                   (obj) => obj.demoGroup === 'architecture' && !obj.hidden && obj.label === 'Architecture'
+                 );
+                 if (architectureObject) {
+                   revealDemoObjects(sessionId, 'architecture', architectureObject.id);
+                 }
+               }, 1000);
+             });
+           } else if (trigger === 'features') {
+             // Features: TTS for entire response with completion callback
+             speakCached(response.text, settings.voice, () => {
+               console.log('🎤 Features TTS completed, revealing components one by one');
+               
+               // Find the Key Features object to branch from
+               const keyFeaturesObject = canvasObjects.find(
+                 (obj) => obj.demoGroup === 'architecture' && !obj.hidden && obj.label === 'Key Features'
+               );
+               let sourceObjectId = sourceObject.id;
+               if (keyFeaturesObject) {
+                 sourceObjectId = keyFeaturesObject.id;
+                 console.log('🔗 Branching from Key Features object:', keyFeaturesObject.label);
+               }
+               
+               // Reveal components one by one with delays
+               setTimeout(() => {
+                 console.log('🎯 Revealing LaTeX component');
+                 revealDemoObjects(sessionId, 'features', sourceObjectId);
+               }, 500);
+               
+               setTimeout(() => {
+                 console.log('🎯 Revealing Manim video component');
+                 const latexObject = canvasObjects.find(
+                   (obj) => obj.demoGroup === 'features' && !obj.hidden && obj.label === 'Quadratic Formula'
+                 );
+                 if (latexObject) {
+                   revealDemoObjects(sessionId, 'features', latexObject.id);
+                 }
+               }, 2000);
+             });
+           }
+         }, 1000);
         
-        // Reset processing flag after a delay to allow for future triggers
+        // Reset processing flag after TTS starts to allow for future triggers
         setTimeout(() => {
           isProcessingRef.current = false;
-        }, 5000); // 5 second cooldown
+        }, 3000); // 3 second cooldown - reset after TTS starts
       } else {
         console.warn('⚠️ No source object found for demo reveal');
         isProcessingRef.current = false;
       }
     } else if (trigger) {
-      console.log(`⏭️ Trigger "${trigger}" already revealed or processing`);
+      console.log(`⏭️ Trigger "${trigger}" blocked - already revealed: ${revealedGroupsRef.current.has(trigger)}, processing: ${isProcessingRef.current}`);
     }
-  }, [sessionId, messages, canvasObjects, revealDemoObjects, addMessageCallback, speakCallback, settings.voice]);
+  }, [sessionId, messages, canvasObjects, revealDemoObjects, addMessageCallback, speakCached, settings.voice]);
+
+  // Pre-generate TTS audio when component mounts
+  useEffect(() => {
+    if (sessionId && settings.voice) {
+      preGenerateTTS(settings.voice);
+    }
+  }, [sessionId, settings.voice, preGenerateTTS]);
 
   // Reset revealed groups and processed message ID when session changes
   useEffect(() => {

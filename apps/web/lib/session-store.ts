@@ -126,15 +126,11 @@ type SessionState = {
   addMessage: (sessionId: string, message: Omit<Message, "id" | "timestamp">) => string;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<Omit<Message, "id" | "timestamp">>) => void;
   removeMessage: (sessionId: string, messageId: string) => void;
-  getMessageNarration: (sessionId: string, messageId: string) => {
-    text: string;
-    voice: VoiceOption;
-    updatedAt: string;
-  } | null;
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   updateCanvasObjects: (sessionId: string, objects: CanvasObject[]) => void;
   deleteCanvasObjects: (sessionId: string, objectIds: string[]) => void;
   revealDemoObjects: (sessionId: string, demoGroup: 'architecture' | 'features', sourceObjectId?: string) => void;
+  animateComponentText: (sessionId: string, objectId: string, fullContent: string) => void;
   toggleObjectSelection: (sessionId: string, objectId: string, keepOthers?: boolean) => void;
   clearObjectSelection: (sessionId: string) => void;
   setSelectedObjects: (sessionId: string, ids: string[]) => void;
@@ -389,24 +385,6 @@ export const useSessionStore = create<SessionState>()(
         }
       });
     },
-    getMessageNarration: (sessionId, messageId) => {
-      const state = get();
-      const messages = state.messages[sessionId];
-      if (!messages) return null;
-
-      const message = messages.find((m) => m.id === messageId);
-      if (!message) return null;
-
-      const text = (message.narrationText ?? message.content ?? '').trim();
-      if (!text) return null;
-
-      const voice = message.narrationVoice ?? state.settings.voice ?? 'alloy';
-      return {
-        text,
-        voice,
-        updatedAt: message.narrationUpdatedAt ?? message.timestamp,
-      };
-    },
     removeMessage: (sessionId, messageId) => {
       set((state) => {
         const messages = state.messages[sessionId];
@@ -416,8 +394,6 @@ export const useSessionStore = create<SessionState>()(
       });
     },
     updateCanvasObject: (sessionId, object) => {
-      const isNewObject = !get().canvasObjects[sessionId]?.find((item) => item.id === object.id);
-
       set((state) => {
         if (!state.canvasObjects[sessionId]) {
           state.canvasObjects[sessionId] = [];
@@ -429,20 +405,6 @@ export const useSessionStore = create<SessionState>()(
           state.canvasObjects[sessionId].push(object);
         }
       });
-
-      // Auto-create connections from parent objects if metadata contains parentObjectIds
-      if (isNewObject && object.metadata?.parentObjectIds) {
-        const parentIds = Array.isArray(object.metadata.parentObjectIds)
-          ? object.metadata.parentObjectIds
-          : JSON.parse(object.metadata.parentObjectIds as string);
-
-        if (Array.isArray(parentIds) && parentIds.length > 0) {
-          // Create connections from each parent object to this new object
-          parentIds.forEach((parentId: string) => {
-            get().createConnection(sessionId, parentId, object.id, 'south', 'north');
-          });
-        }
-      }
     },
     updateCanvasObjects: (sessionId, objects) => {
       // Save state before update for undo
@@ -522,7 +484,8 @@ export const useSessionStore = create<SessionState>()(
       objectsToReveal.forEach((obj, index) => {
         const objWidth = obj.width || 600;
         const objHeight = obj.height || 200;
-        const delay = index * 150; // 150ms delay between each reveal for animation effect
+        // Use 3 seconds delay for architecture group, 150ms for features group
+        const delay = demoGroup === 'architecture' ? index * 3000 : index * 150;
 
         // Capture current values for the setTimeout closure
         const targetX = currentX;
@@ -540,6 +503,11 @@ export const useSessionStore = create<SessionState>()(
               targetObj.hidden = false;
               targetObj.x = targetX;
               targetObj.y = targetY;
+              
+              // Start line-by-line text generation for all demo components
+              if (targetObj.data?.content) {
+                get().animateComponentText(sessionId, targetObj.id, targetObj.data.content);
+              }
             }
           });
 
@@ -552,6 +520,24 @@ export const useSessionStore = create<SessionState>()(
         currentX += objWidth + HORIZONTAL_SPACING;
         currentY += VERTICAL_SPACING; // Slight vertical stagger
         previousObjectId = obj.id;
+      });
+    },
+    animateComponentText: (sessionId, objectId, fullContent) => {
+      // Split content into lines for line-by-line animation
+      const lines = fullContent.split('\n');
+      let currentContent = '';
+      
+      lines.forEach((line, index) => {
+        setTimeout(() => {
+          currentContent += (index > 0 ? '\n' : '') + line;
+          
+          set((state) => {
+            const targetObj = state.canvasObjects[sessionId]?.find(o => o.id === objectId);
+            if (targetObj && targetObj.data) {
+              targetObj.data.content = currentContent;
+            }
+          });
+        }, index * 100); // 100ms delay between lines (very fast)
       });
     },
     toggleObjectSelection: (sessionId, objectId, keepOthers = false) => {
