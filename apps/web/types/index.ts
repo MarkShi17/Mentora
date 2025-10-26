@@ -18,6 +18,10 @@ export type Message = {
   brainType?: BrainType;
   brainConfidence?: number;
   mcpToolsUsed?: string[];
+  interrupted?: boolean;  // Whether this message was stopped/interrupted
+  interruptedAt?: string;  // Timestamp when interrupted
+  isStreaming?: boolean;  // Currently streaming text
+  isPlayingAudio?: boolean;  // Currently playing audio
 };
 
 export type CanvasObjectType = "diagram" | "note" | "formula" | "image" | "text" | "code" | "graph" | "latex";
@@ -81,6 +85,7 @@ export type ObjectReference = {
 };
 
 export type StreamEvent =
+  | { type: 'cached_intro'; data: { id: string; text: string; audio: string; category: string; duration: number } }
   | { type: 'text_chunk'; data: { text: string } }
   | { type: 'audio_chunk'; data: { audio: string; text: string; sentenceIndex: number } }
   | { type: 'canvas_object'; data: { object: any; placement: ObjectPlacement } }
@@ -89,7 +94,8 @@ export type StreamEvent =
   | { type: 'mcp_tool_start'; data: { toolName: string; serverId: string; description: string } }
   | { type: 'mcp_tool_complete'; data: { toolName: string; serverId: string; success: boolean; error?: string; duration: number } }
   | { type: 'complete'; data?: any }
-  | { type: 'error'; data: { message: string } };
+  | { type: 'error'; data: { message: string } }
+  | { type: 'interrupted'; data: { message: string; code: string } };
 
 export type ConnectionAnchor = 'north' | 'east' | 'south' | 'west';
 

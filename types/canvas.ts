@@ -21,6 +21,8 @@ export interface CanvasObjectMetadata {
   [key: string]: any;
 }
 
+export type GenerationState = 'generating' | 'complete' | 'error';
+
 export interface BaseCanvasObject {
   id: string;
   type: CanvasObjectType;
@@ -28,6 +30,9 @@ export interface BaseCanvasObject {
   size: Size;
   zIndex: number;
   metadata: CanvasObjectMetadata;
+  generationState?: GenerationState;
+  placeholder?: boolean;
+  label?: string;
 }
 
 export interface LatexObject extends BaseCanvasObject {

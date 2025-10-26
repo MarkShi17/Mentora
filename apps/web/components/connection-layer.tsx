@@ -145,12 +145,13 @@ export function ConnectionLayer({
                 <path
                   d={finalPathData}
                   fill="none"
-                  stroke={isHighlighted ? '#0ea5e9' : '#94a3b8'}
-                  strokeWidth={isHighlighted ? 3 / transform.k : 2 / transform.k}
+                  stroke={isHighlighted ? '#8b5cf6' : '#d1d5db'}
+                  strokeWidth={isHighlighted ? 2.5 / transform.k : 1.5 / transform.k}
                   strokeLinecap="round"
+                  strokeDasharray={isHighlighted ? 'none' : '4 4'}
                   className="pointer-events-none"
                   style={{
-                    filter: isHighlighted ? 'drop-shadow(0 0 4px rgba(14, 165, 233, 0.5))' : 'none'
+                    filter: isHighlighted ? 'drop-shadow(0 1px 2px rgba(139, 92, 246, 0.3))' : 'none'
                   }}
                 />
               </g>
@@ -195,21 +196,21 @@ export function ConnectionLayer({
                 <path
                   d={previewPath}
                   fill="none"
-                  stroke="#0ea5e9"
-                  strokeWidth={2.5 / transform.k}
+                  stroke="#8b5cf6"
+                  strokeWidth={2 / transform.k}
                   strokeLinecap="round"
-                  strokeDasharray={`${8 / transform.k} ${4 / transform.k}`}
+                  strokeDasharray={`${6 / transform.k} ${3 / transform.k}`}
                   className="pointer-events-none"
                   style={{
-                    filter: 'drop-shadow(0 0 6px rgba(14, 165, 233, 0.6))',
-                    opacity: isSnapping ? 1 : 0.7
+                    filter: 'drop-shadow(0 1px 2px rgba(139, 92, 246, 0.4))',
+                    opacity: isSnapping ? 1 : 0.6
                   }}
                 >
                   {/* Animated dash movement */}
                   <animate
                     attributeName="stroke-dashoffset"
                     from="0"
-                    to={`${-12 / transform.k}`}
+                    to={`${-9 / transform.k}`}
                     dur="0.5s"
                     repeatCount="indefinite"
                   />

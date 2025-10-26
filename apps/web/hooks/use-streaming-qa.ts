@@ -16,6 +16,7 @@ interface StreamingQACallbacks {
   onReference?: (reference: ObjectReference) => void;
   onComplete?: () => void;
   onError?: (error: string) => void;
+  onInterrupted?: (partialText: string) => void;  // Called when streaming is interrupted
 }
 
 export function useStreamingQA(callbacks?: StreamingQACallbacks) {
@@ -138,6 +139,26 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
 
             // Handle different event types
             switch (event.type) {
+              case 'cached_intro':
+                console.log('🎯 Cached intro received:', event.data.text);
+                console.log('   Category:', event.data.category);
+                console.log('   Duration:', event.data.duration + 'ms');
+
+                // Play cached intro immediately for instant feedback
+                audioQueue.enqueue({
+                  audio: event.data.audio,
+                  text: event.data.text,
+                  sentenceIndex: -1, // Special index for cached intro
+                });
+
+                // Optionally show the intro text immediately in the UI
+                setState(prev => ({
+                  ...prev,
+                  currentText: event.data.text,
+                  isStreaming: true,
+                }));
+                break;
+
               case 'brain_selected':
                 console.log('🧠 Brain selected:', event.data.brainName, `(${event.data.confidence.toFixed(2)} confidence)`);
                 console.log('   Reasoning:', event.data.reasoning);
@@ -229,6 +250,17 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
                   callbacks.onError(errorMessage);
                 }
                 break;
+
+              case 'interrupted':
+                console.log('⚠️ Stream interrupted:', event.data.message);
+                setState(prev => ({
+                  ...prev,
+                  isStreaming: false,
+                }));
+                if (callbacks?.onInterrupted) {
+                  callbacks.onInterrupted(state.currentText);
+                }
+                break;
             }
           } catch (error) {
             console.error('Failed to parse SSE event:', error);
@@ -263,6 +295,9 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
   const stopStreaming = useCallback(() => {
     console.log('🛑 Stopping streaming completely');
 
+    // Capture the partial text before clearing
+    const partialText = state.currentText;
+
     // Close event source
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
@@ -285,8 +320,14 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
       error: null,
     });
 
+    // Notify about interruption if there was partial content
+    if (partialText && callbacks?.onInterrupted) {
+      console.log('📝 Notifying about interrupted content:', partialText.substring(0, 50) + '...');
+      callbacks.onInterrupted(partialText);
+    }
+
     console.log('✅ Streaming stopped and state cleared');
-  }, [audioQueue]);
+  }, [audioQueue, state.currentText, callbacks]);
 
   return {
     startStreaming,

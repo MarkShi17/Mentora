@@ -26,6 +26,7 @@ export class ObjectGenerator {
       position,
       size: { width: 400, height: 100 },
       zIndex: 1,
+      label: referenceName || 'Equation',
       data: {
         type: 'latex',
         latex,
@@ -54,6 +55,7 @@ export class ObjectGenerator {
       position,
       size: { width: 500, height: 400 },
       zIndex: 1,
+      label: referenceName || `Graph: ${equation}`,
       data: {
         type: 'graph',
         equation,
@@ -101,6 +103,7 @@ export class ObjectGenerator {
       position,
       size: { width, height },
       zIndex: 1,
+      label: referenceName || `Code (${language})`,
       data: {
         type: 'code',
         code,
@@ -122,28 +125,39 @@ export class ObjectGenerator {
     fontSize: number = 16,
     referenceName?: string
   ): TextObject {
-    // Calculate generous dimensions to minimize scrolling
-    const avgCharsPerLine = 80; // Wide text boxes for better readability
-    const lines = Math.ceil(content.length / avgCharsPerLine);
+    // Parse JSON if content is a JSON string
+    let parsedContent = content;
+    console.log('🔍 Original content:', content);
+    try {
+      const parsed = JSON.parse(content);
+      console.log('📦 Parsed JSON:', parsed);
+      // If it's an object with a content field, extract it
+      if (typeof parsed === 'object' && parsed !== null && 'content' in parsed && typeof parsed.content === 'string') {
+        parsedContent = parsed.content;
+        console.log('✅ Extracted content:', parsedContent);
+      } else {
+        console.log('⚠️ No content field found in parsed object');
+      }
+    } catch (e) {
+      // Not valid JSON, use content as-is
+      console.log('❌ Not valid JSON, using content as-is');
+    }
 
-    // Very generous sizing - prioritize showing all content without scrolling
+    // Calculate better dimensions based on content
+    const avgCharsPerLine = 50; // Longer lines for better readability
+    const lines = Math.ceil(parsedContent.length / avgCharsPerLine);
+    
+    // More generous sizing based on content length
     let estimatedWidth, estimatedHeight;
-    if (content.length > 1000) {
-      // Very long text - make it wide and tall
-      estimatedWidth = 900;
-      estimatedHeight = Math.max(lines * 30 + 120, 600);
-    } else if (content.length > 500) {
-      // Long text
-      estimatedWidth = 800;
-      estimatedHeight = Math.max(lines * 28 + 100, 400);
-    } else if (content.length > 200) {
-      // Medium text
-      estimatedWidth = 600;
-      estimatedHeight = Math.max(lines * 26 + 80, 250);
+    if (parsedContent.length > 500) {
+      estimatedWidth = Math.min(Math.max(parsedContent.length * 8, 400), 700);
+      estimatedHeight = Math.max(lines * 28 + 80, 120);
+    } else if (parsedContent.length > 200) {
+      estimatedWidth = Math.min(Math.max(parsedContent.length * 8, 300), 500);
+      estimatedHeight = Math.max(lines * 26 + 70, 100);
     } else {
-      // Short text
-      estimatedWidth = 450;
-      estimatedHeight = Math.max(lines * 24 + 70, 150);
+      estimatedWidth = Math.min(Math.max(parsedContent.length * 8, 250), 400);
+      estimatedHeight = Math.max(lines * 24 + 60, 80);
     }
 
     return {
@@ -152,9 +166,10 @@ export class ObjectGenerator {
       position,
       size: { width: estimatedWidth, height: estimatedHeight },
       zIndex: 1,
+      label: referenceName || 'Note',
       data: {
         type: 'text',
-        content,
+        content: parsedContent,
         fontSize,
       },
       metadata: {
@@ -180,6 +195,7 @@ export class ObjectGenerator {
       position,
       size: { width: 600, height: 450 }, // Large size for detailed diagrams
       zIndex: 1,
+      label: referenceName || 'Diagram',
       data: {
         type: 'diagram',
         svg,

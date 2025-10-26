@@ -114,7 +114,7 @@ export function SelectionLayer({
     if (!onResizeStart) return null;
 
     const dims = getDimensions(obj);
-    const handleSize = 8 / transform.k; // Scale handle size inversely with zoom
+    const handleSize = 10 / transform.k;
     const handleOffset = handleSize / 2;
 
     const corners = [
@@ -127,13 +127,15 @@ export function SelectionLayer({
     return corners.map(corner => (
       <div
         key={corner.name}
-        className="absolute pointer-events-auto bg-white border-2 border-sky-500 rounded-sm hover:bg-sky-100 z-50"
+        className="absolute pointer-events-auto bg-white border-[3px] border-sky-500 rounded-md hover:bg-sky-100 hover:border-sky-600 z-50 shadow-lg hover:shadow-xl hover:scale-125"
         style={{
           left: corner.x,
           top: corner.y,
           width: handleSize,
           height: handleSize,
-          cursor: corner.cursor
+          cursor: corner.cursor,
+          boxShadow: '0 2px 8px rgba(14, 165, 233, 0.3)',
+          transition: 'background-color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s'
         }}
         onPointerDown={(e) => {
           e.stopPropagation();
@@ -161,6 +163,7 @@ export function SelectionLayer({
     if (!onConnectionStart) return null;
 
     const dims = getDimensions(obj);
+    
     const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];
 
     return anchors.map(anchor => {
@@ -209,6 +212,7 @@ export function SelectionLayer({
         <div className="relative h-full w-full" style={stageStyle}>
           {objects.map(obj => {
             const dims = getDimensions(obj);
+
             const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];
 
             return anchors.map(anchor => {
@@ -275,8 +279,8 @@ export function SelectionLayer({
                 transform: "translateY(-100%)"
               }}
             >
-              <div className="mb-2 flex justify-center items-center pointer-events-auto">
-                <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+              <div className="mb-3 flex justify-center items-center pointer-events-auto">
+                <div className="rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2 text-xs font-black text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap flex items-center gap-2 border border-white/30 backdrop-blur-sm">
                   <span>Highlighted</span>
                   <ObjectMenuButton onOpenMenu={handleOpenMenu} />
                 </div>
@@ -348,8 +352,8 @@ export function SelectionLayer({
                 height: boundingHeight + boundingPadding * 2
               }}
             >
-              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[calc(100%+8px)] pointer-events-auto">
-                <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+              <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-[calc(100%+12px)] pointer-events-auto">
+                <div className="rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2 text-xs font-black text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap flex items-center gap-2 border border-white/30 backdrop-blur-sm">
                   <span>{selectedObjects.length} Selected</span>
                   <ObjectMenuButton onOpenMenu={handleOpenMenu} />
                 </div>
@@ -392,8 +396,8 @@ export function SelectionLayer({
               transform: "translateY(-100%)"
             }}
           >
-            <div className="mb-2 flex justify-center items-center pointer-events-auto">
-              <div className="rounded-full bg-sky-500 px-2 py-1 text-xs font-medium text-black shadow whitespace-nowrap flex items-center">
+            <div className="mb-3 flex justify-center items-center pointer-events-auto">
+              <div className="rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 px-4 py-2 text-xs font-black text-white shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 whitespace-nowrap flex items-center gap-2 border border-white/30 backdrop-blur-sm">
                 <span>Highlighted</span>
                 <ObjectMenuButton onOpenMenu={handleOpenMenu} />
               </div>

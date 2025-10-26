@@ -15,8 +15,10 @@ import { layoutEngine } from '@/lib/canvas/layoutEngine';
 import { ttsService } from '@/lib/voice/ttsService';
 import { SentenceParser } from '@/lib/utils/sentenceParser';
 import { logger } from '@/lib/utils/logger';
-import { MCP_TOOLS_FOR_CLAUDE } from './mcpTools';
-import { Brain } from '@/types/brain';
+import { mcpManager } from '@/lib/mcp';
+import { initializeMCP } from '@/lib/mcp/init';
+import { MCP_TOOLS_FOR_CLAUDE, TOOL_TO_SERVER_MAP, isVisualizationTool } from './mcpTools';
+import type { Brain } from '@/types/brain';
 
 interface StreamingContext {
   sessionId: string;
@@ -43,6 +45,7 @@ interface AgentResponse {
 
 export class StreamingOrchestrator {
   private anthropic: Anthropic;
+  private abortControllers: Map<string, AbortController>;
 
   constructor() {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -50,24 +53,34 @@ export class StreamingOrchestrator {
       throw new Error('ANTHROPIC_API_KEY environment variable is required');
     }
     this.anthropic = new Anthropic({ apiKey });
+    this.abortControllers = new Map();
   }
 
   /**
-   * Get tools appropriate for the selected brain
+   * Cancel a specific streaming response
    */
-  private getToolsForBrain(brain: Brain): typeof MCP_TOOLS_FOR_CLAUDE {
-    if (!brain.mcpTools || brain.mcpTools.length === 0) {
-      return MCP_TOOLS_FOR_CLAUDE; // Fallback to all tools for brains without specific tools
+  public cancelStream(turnId: string): void {
+    const controller = this.abortControllers.get(turnId);
+    if (controller) {
+      logger.info('🛑 Cancelling stream for turn', { turnId });
+      controller.abort();
+      this.abortControllers.delete(turnId);
     }
-
-    // Filter tools to only those appropriate for this brain
-    return MCP_TOOLS_FOR_CLAUDE.filter(tool =>
-      brain.mcpTools!.includes(tool.name)
-    );
   }
 
   /**
-   * Stream a teaching response with real-time TTS
+   * Cancel all active streams
+   */
+  public cancelAllStreams(): void {
+    logger.info('🛑 Cancelling all active streams', { count: this.abortControllers.size });
+    this.abortControllers.forEach((controller, turnId) => {
+      controller.abort();
+    });
+    this.abortControllers.clear();
+  }
+
+  /**
+   * Stream a teaching response with real-time TTS and MCP tool integration
    */
   async *streamResponse(
     question: string,
@@ -85,6 +98,10 @@ export class StreamingOrchestrator {
       userName?: string;
       explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
     },
+    cachedIntroPlayed?: {
+      text: string;
+      id: string;
+    } | null,
     selectedBrain?: Brain
   ): AsyncGenerator<StreamEvent, void, unknown> {
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -96,6 +113,10 @@ export class StreamingOrchestrator {
     logger.info('Turn ID', { turnId });
     logger.info('Existing canvas objects', { count: session.canvasObjects.length });
 
+    // Create abort controller for this stream
+    const abortController = new AbortController();
+    this.abortControllers.set(turnId, abortController);
+
     const streamingContext: StreamingContext = {
       sessionId: session.id,
       turnId,
@@ -105,6 +126,9 @@ export class StreamingOrchestrator {
     };
 
     try {
+      // Initialize MCP system
+      await initializeMCP();
+
       // Send metadata first
       yield {
         type: 'metadata',
@@ -116,11 +140,21 @@ export class StreamingOrchestrator {
         }
       };
 
+      // Filter MCP tools based on selected brain
+      const availableTools = selectedBrain && selectedBrain.mcpTools && selectedBrain.mcpTools.length > 0
+        ? MCP_TOOLS_FOR_CLAUDE.filter(tool => selectedBrain.mcpTools.includes(tool.name))
+        : [];
+
+      logger.info('MCP tools available for this brain', {
+        brainType: selectedBrain?.type || 'none',
+        tools: availableTools.map(t => t.name)
+      });
+
       // Build context from session
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system and user prompts with user settings
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, selectedBrain);
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
       // Get model from selected brain
@@ -133,285 +167,325 @@ export class StreamingOrchestrator {
       // TODO: Add tool execution handling to streaming orchestrator
       // const tools = selectedBrain ? this.getToolsForBrain(selectedBrain) : MCP_TOOLS_FOR_CLAUDE;
 
-      // Start Claude streaming
-      logger.info('🧠 Calling Claude API', {
-        model,
-        maxTokens: 4096,
-        brainType: selectedBrain?.type || 'general',
-        usingPromptEnhancement: !!selectedBrain?.promptEnhancement
-      });
+      // MCP tool execution loop
+      let messages: Anthropic.MessageParam[] = [
+        {
+          role: 'user',
+          content: userPrompt
+        }
+      ];
 
-      const stream = await this.anthropic.messages.stream({
-        model,
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: userPrompt
+      let finalResponseText = '';
+      const toolGeneratedObjects: CanvasObject[] = [];
+      const maxIterations = 5; // Prevent infinite tool use loops
+      let iteration = 0;
+
+      // Multi-turn conversation loop for MCP tool use
+      while (iteration < maxIterations) {
+        iteration++;
+
+        logger.info('🧠 Calling Claude API', {
+          model: 'claude-sonnet-4-5-20250929',
+          maxTokens: 4096,
+          iteration,
+          hasTools: availableTools.length > 0
+        });
+
+        const response = await this.anthropic.messages.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 4096,
+          system: systemPrompt,
+          tools: availableTools.length > 0 ? availableTools : undefined,
+          messages
+        });
+
+        logger.info('Claude response received', {
+          stopReason: response.stop_reason,
+          iteration,
+          contentBlocks: response.content.length
+        });
+
+        // If Claude wants to use tools
+        if (response.stop_reason === 'tool_use') {
+          const toolUses = response.content.filter(block => block.type === 'tool_use');
+          const textBlocks = response.content.filter(block => block.type === 'text');
+
+          // Store any text explanation
+          if (textBlocks.length > 0 && !finalResponseText) {
+            finalResponseText = textBlocks.map((block: any) => block.text).join('\n');
           }
-        ]
-        // tools parameter omitted - see note above
-      });
 
-      logger.info('✅ Claude stream started');
+          // Add assistant's message with tool use to conversation
+          messages.push({
+            role: 'assistant',
+            content: response.content
+          });
 
-      let fullResponse = '';
-      const sentenceParser = new SentenceParser();
-      let totalObjects = 0;
-      let totalReferences = 0;
+          // Execute all tool calls
+          const toolResultsContent: Anthropic.ToolResultBlockParam[] = [];
 
-      // Track parsing state for incremental JSON extraction
-      let lastNarrationLength = 0;
-      let lastObjectsCount = 0;
-      const streamedObjects = new Set<number>();
+          for (const toolUse of toolUses) {
+            if (toolUse.type !== 'tool_use') continue;
 
-      // Process Claude's streaming response with incremental JSON parsing
-      let chunkCount = 0;
-      for await (const chunk of stream) {
-        chunkCount++;
-        if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-          const textChunk = chunk.delta.text;
-          fullResponse += textChunk;
+            logger.info('Executing MCP tool', {
+              toolName: toolUse.name,
+              toolId: toolUse.id
+            });
 
-          // DEBUG: Log first few chunks
-          if (chunkCount <= 5) {
-            logger.info(`📦 Chunk ${chunkCount}`, { text: textChunk.substring(0, 100) });
-          }
+            const toolStartTime = Date.now();
 
-          // Try to parse JSON incrementally
-          try {
-            const agentResponse = this.parseResponse(fullResponse);
-
-            // NARRATION STREAMING: Extract new narration text
-            if (agentResponse.narration && agentResponse.narration.length > lastNarrationLength) {
-              const newNarration = agentResponse.narration.slice(lastNarrationLength);
-
-              // SAFETY CHECK: Ensure it's clean narration, not JSON fragments
-              const isCleanNarration = !newNarration.includes('{') &&
-                                       !newNarration.includes('}') &&
-                                       !newNarration.includes('"explanation"') &&
-                                       !newNarration.includes('"objects"') &&
-                                       !newNarration.includes('"narration"') &&
-                                       !newNarration.includes('"references"');
-
-              if (isCleanNarration && newNarration.trim().length > 0) {
-                lastNarrationLength = agentResponse.narration.length;
-
-                // Log what we're about to speak for debugging
-                logger.info('🗣️ Speaking narration chunk', {
-                  text: newNarration.substring(0, 100) + (newNarration.length > 100 ? '...' : '')
-                });
-
-                // Extract complete sentences from new narration
-                const sentences = sentenceParser.addChunk(newNarration);
-
-                // Generate TTS for each complete sentence
-                for (const sentence of sentences) {
-                  logger.debug('Complete narration sentence detected', {
-                    sentenceIndex: sentence.index,
-                    text: sentence.text
-                  });
-
-                  // Send text chunk event
-                  yield {
-                    type: 'text_chunk',
-                    timestamp: Date.now(),
-                    data: {
-                      text: sentence.text,
-                      sentenceIndex: sentence.index
-                    }
-                  };
-
-                  // Generate TTS asynchronously and stream audio
-                  try {
-                    const audioResult = await ttsService.generateSentenceSpeech(
-                      sentence.text,
-                      voice,
-                      sentence.index
-                    );
-
-                    yield {
-                      type: 'audio_chunk',
-                      timestamp: Date.now(),
-                      data: audioResult
-                    };
-                  } catch (error) {
-                    logger.warn('TTS generation failed for sentence, continuing', {
-                      sentenceIndex: sentence.index,
-                      error: error instanceof Error ? error.message : 'Unknown'
-                    });
-                    // Continue without audio for this sentence
-                  }
-                }
-              } else {
-                logger.debug('Skipping non-narration text chunk', {
-                  text: newNarration.substring(0, 100),
-                  hasJSON: newNarration.includes('{') || newNarration.includes('}')
-                });
+            try {
+              const serverId = TOOL_TO_SERVER_MAP[toolUse.name];
+              if (!serverId) {
+                throw new Error(`Unknown tool: ${toolUse.name}`);
               }
-            }
 
-            // CANVAS OBJECT STREAMING: Stream new objects one at a time
-            if (agentResponse.objects && agentResponse.objects.length > lastObjectsCount) {
-              const newObjects = agentResponse.objects.slice(lastObjectsCount);
-
-              for (let i = 0; i < newObjects.length; i++) {
-                const globalIndex = lastObjectsCount + i;
-
-                // Skip if already streamed (safety check)
-                if (streamedObjects.has(globalIndex)) continue;
-
-                const request = newObjects[i];
-
-                // Generate canvas object
-                const existingCanvasObjects = streamingContext.existingObjects;
-                const position = layoutEngine.calculatePosition(
-                  {
-                    existingObjects: existingCanvasObjects.map(obj => ({
-                      id: obj.id,
-                      position: obj.position,
-                      size: obj.size
-                    }))
-                  },
-                  { width: 400, height: 200 }
-                );
-
-                let enhancedContent = request.content;
-                if (request.type === 'diagram') {
-                  enhancedContent = `${request.content} - Context: ${question}`;
+              // Emit tool_start event
+              yield {
+                type: 'mcp_tool_start',
+                timestamp: Date.now(),
+                data: {
+                  toolName: toolUse.name,
+                  serverId,
+                  description: MCP_TOOLS_FOR_CLAUDE.find(t => t.name === toolUse.name)?.description || ''
                 }
+              };
 
-                const canvasObject = objectGenerator.generateObject(
-                  {
-                    type: request.type,
-                    content: enhancedContent,
-                    referenceName: request.referenceName,
-                    metadata: request.metadata
-                  },
-                  position,
+              // Call MCP server
+              const mcpResult = await mcpManager.callTool({
+                serverId,
+                toolName: toolUse.name,
+                arguments: toolUse.input as Record<string, any>
+              });
+
+              logger.info('MCP tool result received', {
+                toolName: toolUse.name,
+                serverId,
+                success: mcpResult.success,
+                contentLength: mcpResult.content?.length || 0
+              });
+
+              if (!mcpResult.success) {
+                throw new Error(mcpResult.error || 'MCP tool call failed');
+              }
+
+              // Convert MCP result to canvas objects if it's a visualization tool
+              let generatedObjectsCount = 0;
+              if (isVisualizationTool(toolUse.name)) {
+                const mcpObjects = this.convertMCPResultToCanvasObjects(
+                  mcpResult,
+                  toolUse.name,
+                  session.canvasObjects,
+                  toolGeneratedObjects,
                   turnId
                 );
+                toolGeneratedObjects.push(...mcpObjects);
+                generatedObjectsCount = mcpObjects.length;
 
-                // Add to existing objects for next position calculation
-                streamingContext.existingObjects.push(canvasObject);
+                // Stream each generated object immediately
+                for (const obj of mcpObjects) {
+                  streamingContext.existingObjects.push(obj);
 
-                // Stream canvas object immediately
-                const placement: ObjectPlacement = {
-                  objectId: canvasObject.id,
-                  position: canvasObject.position,
-                  animateIn: 'fade',
-                  timing: totalObjects * 300 // Stagger by 300ms
-                };
-
-                yield {
-                  type: 'canvas_object',
-                  timestamp: Date.now(),
-                  data: {
-                    object: canvasObject,
-                    placement
-                  }
-                };
-
-                streamedObjects.add(globalIndex);
-                totalObjects++;
-
-                logger.debug('Streamed canvas object', {
-                  type: canvasObject.type,
-                  index: globalIndex,
-                  referenceName: request.referenceName
-                });
-              }
-
-              lastObjectsCount = agentResponse.objects.length;
-            }
-
-            // REFERENCES: Stream references as they appear
-            if (agentResponse.references && agentResponse.references.length > totalReferences) {
-              const newReferences = agentResponse.references.slice(totalReferences);
-
-              for (const ref of newReferences) {
-                const objectReference = this.generateReferences(
-                  [ref],
-                  streamingContext.existingObjects,
-                  []
-                )[0];
-
-                if (objectReference) {
-                  yield {
-                    type: 'reference',
-                    timestamp: Date.now(),
-                    data: objectReference
+                  const placement: ObjectPlacement = {
+                    objectId: obj.id,
+                    position: obj.position,
+                    animateIn: 'fade',
+                    timing: toolGeneratedObjects.length * 300
                   };
 
-                  totalReferences++;
+                  yield {
+                    type: 'canvas_object',
+                    timestamp: Date.now(),
+                    data: {
+                      object: obj,
+                      placement
+                    }
+                  };
                 }
               }
-            }
 
+              // Format result for Claude
+              const resultText = mcpResult.content
+                .map((c: any) => {
+                  if (c.type === 'text') return c.text;
+                  if (c.type === 'image') return `[Image generated: ${c.mimeType}]`;
+                  if (c.type === 'resource') return `[Resource: ${c.resource?.mimeType || 'unknown'}]`;
+                  return `[${c.type}]`;
+                })
+                .join('\n');
+
+              toolResultsContent.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: resultText || 'Tool executed successfully'
+              });
+
+              // Emit tool_complete event
+              yield {
+                type: 'mcp_tool_complete',
+                timestamp: Date.now(),
+                data: {
+                  toolName: toolUse.name,
+                  serverId,
+                  success: true,
+                  duration: Date.now() - toolStartTime
+                }
+              };
+
+              logger.info('MCP tool executed successfully', {
+                toolName: toolUse.name,
+                objectsCreated: generatedObjectsCount,
+                duration: Date.now() - toolStartTime
+              });
+
+            } catch (error) {
+              const serverId = TOOL_TO_SERVER_MAP[toolUse.name] || 'unknown';
+
+              logger.error('MCP tool execution failed', {
+                toolName: toolUse.name,
+                error
+              });
+
+              toolResultsContent.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+                is_error: true
+              });
+
+              // Emit tool_complete event with error
+              yield {
+                type: 'mcp_tool_complete',
+                timestamp: Date.now(),
+                data: {
+                  toolName: toolUse.name,
+                  serverId,
+                  success: false,
+                  duration: Date.now() - toolStartTime,
+                  error: error instanceof Error ? error.message : String(error)
+                }
+              };
+            }
+          }
+
+          // Add tool results to conversation
+          messages.push({
+            role: 'user',
+            content: toolResultsContent
+          });
+
+          // Continue conversation loop to get final response
+          continue;
+        }
+
+        // Claude finished without using tools or after using tools
+        const textContent = response.content
+          .filter(block => block.type === 'text')
+          .map((block: any) => block.text)
+          .join('\n');
+
+        finalResponseText = textContent;
+        break;
+      }
+
+      logger.info('✅ MCP tool loop completed', {
+        iterations: iteration,
+        toolObjectsCreated: toolGeneratedObjects.length,
+        hasFinalResponse: !!finalResponseText
+      });
+
+      // Now stream the final response with TTS
+      const sentenceParser = new SentenceParser();
+      let totalObjects = toolGeneratedObjects.length; // Start with MCP objects
+      let totalReferences = 0;
+
+      // Parse the final response to get narration and additional objects
+      const agentResponse = this.parseResponse(finalResponseText);
+
+      // Stream narration sentence-by-sentence with TTS
+      if (agentResponse.narration && agentResponse.narration.trim().length > 0) {
+        logger.info('🗣️ Streaming narration with TTS', {
+          narrationLength: agentResponse.narration.length
+        });
+
+        // Split narration into sentences
+        const sentences = sentenceParser.addChunk(agentResponse.narration);
+
+        // Process each sentence
+        for (const sentence of sentences) {
+          logger.debug('Processing narration sentence', {
+            sentenceIndex: sentence.index,
+            text: sentence.text.substring(0, 100)
+          });
+
+          // Send text chunk event
+          yield {
+            type: 'text_chunk',
+            timestamp: Date.now(),
+            data: {
+              text: sentence.text,
+              sentenceIndex: sentence.index
+            }
+          };
+
+          // Generate TTS for the sentence
+          try {
+            const audioResult = await ttsService.generateSentenceSpeech(
+              sentence.text,
+              voice,
+              sentence.index
+            );
+
+            yield {
+              type: 'audio_chunk',
+              timestamp: Date.now(),
+              data: audioResult
+            };
           } catch (error) {
-            // Incomplete JSON - continue accumulating
-            // This is normal during streaming, only log at debug level
-            logger.debug('Waiting for more JSON data', {
-              bufferLength: fullResponse.length
+            logger.warn('TTS generation failed for sentence', {
+              sentenceIndex: sentence.index,
+              error: error instanceof Error ? error.message : 'Unknown'
             });
           }
         }
-      }
 
-      // Flush any remaining narration sentence
-      const finalSentence = sentenceParser.flush();
-      if (finalSentence) {
-        logger.debug('Flushing final narration sentence', {
-          sentenceIndex: finalSentence.index,
-          text: finalSentence.text
-        });
-
-        yield {
-          type: 'text_chunk',
-          timestamp: Date.now(),
-          data: {
-            text: finalSentence.text,
-            sentenceIndex: finalSentence.index
-          }
-        };
-
-        try {
-          const audioResult = await ttsService.generateSentenceSpeech(
-            finalSentence.text,
-            voice,
-            finalSentence.index
-          );
-
+        // Flush any remaining sentence
+        const finalSentence = sentenceParser.flush();
+        if (finalSentence) {
           yield {
-            type: 'audio_chunk',
+            type: 'text_chunk',
             timestamp: Date.now(),
-            data: audioResult
+            data: {
+              text: finalSentence.text,
+              sentenceIndex: finalSentence.index
+            }
           };
-        } catch (error) {
-          logger.warn('TTS generation failed for final sentence', { error });
+
+          try {
+            const audioResult = await ttsService.generateSentenceSpeech(
+              finalSentence.text,
+              voice,
+              finalSentence.index
+            );
+
+            yield {
+              type: 'audio_chunk',
+              timestamp: Date.now(),
+              data: audioResult
+            };
+          } catch (error) {
+            logger.warn('TTS generation failed for final sentence', { error });
+          }
         }
       }
 
-      // DEBUG: Log what Claude actually returned
-      logger.info('📄 Full Claude response', {
-        length: fullResponse.length,
-        preview: fullResponse.substring(0, 500),
-        hasJSON: fullResponse.includes('{') && fullResponse.includes('}')
-      });
+      // Generate additional canvas objects from Claude's response (if any)
+      if (agentResponse.objects && agentResponse.objects.length > 0) {
+        logger.info('Generating canvas objects from Claude response', {
+          objectCount: agentResponse.objects.length
+        });
 
-      // Final parse to catch any remaining objects/references
-      const finalResponse = this.parseResponse(fullResponse);
-
-      // Stream any remaining objects that weren't caught during streaming
-      if (finalResponse.objects && finalResponse.objects.length > lastObjectsCount) {
-        const remainingObjects = finalResponse.objects.slice(lastObjectsCount);
-
-        for (let i = 0; i < remainingObjects.length; i++) {
-          const globalIndex = lastObjectsCount + i;
-          if (streamedObjects.has(globalIndex)) continue;
-
-          const request = remainingObjects[i];
+        for (const request of agentResponse.objects) {
           const position = layoutEngine.calculatePosition(
             {
               existingObjects: streamingContext.existingObjects.map(obj => ({
@@ -423,10 +497,15 @@ export class StreamingOrchestrator {
             { width: 400, height: 200 }
           );
 
+          let enhancedContent = request.content;
+          if (request.type === 'diagram') {
+            enhancedContent = `${request.content} - Context: ${question}`;
+          }
+
           const canvasObject = objectGenerator.generateObject(
             {
               type: request.type,
-              content: request.content,
+              content: enhancedContent,
               referenceName: request.referenceName,
               metadata: request.metadata
             },
@@ -436,17 +515,19 @@ export class StreamingOrchestrator {
 
           streamingContext.existingObjects.push(canvasObject);
 
+          const placement: ObjectPlacement = {
+            objectId: canvasObject.id,
+            position: canvasObject.position,
+            animateIn: 'fade',
+            timing: totalObjects * 300
+          };
+
           yield {
             type: 'canvas_object',
             timestamp: Date.now(),
             data: {
               object: canvasObject,
-              placement: {
-                objectId: canvasObject.id,
-                position: canvasObject.position,
-                animateIn: 'fade',
-                timing: totalObjects * 300
-              }
+              placement
             }
           };
 
@@ -454,6 +535,26 @@ export class StreamingOrchestrator {
         }
       }
 
+      // Stream references
+      if (agentResponse.references && agentResponse.references.length > 0) {
+        for (const ref of agentResponse.references) {
+          const objectReference = this.generateReferences(
+            [ref],
+            streamingContext.existingObjects,
+            []
+          )[0];
+
+          if (objectReference) {
+            yield {
+              type: 'reference',
+              timestamp: Date.now(),
+              data: objectReference
+            };
+
+            totalReferences++;
+          }
+        }
+      }
       // Send completion event
       yield {
         type: 'complete',
@@ -467,24 +568,37 @@ export class StreamingOrchestrator {
       };
 
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      logger.info('✅ STREAMING RESPONSE COMPLETED');
+      logger.info('✅ STREAMING COMPLETE');
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      logger.info('Summary', {
-        totalSentences: sentenceParser.getSentenceCount(),
-        totalObjects,
-        totalReferences
-      });
+      logger.info('Total sentences:', sentenceParser.getSentenceCount());
+      logger.info('Total objects:', totalObjects);
+      logger.info('Total references:', totalReferences);
     } catch (error) {
-      logger.error('Streaming response failed', { error });
-
-      yield {
-        type: 'error',
-        timestamp: Date.now(),
-        data: {
-          message: error instanceof Error ? error.message : 'Unknown error occurred',
-          code: 'STREAMING_ERROR'
-        }
-      };
+      // Check if this was an abort/cancellation
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.info('Stream cancelled by client', { turnId });
+        yield {
+          type: 'interrupted',
+          timestamp: Date.now(),
+          data: {
+            message: 'Response generation was stopped',
+            code: 'USER_CANCELLED'
+          }
+        };
+      } else {
+        logger.error('Streaming error:', error);
+        yield {
+          type: 'error',
+          timestamp: Date.now(),
+          data: {
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
+          }
+        };
+      }
+    } finally {
+      // Clean up abort controller
+      this.abortControllers.delete(turnId);
+      logger.debug('Cleaned up abort controller for turn', { turnId });
     }
   }
 
@@ -504,7 +618,10 @@ export class StreamingOrchestrator {
       userName?: string;
       explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
     },
-    selectedBrain?: Brain
+    cachedIntroPlayed?: {
+      text: string;
+      id: string;
+    } | null
   ): string {
     const teachingStyle =
       mode === 'guided'
@@ -541,11 +658,17 @@ export class StreamingOrchestrator {
       ? 'Use technical terminology freely, focus on depth and nuance, assume strong foundational knowledge.'
       : 'Balance clarity with depth, explain complex concepts but assume basic familiarity.';
 
+    const cachedIntroInfo = cachedIntroPlayed
+      ? `\nCRITICAL INSTRUCTION: An introductory phrase has already been spoken: "${cachedIntroPlayed.text}"
+DO NOT repeat this greeting or acknowledgment. Start your [NARRATION] by going DIRECTLY to the main content.
+Skip phrases like "Let me help", "I can explain", "Sure", etc. Jump straight into teaching.\n`
+      : '';
+
     return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.
 ${userName ? `\nSTUDENT NAME: ${userName} - Address them by name occasionally to personalize the interaction.\n` : ''}
 EXPLANATION LEVEL: ${explanationLevel}
 ${levelGuidance}
-
+${cachedIntroInfo}
 CANVAS STATE:
 ${context.canvasState}
 
@@ -580,30 +703,35 @@ VISUAL CREATION:
 - Make diagrams contextually relevant to the specific question or concept being explained
 
 RESPONSE FORMAT:
-You must respond with a JSON object in the following format:
-{
-  "explanation": "Full text explanation of the concept",
-  "narration": "What to say aloud, including spatial references like 'above', 'below', 'to the right'",
-  "objects": [
-    {
-      "type": "latex|graph|code|text|diagram",
-      "content": "The actual content (LaTeX string, equation, code, etc.)",
-      "referenceName": "equation 1" or "graph A" (optional),
-      "metadata": {
-        "language": "python" (for code),
-        "equation": "y = x^2" (for graphs),
-        "fontSize": 16 (for text),
-        "description": "Detailed description of what the diagram shows" (for diagrams)
-      }
-    }
-  ],
-  "references": [
-    {
-      "mention": "as shown in the equation",
-      "objectId": "obj_xyz" (use actual object IDs from canvas state)
-    }
-  ]
-}
+Stream your response using these markers. Start with text immediately, then define objects as they become relevant:
+
+[NARRATION]: Start your spoken response here immediately
+[OBJECT_START type="latex|graph|code|text|diagram" id="obj_1"]: Begin defining an object
+[OBJECT_CONTENT]: The actual content for the object
+[OBJECT_META key="value"]: Optional metadata (language, equation, etc.)
+[OBJECT_END]: Complete the object definition
+[NARRATION]: Continue with more explanation
+[REFERENCE mention="as shown above" objectId="obj_xyz"]: Reference existing objects
+
+Example:
+[NARRATION]: Let me help you understand quadratic equations.
+[NARRATION]: A quadratic equation has the general form where the highest power is 2.
+[OBJECT_START type="latex" id="eq_1"]: Starting equation
+[OBJECT_CONTENT]: ax^2 + bx + c = 0
+[OBJECT_META referenceName="general form"]:
+[OBJECT_END]:
+[NARRATION]: As you can see in the general form above, we have three coefficients.
+[OBJECT_START type="graph" id="graph_1"]: Creating visualization
+[OBJECT_CONTENT]: y = x^2 - 4x + 3
+[OBJECT_META equation="x^2 - 4x + 3"]:
+[OBJECT_END]:
+[NARRATION]: This parabola shows how the equation creates a U-shaped curve.
+
+IMPORTANT:
+- Start with [NARRATION] immediately - don't wait to plan objects
+- Stream text naturally and define objects inline as they become relevant
+- Keep narration conversational and natural
+- Objects can be defined while you continue explaining
 
 Subject: ${session.subject}
 
@@ -619,13 +747,19 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
       prompt += `Previous conversation:\n${context.conversationHistory}\n\n`;
     }
 
-    prompt += 'Generate your response as a JSON object following the specified format.';
+    prompt += 'Generate your response using the streaming format with [NARRATION], [OBJECT_START], etc. markers.';
 
     return prompt;
   }
 
   private parseResponse(responseText: string): AgentResponse {
     try {
+      // First check if this is the new marker format
+      if (responseText.includes('[NARRATION]') || responseText.includes('[OBJECT_START')) {
+        return this.parseMarkerFormat(responseText);
+      }
+
+      // Fallback to JSON format for backward compatibility
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
@@ -646,8 +780,8 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
         };
       }
 
-      // Incomplete JSON - return empty narration (don't speak partial JSON)
-      logger.debug('No complete JSON found yet', { textLength: responseText.length });
+      // No valid format found
+      logger.debug('No valid response format found', { textLength: responseText.length });
       return {
         explanation: '',
         narration: '',
@@ -656,7 +790,7 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
       };
     } catch (error) {
       // Parse error - return empty narration (don't speak malformed JSON)
-      logger.debug('JSON parse error (normal during streaming)', {
+      logger.debug('Parse error (normal during streaming)', {
         error: error instanceof Error ? error.message : 'Unknown',
         textSnippet: responseText.substring(0, 100)
       });
@@ -669,48 +803,62 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
     }
   }
 
-  private generateCanvasObjects(
-    objectRequests: AgentResponse['objects'],
-    existingObjects: CanvasObject[],
-    turnId: string,
-    userQuestion: string
-  ): CanvasObject[] {
-    const objects: CanvasObject[] = [];
-
-    for (let i = 0; i < objectRequests.length; i++) {
-      const request = objectRequests[i];
-
-      const position = layoutEngine.calculatePosition(
-        {
-          existingObjects: [...existingObjects, ...objects].map(obj => ({
-            id: obj.id,
-            position: obj.position,
-            size: obj.size
-          }))
-        },
-        { width: 400, height: 200 }
-      );
-
-      let enhancedContent = request.content;
-      if (request.type === 'diagram') {
-        enhancedContent = `${request.content} - Context: ${userQuestion}`;
+  private parseMarkerFormat(responseText: string): AgentResponse {
+    // Extract narration sections
+    const narrationMatches = responseText.matchAll(/\[NARRATION\]:\s*([^\[]*)/g);
+    const narrationParts = [];
+    for (const match of narrationMatches) {
+      if (match[1] && match[1].trim()) {
+        narrationParts.push(match[1].trim());
       }
+    }
+    const narration = narrationParts.join(' ');
 
-      const obj = objectGenerator.generateObject(
-        {
-          type: request.type,
-          content: enhancedContent,
-          referenceName: request.referenceName,
-          metadata: request.metadata
-        },
-        position,
-        turnId
-      );
+    // Extract objects
+    const objects = [];
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
+    for (const match of objectMatches) {
+      const [_, type, id, content, meta] = match;
+      if (type && content) {
+        const obj: any = {
+          type,
+          content: content.trim()
+        };
 
-      objects.push(obj);
+        // Parse metadata if present
+        if (meta) {
+          const metaMatch = meta.match(/(\w+)="([^"]+)"/);
+          if (metaMatch) {
+            obj.referenceName = metaMatch[2];
+          }
+        }
+
+        objects.push(obj);
+      }
     }
 
-    return objects;
+    // Extract references
+    const references = [];
+    const referenceMatches = responseText.matchAll(/\[REFERENCE\s+mention="([^"]+)"\s+objectId="([^"]+)"\]/g);
+    for (const match of referenceMatches) {
+      references.push({
+        mention: match[1],
+        objectId: match[2]
+      });
+    }
+
+    logger.debug('Parsed marker format response', {
+      narrationLength: narration.length,
+      objectCount: objects.length,
+      referenceCount: references.length
+    });
+
+    return {
+      explanation: narration, // Use narration as explanation too
+      narration,
+      objects,
+      references
+    };
   }
 
   private generateReferences(
@@ -734,6 +882,158 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
         };
       })
       .filter((ref): ref is ObjectReference => ref !== null);
+  }
+
+  /**
+   * Convert MCP tool results into canvas objects
+   */
+  private convertMCPResultToCanvasObjects(
+    mcpResult: any,
+    toolName: string,
+    existingObjects: CanvasObject[],
+    currentToolResults: CanvasObject[],
+    turnId: string
+  ): CanvasObject[] {
+    const objects: CanvasObject[] = [];
+
+    if (!mcpResult.content || !Array.isArray(mcpResult.content)) {
+      logger.warn('MCP result has no content array', { toolName });
+      return objects;
+    }
+
+    // Process each content item from MCP result
+    for (const content of mcpResult.content) {
+      logger.info('Processing MCP content item', {
+        type: content.type,
+        hasResource: !!content.resource,
+        content: content
+      });
+
+      // Skip text-only content for visualization tools
+      if (content.type === 'text') {
+        continue;
+      }
+
+      // Handle image content (from Python MCP matplotlib)
+      if (content.type === 'image' && content.data && content.mimeType) {
+        const position = layoutEngine.calculatePosition(
+          {
+            existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
+              id: obj.id,
+              position: obj.position,
+              size: obj.size,
+            })),
+          },
+          { width: 600, height: 400 }
+        );
+
+        const imageObject: CanvasObject = {
+          id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+          type: 'image',
+          data: {
+            type: 'image',
+            url: `data:${content.mimeType};base64,${content.data}`,
+            alt: `Visualization from ${toolName}`,
+          },
+          position,
+          size: { width: 600, height: 400 },
+          zIndex: 1,
+          metadata: {
+            createdAt: Date.now(),
+            turnId,
+            tags: ['mcp', toolName],
+            source: 'mcp',
+            toolName,
+            mimeType: content.mimeType,
+          },
+        };
+
+        objects.push(imageObject);
+      }
+
+      // Handle resource content (from Manim MCP)
+      if (content.type === 'resource' && content.resource) {
+        const resource = content.resource;
+        logger.info('Processing Manim resource', {
+          resource: resource,
+          mimeType: resource.mimeType,
+          hasText: !!resource.text,
+          hasUri: !!resource.uri
+        });
+        const isVideo = resource.mimeType?.startsWith('video/');
+        const isImage = resource.mimeType?.startsWith('image/');
+
+        if (isVideo || isImage) {
+          const position = layoutEngine.calculatePosition(
+            {
+              existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
+                id: obj.id,
+                position: obj.position,
+                size: obj.size,
+              })),
+            },
+            { width: 600, height: 400 }
+          );
+
+          const url = resource.text ? `data:${resource.mimeType};base64,${resource.text}` : resource.uri;
+
+          if (isVideo) {
+            const videoObject: CanvasObject = {
+              id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+              type: 'video',
+              data: {
+                type: 'video',
+                url,
+                alt: `Animation from ${toolName}`,
+              },
+              position,
+              size: { width: 600, height: 400 },
+              zIndex: 1,
+              metadata: {
+                createdAt: Date.now(),
+                turnId,
+                tags: ['mcp', toolName, 'animation'],
+                source: 'mcp',
+                toolName,
+                mimeType: resource.mimeType,
+                uri: resource.uri,
+              },
+            };
+            objects.push(videoObject);
+          } else {
+            const imageObject: CanvasObject = {
+              id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+              type: 'image',
+              data: {
+                type: 'image',
+                url,
+                alt: `Visualization from ${toolName}`,
+              },
+              position,
+              size: { width: 600, height: 400 },
+              zIndex: 1,
+              metadata: {
+                createdAt: Date.now(),
+                turnId,
+                tags: ['mcp', toolName],
+                source: 'mcp',
+                toolName,
+                mimeType: resource.mimeType,
+                uri: resource.uri,
+              },
+            };
+            objects.push(imageObject);
+          }
+        }
+      }
+    }
+
+    logger.info('Converted MCP results to canvas objects', {
+      toolName,
+      objectsCreated: objects.length,
+    });
+
+    return objects;
   }
 }
 

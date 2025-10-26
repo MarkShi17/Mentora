@@ -1,4 +1,6 @@
 node_modules
+apps/web/node_modules
+apps/web/.next
 .next
 .git
 .gitignore
@@ -13,3 +15,13 @@ yarn-error.log*
 *.pem
 .vscode
 .idea
+playwright-report
+test-results
+# Exclude old nested mentora directory
+mentora/
+# Exclude build artifacts
+tsconfig.tsbuildinfo
+.turbo
+dist
+build
+coverage

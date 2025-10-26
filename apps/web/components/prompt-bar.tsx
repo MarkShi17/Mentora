@@ -39,6 +39,33 @@ export function PromptBar() {
 
   // Streaming QA hook - always enabled
   const streamingQA = useStreamingQA({
+    onInterrupted: useCallback((partialText: string) => {
+      const sessionId = currentSessionRef.current;
+      const thinkingMessageId = thinkingMessageIdRef.current;
+
+      if (sessionId && thinkingMessageId) {
+        // Update message to show it was interrupted
+        updateMessage(sessionId, thinkingMessageId, {
+          content: partialText || "Stopped",
+          interrupted: true,
+          interruptedAt: new Date().toISOString(),
+          isStreaming: false,
+          isPlayingAudio: false
+        });
+        console.log('⚠️ Prompt bar: Message marked as interrupted');
+
+        appendTimelineEvent(sessionId, {
+          description: "Response interrupted",
+          type: "response"
+        });
+      }
+
+      // Reset refs
+      thinkingMessageIdRef.current = null;
+      currentSessionRef.current = null;
+      endSequence();
+      sequenceKeyRef.current = null;
+    }, [updateMessage, appendTimelineEvent, endSequence]),
     onCanvasObject: useCallback((object: any) => {
       const sessionId = currentSessionRef.current ?? activeSessionId;
       if (!sessionId) {
@@ -67,7 +94,9 @@ export function PromptBar() {
         color: getColorForType(object.type),
         label: titleCaseLabel,
         metadata: object.metadata,
-        data: object.data
+        data: object.data,
+        generationState: object.generationState,
+        placeholder: object.placeholder
       };
 
       addObjectToSequence(sessionId, canvasObject, object.position, sequenceKeyRef.current);
@@ -104,12 +133,64 @@ export function PromptBar() {
     const sessionId = currentSessionRef.current;
     const thinkingMessageId = thinkingMessageIdRef.current;
 
-    if (sessionId && thinkingMessageId && streamingQA.isStreaming && streamingQA.currentText.trim()) {
+    if (sessionId && thinkingMessageId) {
+      const content = streamingQA.currentText.trim() || "Thinking...";
       updateMessage(sessionId, thinkingMessageId, {
-        content: streamingQA.currentText
+        content: content,
+        isStreaming: streamingQA.isStreaming,
+        isPlayingAudio: streamingQA.audioState.isPlaying
       });
     }
-  }, [streamingQA.currentText, streamingQA.isStreaming, updateMessage]);
+  }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
+
+  // Register stop streaming callback when streaming starts
+  useEffect(() => {
+    if (streamingQA.isStreaming) {
+      setStopStreamingCallback(() => {
+        console.log('🛑 Stop from prompt bar - stopping generation');
+
+        // Get current state before stopping
+        const partialText = streamingQA.currentText;
+        const thinkingMessageId = thinkingMessageIdRef.current;
+        const sessionId = currentSessionRef.current;
+
+        // Stop streaming
+        streamingQA.stopStreaming();
+        endSequence();
+        sequenceKeyRef.current = null;
+
+        // Update the message to show it was interrupted (if it had content)
+        if (sessionId && thinkingMessageId) {
+          if (partialText && partialText.trim()) {
+            console.log('⚠️ Marking message as interrupted with partial content');
+            updateMessage(sessionId, thinkingMessageId, {
+              content: partialText,
+              interrupted: true,
+              interruptedAt: new Date().toISOString(),
+              isStreaming: false,
+              isPlayingAudio: false
+            });
+          } else {
+            console.log('🗑️ Removing empty thinking message');
+            removeMessage(sessionId, thinkingMessageId);
+          }
+          thinkingMessageIdRef.current = null;
+
+          appendTimelineEvent(sessionId, {
+            description: "Response stopped by user",
+            type: "response"
+          });
+        }
+
+        // Reset refs
+        currentSessionRef.current = null;
+      });
+    } else {
+      // Clear the callback when streaming stops
+      setStopStreamingCallback(null);
+    }
+  }, [streamingQA.isStreaming, streamingQA.currentText, streamingQA.stopStreaming,
+      setStopStreamingCallback, updateMessage, removeMessage, appendTimelineEvent, endSequence]);
 
   const handleTranscript = useCallback((transcript: string) => {
     setValue((prev) => `${prev} ${transcript}`.trim());
@@ -151,8 +232,12 @@ export function PromptBar() {
       type: "prompt"
     });
 
-    // Add "thinking..." placeholder message
-    const thinkingMessageId = addMessage(sessionId, { role: "assistant", content: "Thinking..." });
+    // Add "thinking..." placeholder message with streaming flag
+    const thinkingMessageId = addMessage(sessionId, {
+      role: "assistant",
+      content: "Thinking...",
+      isStreaming: true
+    });
     thinkingMessageIdRef.current = thinkingMessageId;
     currentSessionRef.current = sessionId;
 
