@@ -34,12 +34,15 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
           // Not JSON, use as-is
         }
       }
-      
+
+      // Use stored fontSize from object data, default to 14px for better readability
+      const baseFontSize = object.data.fontSize || 14;
+
       return (
-        <div 
+        <div
           className="prose prose-sm max-w-none text-slate-800 leading-relaxed select-none"
           style={{
-            fontSize: `${scaleFactor}em`,
+            fontSize: `${baseFontSize}px`,
             lineHeight: 1.5,
             overflow: 'hidden'
           }}
@@ -204,25 +207,11 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
     
     case 'image':
       return (
-        <div
-          className="overflow-hidden flex items-center justify-center h-full"
-          style={{
-            width: '100%',
-            height: '100%'
-          }}
-        >
-          <img 
-            src={object.data.url || object.data.content} 
-            alt={object.data.alt || 'Generated image'} 
-            className="rounded"
-            style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
-              transform: `scale(${scaleFactor})`,
-              transformOrigin: 'center'
-            }}
-          />
-        </div>
+        <img
+          src={object.data.url || object.data.content}
+          alt={object.data.alt || 'Generated image'}
+          className="rounded"
+        />
       );
 
     case 'video':

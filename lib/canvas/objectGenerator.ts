@@ -137,6 +137,12 @@ export class ObjectGenerator {
       console.log('❌ Not valid JSON, using content as-is');
     }
 
+    // Validate that content is not empty after parsing
+    const trimmedContent = parsedContent.trim();
+    if (!trimmedContent || trimmedContent.length === 0) {
+      throw new Error('Cannot create text object with empty content. Content must contain visible text.');
+    }
+
     // Calculate better dimensions based on content
     const avgCharsPerLine = 50; // Longer lines for better readability
     const lines = Math.ceil(parsedContent.length / avgCharsPerLine);
@@ -181,6 +187,12 @@ export class ObjectGenerator {
     turnId: string,
     referenceName?: string
   ): DiagramObject {
+    // Validate that description has meaningful content
+    const trimmedDescription = description.trim();
+    if (!trimmedDescription || trimmedDescription.length < 10) {
+      throw new Error('Cannot create diagram with empty or minimal description. Description must be at least 10 characters.');
+    }
+
     const svg = this.generateSimpleDiagram(description);
 
     return {

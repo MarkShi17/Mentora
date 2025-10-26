@@ -117,8 +117,8 @@ class PythonMCPServer:
             stdout_capture = io.StringIO()
             stderr_capture = io.StringIO()
 
-            # Capture matplotlib figures
-            plt.clf()  # Clear any existing plots
+            # Close all previous figures to start fresh
+            plt.close('all')  # Completely remove all previous figures
 
             # Execute code
             with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
@@ -132,14 +132,42 @@ class PythonMCPServer:
             figures = []
             for fig_num in plt.get_fignums():
                 fig = plt.figure(fig_num)
+
+                # Check if figure has actual content (not blank)
+                has_content = False
+                for ax in fig.get_axes():
+                    # Check for any plot elements: lines, patches, collections, images, text
+                    if (len(ax.lines) > 0 or
+                        len(ax.patches) > 0 or
+                        len(ax.collections) > 0 or
+                        len(ax.images) > 0 or
+                        len([t for t in ax.texts if t.get_text().strip()]) > 0):
+                        has_content = True
+                        break
+
+                if not has_content:
+                    # Skip empty figures - log for debugging
+                    print(f"⚠️ Skipping empty figure {fig_num} (no plot elements found)", file=sys.stderr)
+                    plt.close(fig)
+                    continue
+
+                # Get figure dimensions BEFORE saving (bbox_inches='tight' may change them)
+                # Get size in inches and convert to pixels at 150 DPI
+                fig_width_inches, fig_height_inches = fig.get_size_inches()
+                dpi = 150
+                width_px = int(fig_width_inches * dpi)
+                height_px = int(fig_height_inches * dpi)
+
                 buf = io.BytesIO()
-                fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.1, dpi=150)
+                fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.1, dpi=dpi)
                 buf.seek(0)
                 img_base64 = base64.b64encode(buf.read()).decode('utf-8')
                 figures.append({
                     "type": "image",
                     "data": img_base64,
-                    "mimeType": "image/png"
+                    "mimeType": "image/png",
+                    "width": width_px,
+                    "height": height_px
                 })
                 plt.close(fig)
 
@@ -247,8 +275,14 @@ class PythonMCPServer:
                         color="#1f2937"
                     )
 
+            # Get figure dimensions before saving
+            fig_width_inches, fig_height_inches = fig.get_size_inches()
+            dpi = 160
+            width_px = int(fig_width_inches * dpi)
+            height_px = int(fig_height_inches * dpi)
+
             buf = io.BytesIO()
-            fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.1, dpi=160)
+            fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.1, dpi=dpi)
             buf.seek(0)
             img_base64 = base64.b64encode(buf.read()).decode('utf-8')
             plt.close(fig)
@@ -262,7 +296,9 @@ class PythonMCPServer:
                     {
                         "type": "image",
                         "data": img_base64,
-                        "mimeType": "image/png"
+                        "mimeType": "image/png",
+                        "width": width_px,
+                        "height": height_px
                     }
                 ],
                 "isError": False

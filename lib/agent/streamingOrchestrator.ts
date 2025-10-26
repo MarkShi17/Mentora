@@ -565,47 +565,56 @@ export class StreamingOrchestrator {
         });
 
         for (const request of preToolComponents) {
-          const position = layoutEngine.calculatePosition(
-            {
-              existingObjects: streamingContext.existingObjects.map(obj => ({
-                id: obj.id,
-                position: obj.position,
-                size: obj.size
-              }))
-            },
-            { width: 400, height: 200 }
-          );
+          try {
+            const position = layoutEngine.calculatePosition(
+              {
+                existingObjects: streamingContext.existingObjects.map(obj => ({
+                  id: obj.id,
+                  position: obj.position,
+                  size: obj.size
+                }))
+              },
+              { width: 400, height: 200 }
+            );
 
-          const canvasObject = objectGenerator.generateObject(
-            {
+            const canvasObject = objectGenerator.generateObject(
+              {
+                type: request.type,
+                content: request.content,
+                referenceName: request.referenceName,
+                metadata: request.metadata
+              },
+              position,
+              turnId
+            );
+
+            streamingContext.existingObjects.push(canvasObject);
+
+            const placement: ObjectPlacement = {
+              objectId: canvasObject.id,
+              position: canvasObject.position,
+              animateIn: 'fade',
+              timing: toolGeneratedObjects.length * 300
+            };
+
+            yield {
+              type: 'canvas_object',
+              timestamp: Date.now(),
+              data: { object: canvasObject, placement }
+            };
+
+            logger.info('✅ Pre-tool component created as canvas object', {
+              type: canvasObject.type,
+              label: canvasObject.label
+            });
+          } catch (error) {
+            // Skip empty text objects or other generation errors
+            logger.warn('⚠️ Skipping object due to generation error', {
               type: request.type,
-              content: request.content,
-              referenceName: request.referenceName,
-              metadata: request.metadata
-            },
-            position,
-            turnId
-          );
-
-          streamingContext.existingObjects.push(canvasObject);
-
-          const placement: ObjectPlacement = {
-            objectId: canvasObject.id,
-            position: canvasObject.position,
-            animateIn: 'fade',
-            timing: toolGeneratedObjects.length * 300
-          };
-
-          yield {
-            type: 'canvas_object',
-            timestamp: Date.now(),
-            data: { object: canvasObject, placement }
-          };
-
-          logger.info('✅ Pre-tool component created as canvas object', {
-            type: canvasObject.type,
-            label: canvasObject.label
-          });
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            continue;
+          }
         }
       }
 
@@ -629,13 +638,43 @@ export class StreamingOrchestrator {
         referencesCount: agentResponse.references.length
       });
 
-      // Separate objects into priority (latex, graph) and regular for early rendering
-      const priorityObjects = agentResponse.objects.filter(obj =>
-        obj.type === 'latex' || obj.type === 'graph'
-      );
-      const regularObjects = agentResponse.objects.filter(obj =>
-        obj.type !== 'latex' && obj.type !== 'graph'
-      );
+      // Separate objects into priority (latex, graph, text/markdown) and regular for early rendering
+      // For Code Brain: include 'code' and 'image'/'diagram' in priority, and enforce specific order
+      const isCodeBrain = selectedBrain?.type === 'code';
+
+      let priorityObjects, regularObjects;
+
+      if (isCodeBrain) {
+        // Code Brain: priority includes code, image, diagram, text
+        // Order: code → image/diagram → text
+        priorityObjects = agentResponse.objects.filter(obj =>
+          obj.type === 'code' || obj.type === 'image' || obj.type === 'diagram' || obj.type === 'text'
+        );
+        regularObjects = agentResponse.objects.filter(obj =>
+          obj.type !== 'code' && obj.type !== 'image' && obj.type !== 'diagram' && obj.type !== 'text'
+        );
+
+        // Reorder priority objects for Code Brain: code → image/diagram → text
+        const codeObjects = priorityObjects.filter(o => o.type === 'code');
+        const imageObjects = priorityObjects.filter(o => o.type === 'image' || o.type === 'diagram');
+        const textObjects = priorityObjects.filter(o => o.type === 'text');
+        priorityObjects = [...codeObjects, ...imageObjects, ...textObjects];
+
+        logger.info('🧠 Code Brain: Reordered objects', {
+          order: 'code → image/diagram → text',
+          codeCount: codeObjects.length,
+          imageCount: imageObjects.length,
+          textCount: textObjects.length
+        });
+      } else {
+        // Other brains: original priority logic
+        priorityObjects = agentResponse.objects.filter(obj =>
+          obj.type === 'latex' || obj.type === 'graph' || obj.type === 'text'
+        );
+        regularObjects = agentResponse.objects.filter(obj =>
+          obj.type !== 'latex' && obj.type !== 'graph' && obj.type !== 'text'
+        );
+      }
 
       // Emit priority objects BEFORE TTS starts for immediate visual feedback
       if (priorityObjects.length > 0) {
@@ -645,44 +684,53 @@ export class StreamingOrchestrator {
         });
 
         for (const request of priorityObjects) {
-          const position = layoutEngine.calculatePosition(
-            {
-              existingObjects: streamingContext.existingObjects.map(obj => ({
-                id: obj.id,
-                position: obj.position,
-                size: obj.size
-              }))
-            },
-            { width: 400, height: 200 }
-          );
+          try {
+            const position = layoutEngine.calculatePosition(
+              {
+                existingObjects: streamingContext.existingObjects.map(obj => ({
+                  id: obj.id,
+                  position: obj.position,
+                  size: obj.size
+                }))
+              },
+              { width: 400, height: 200 }
+            );
 
-          const canvasObject = objectGenerator.generateObject(
-            {
+            const canvasObject = objectGenerator.generateObject(
+              {
+                type: request.type,
+                content: request.content,
+                referenceName: request.referenceName,
+                metadata: request.metadata
+              },
+              position,
+              turnId
+            );
+
+            streamingContext.existingObjects.push(canvasObject);
+
+            const placement: ObjectPlacement = {
+              objectId: canvasObject.id,
+              position: canvasObject.position,
+              animateIn: 'fade',
+              timing: totalObjects * 300
+            };
+
+            yield {
+              type: 'canvas_object',
+              timestamp: Date.now(),
+              data: { object: canvasObject, placement }
+            };
+
+            totalObjects++;
+          } catch (error) {
+            // Skip empty text objects or other generation errors
+            logger.warn('⚠️ Skipping priority object due to generation error', {
               type: request.type,
-              content: request.content,
-              referenceName: request.referenceName,
-              metadata: request.metadata
-            },
-            position,
-            turnId
-          );
-
-          streamingContext.existingObjects.push(canvasObject);
-
-          const placement: ObjectPlacement = {
-            objectId: canvasObject.id,
-            position: canvasObject.position,
-            animateIn: 'fade',
-            timing: totalObjects * 300
-          };
-
-          yield {
-            type: 'canvas_object',
-            timestamp: Date.now(),
-            data: { object: canvasObject, placement }
-          };
-
-          totalObjects++;
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            continue;
+          }
         }
       }
 
@@ -1189,9 +1237,9 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     }
     const narration = narrationParts.join(' ');
 
-    // Extract objects
+    // Extract objects (using [\s\S] to match any character including newlines for multiline code)
     const objects = [];
-    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\][\s\S]*?\[OBJECT_CONTENT\]:\s*([\s\S]*?)(?:\[OBJECT_META[^\]]*\]:\s*([\s\S]*?))?\[OBJECT_END\]/g);
     for (const match of objectMatches) {
       const [_, type, id, content, meta] = match;
       if (type && content) {
@@ -1341,7 +1389,12 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       }
 
       // Handle image content (from Python MCP matplotlib)
-      if (content.type === 'image' && content.data && content.mimeType) {
+      // Require minimum 100 bytes to filter out blank/empty images (typical blank PNG is 40-80 bytes)
+      if (content.type === 'image' && content.data && content.data.trim().length > 100 && content.mimeType) {
+        // Use dimensions from MCP response if available, otherwise default to 600x400
+        const imageWidth = content.width || 600;
+        const imageHeight = content.height || 400;
+
         const position = layoutEngine.calculatePosition(
           {
             existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
@@ -1350,7 +1403,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
               size: obj.size,
             })),
           },
-          { width: 600, height: 400 }
+          { width: imageWidth, height: imageHeight }
         );
 
         const imageObject: CanvasObject = {
@@ -1363,7 +1416,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             alt: label,
           },
           position,
-          size: { width: 600, height: 400 },
+          size: { width: imageWidth, height: imageHeight },
           zIndex: 1,
           metadata: {
             createdAt: Date.now(),
