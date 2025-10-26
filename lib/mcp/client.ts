@@ -264,6 +264,23 @@ export class MCPClient {
       // Check if the response indicates an error
       const isError = response.isError ?? false;
 
+      // Log the full response for debugging
+      logger.info(`MCP tool response from ${toolName}`, {
+        isError,
+        contentLength: response.content?.length || 0,
+        content: response.content
+      });
+
+      // Extract error message if present
+      let errorMessage: string | undefined;
+      if (isError && Array.isArray(response.content)) {
+        const errorContent = response.content.find((item: any) => item.type === 'text');
+        if (errorContent && 'text' in errorContent) {
+          errorMessage = errorContent.text;
+          logger.error(`MCP tool ${toolName} returned error: ${errorMessage}`);
+        }
+      }
+
       return {
         success: !isError,
         content: Array.isArray(response.content)
@@ -276,6 +293,7 @@ export class MCPClient {
             }))
           : [],
         isError,
+        error: errorMessage,
       };
     } catch (error) {
       logger.error(`Tool call failed for ${toolName} on ${this.config.name}:`, error);

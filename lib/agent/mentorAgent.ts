@@ -423,24 +423,7 @@ TEACHING STYLE (${mode} mode):
 ${teachingStyle}
 
 VISUAL CREATION:
-- IMPORTANT: Use the render_animation or execute_python tools for creating visualizations, plots, and graphs
-- For mathematical concepts, functions, and animated visualizations: ALWAYS use the render_animation tool
-- For static plots, data visualizations, and scientific diagrams: Use the execute_python tool
-- Only use built-in canvas objects (LaTeX, graph, code, diagram, text) when tools are not appropriate
-- The tools will generate actual images/videos that are much better than basic canvas objects
-- Reference existing canvas objects naturally in your explanation
-- Position new objects spatially relative to existing ones
-- Use directional language: "as shown in the equation above", "let's place this below"
-- Make text objects detailed and well-formatted with bullet points and clear structure
-- Ensure content is comprehensive but concise - avoid overly short explanations
-- Use proper line breaks and formatting in text content
-- For diagrams: Create meaningful visualizations that demonstrate the concept being discussed
-- Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms
-- Make diagrams contextually relevant to the specific question or concept being explained
-- When creating diagrams, provide specific descriptions that relate to the user's question
-- For tree recursion: describe the actual tree structure being discussed
-- For algorithms: describe the specific steps or data flow
-- For processes: describe the actual workflow or decision points
+${this.getVisualCreationGuidance(selectedBrain)}
 
 RESPONSE FORMAT:
 You must respond with a JSON object in the following format:
@@ -497,6 +480,50 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     return MCP_TOOLS_FOR_CLAUDE.filter(tool =>
       brain.mcpTools!.includes(tool.name)
     );
+  }
+
+  private getVisualCreationGuidance(
+    selectedBrain?: { type: string; name: string; description: string; promptEnhancement: string }
+  ): string {
+    const commonGuidance = [
+      '- Only use built-in canvas objects (LaTeX, graph, code, diagram, text) when tools are not appropriate',
+      '- The tools will generate actual images/videos that are much better than basic canvas objects',
+      '- Reference existing canvas objects naturally in your explanation',
+      '- Position new objects spatially relative to existing ones',
+      '- Use directional language: "as shown in the equation above", "let\'s place this below"',
+      '- Make text objects detailed and well-formatted with bullet points and clear structure',
+      '- Ensure content is comprehensive but concise - avoid overly short explanations',
+      '- Use proper line breaks and formatting in text content',
+      '- For diagrams: Create meaningful visualizations that demonstrate the concept being discussed',
+      '- Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms',
+      '- Make diagrams contextually relevant to the specific question or concept being explained',
+      '- When creating diagrams, provide specific descriptions that relate to the user\'s question',
+      '- For tree recursion: describe the actual tree structure being discussed',
+      '- For algorithms: describe the specific steps or data flow',
+      '- For processes: describe the actual workflow or decision points',
+    ];
+
+    if (selectedBrain?.type === 'biology') {
+      const biologyGuidance = [
+        '- Use the specialized biology visualization tools to match the learner\'s request:',
+        '  - render_biology_diagram for canonical cellular/process schematics (cell structure, mitosis, cell cycle, gene expression, CRISPR)',
+        '  - generate for pathways, state transitions, or step-by-step biological mechanisms',
+        '  - visualize_molecule when molecular structure, proteins, or 3D context is needed (call fetch_protein first if you need accession details)',
+        '  - search_biorender and get_biorender_figure when professional or presentation-ready artwork/icons will help understanding',
+        '  - execute_python only when you need custom data-driven plots or a diagram the other biology tools cannot produce',
+        '- Always choose the visualization tool that best communicates the biology concept instead of defaulting to execute_python.',
+      ];
+
+      return [...biologyGuidance, ...commonGuidance].join('\n');
+    }
+
+    const defaultGuidance = [
+      '- IMPORTANT: Use the render_animation or execute_python tools for creating visualizations, plots, and graphs',
+      '- For mathematical concepts, functions, and animated visualizations: ALWAYS use the render_animation tool',
+      '- For static plots, data visualizations, and scientific diagrams: Use the execute_python tool',
+    ];
+
+    return [...defaultGuidance, ...commonGuidance].join('\n');
   }
 
   private parseResponse(responseText: string): AgentResponse {

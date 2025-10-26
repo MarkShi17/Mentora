@@ -23,6 +23,7 @@ export function TimelinePanel() {
   const [position, setPosition] = useState({ right: 16, top: 16 }); // 16px = 1rem (4 in Tailwind)
   const [dragState, setDragState] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
+  const hasAutoOpenedRef = useRef(false);
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const messages = useSessionStore((state) => state.messages);
@@ -60,12 +61,12 @@ export function TimelinePanel() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [stopStreamingCallback]);
 
-  // Automatically expand the panel when the first message is added (only once)
+  // Reset auto-open tracking when switching sessions
   useEffect(() => {
     if (dialogue.length === 1 && !isExpanded) {
       setTimelineOpen(true);
     }
-  }, [dialogue.length]);
+  }, [dialogue.length, isExpanded]);
 
   const handleObjectClick = useCallback((objectId: string) => {
     if (!activeSessionId) return;
@@ -373,7 +374,7 @@ export function TimelinePanel() {
                   <div className="flex items-center gap-2.5">
                     <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-lg shadow-red-500/50"></div>
                     <span className="text-xs text-red-600 font-bold">
-                      Generation stopped
+                      --interrupted--
                       {message.interruptedAt && (
                         <span className="text-red-400 ml-1.5 font-medium">
                           at {formatTime(message.interruptedAt)}

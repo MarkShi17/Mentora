@@ -77,6 +77,7 @@ export function CanvasStage() {
   const stageSizeRef = useRef<{ width: number; height: number } | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const lastLoadedSessionRef = useRef<string | null>(null);
+  const animationRef = useRef<number | null>(null);
 
 const activeSessionId = useSessionStore((state) => state.activeSessionId);
 const canvasObjects = useSessionStore(
@@ -283,8 +284,63 @@ const initialPinCenteredRef = useRef<string | null>(null);
       if (activeSessionId) {
         setCanvasView(activeSessionId, { transform: nextState, stageSize: stageSizeRef.current });
       }
+  },
+  [setCanvasView, activeSessionId]
+);
+
+  const stopAnimation = useCallback(() => {
+    if (animationRef.current !== null) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+  }, []);
+
+  const syncZoomTransform = useCallback((next: TransformState) => {
+    const selection = selectionRef.current;
+    const zoomBehavior = zoomBehaviorRef.current;
+    if (selection && zoomBehavior) {
+      selection.call(zoomBehavior.transform, asZoomTransform(next));
+    }
+  }, []);
+
+  const animateToTransform = useCallback(
+    (target: TransformState, duration: number) => {
+      if (duration <= 0) {
+        stopAnimation();
+        applyTransform(target);
+        syncZoomTransform(target);
+        return;
+      }
+
+      stopAnimation();
+
+      const start = transformRef.current;
+      const startTime = performance.now();
+
+      const step = (time: number) => {
+        const elapsed = time - startTime;
+        const t = Math.min(1, elapsed / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+
+        const current: TransformState = {
+          x: start.x + (target.x - start.x) * eased,
+          y: start.y + (target.y - start.y) * eased,
+          k: start.k + (target.k - start.k) * eased,
+        };
+
+        applyTransform(current);
+        syncZoomTransform(current);
+
+        if (t < 1) {
+          animationRef.current = requestAnimationFrame(step);
+        } else {
+          animationRef.current = null;
+        }
+      };
+
+      animationRef.current = requestAnimationFrame(step);
     },
-    [setCanvasView, activeSessionId]
+    [applyTransform, stopAnimation, syncZoomTransform]
   );
 
   const screenToWorld = useCallback(
@@ -488,20 +544,24 @@ const initialPinCenteredRef = useRef<string | null>(null);
       clearFocus();
       return;
     }
-    const currentScale = transformRef.current.k;
-    const nextTransform: TransformState = {
-      k: currentScale,
-      x: stageSize.width / 2 - focusTarget.x * currentScale,
-      y: stageSize.height / 2 - focusTarget.y * currentScale
+    const targetScale = focusTarget.scale ?? transformRef.current.k;
+    const offsetX = focusTarget.offsetX ?? 0;
+    const offsetY = focusTarget.offsetY ?? 0;
+    const targetTransform: TransformState = {
+      k: targetScale,
+      x: stageSize.width / 2 - focusTarget.x * targetScale + offsetX,
+      y: stageSize.height / 2 - focusTarget.y * targetScale + offsetY
     };
-    applyTransform(nextTransform);
-    const selection = selectionRef.current;
-    const zoomBehavior = zoomBehaviorRef.current;
-    if (selection && zoomBehavior) {
-      selection.call(zoomBehavior.transform, asZoomTransform(nextTransform));
+    const duration = focusTarget.smooth === false ? 0 : focusTarget.duration ?? 240;
+    if (duration > 0) {
+      animateToTransform(targetTransform, duration);
+    } else {
+      stopAnimation();
+      applyTransform(targetTransform);
+      syncZoomTransform(targetTransform);
     }
     clearFocus();
-  }, [focusTarget, applyTransform, clearFocus]);
+  }, [focusTarget, animateToTransform, applyTransform, clearFocus, stopAnimation, syncZoomTransform]);
 
   useEffect(() => {
     if (!activeSessionId || !stageSize) {

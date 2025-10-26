@@ -28,7 +28,14 @@ type FocusTarget = {
   x: number;
   y: number;
   id?: string;
+  smooth?: boolean;
+  duration?: number;
+  scale?: number;
+  offsetX?: number;
+  offsetY?: number;
 } | null;
+
+type FocusTargetInput = NonNullable<FocusTarget>;
 
 type Settings = {
   preferredName: string;
@@ -91,6 +98,12 @@ type SessionState = {
   selectionMethods: Record<string, "click" | "lasso">;
   lastSelectedObjectIds: Record<string, string | null>;
   focusTarget: FocusTarget;
+  layoutOffsets: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
   settings: Settings;
   voiceInputState: VoiceInputState;
   stopStreamingCallback: (() => void) | null;
@@ -126,8 +139,9 @@ type SessionState = {
   addPin: (sessionId: string, payload: { x: number; y: number; label?: string }) => Pin | null;
   removePin: (sessionId: string, pinId: string) => void;
   setCanvasView: (sessionId: string, view: CanvasView) => void;
-  requestFocus: (target: { x: number; y: number; id?: string }) => void;
+  requestFocus: (target: FocusTargetInput) => void;
   clearFocus: () => void;
+  setLayoutOffset: (side: 'left' | 'right' | 'top' | 'bottom', value: number) => void;
   updateSettings: (settings: Partial<Settings>) => void;
   setLiveTutorOn: (on: boolean) => void;
   setSpacebarTranscript: (transcript: string) => void;
@@ -177,6 +191,12 @@ export const useSessionStore = create<SessionState>()(
       selectionMethods: {},
       lastSelectedObjectIds: {},
       focusTarget: null,
+      layoutOffsets: {
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+      },
       settings: {
         preferredName: "",
         voice: "alloy",
@@ -571,6 +591,11 @@ export const useSessionStore = create<SessionState>()(
     clearFocus: () => {
       set((state) => {
         state.focusTarget = null;
+      });
+    },
+    setLayoutOffset: (side, value) => {
+      set((state) => {
+        state.layoutOffsets[side] = Math.max(0, value);
       });
     },
     updateSettings: (settings) => {

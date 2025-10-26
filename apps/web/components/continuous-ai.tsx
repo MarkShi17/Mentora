@@ -33,7 +33,8 @@ export function ContinuousAI() {
     pauseListening,
     resumeListening,
     setQuestionCallback,
-    forceProcessTranscript
+    forceProcessTranscript,
+    setLastAIMessage
   } = useContinuousAI();
 
   // Simple spacebar push-to-talk mode (no question detection)
@@ -177,6 +178,9 @@ export function ContinuousAI() {
           type: "response"
         });
         console.log(`📎 Linked ${objectIds.length} canvas objects to message`);
+
+        // Update last AI message for response detection
+        setLastAIMessage(finalText);
       }
 
       // Reset refs
@@ -408,22 +412,15 @@ export function ContinuousAI() {
     }
   }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
 
-  // Pause microphone when AI is speaking to prevent feedback loop (only for live tutor mode)
+  // Keep microphone ALWAYS ACTIVE when live tutor is on - allow natural interruption
+  // No pausing when AI speaks - user can interrupt anytime like a real conversation
   useEffect(() => {
-    const isAISpeaking = streamingQA.audioState.isPlaying;
-
-    if (isAISpeaking && liveTutorListening && isActive && voiceInputState.isLiveTutorOn) {
-      // AI started speaking - pause the microphone
-      console.log('🔇 Pausing microphone (AI speaking)');
-      pauseListening();
-      setWasListeningBeforeSpeech(true);
-    } else if (!isAISpeaking && wasListeningBeforeSpeech && isActive && voiceInputState.isLiveTutorOn) {
-      // AI stopped speaking - resume the microphone
-      console.log('🎤 Resuming microphone (AI finished)');
-      resumeListening();
-      setWasListeningBeforeSpeech(false);
+    // Live tutor should ALWAYS be listening when enabled
+    if (voiceInputState.isLiveTutorOn && !liveTutorListening && isActive) {
+      console.log('🎤 Ensuring live tutor is listening');
+      startLiveTutor();
     }
-  }, [streamingQA.audioState.isPlaying, liveTutorListening, isActive, wasListeningBeforeSpeech, pauseListening, resumeListening, voiceInputState.isLiveTutorOn]);
+  }, [voiceInputState.isLiveTutorOn, liveTutorListening, isActive, startLiveTutor]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {

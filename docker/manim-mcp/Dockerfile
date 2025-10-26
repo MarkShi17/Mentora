@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install aiohttp for HTTP server
-RUN pip3 install --no-cache-dir aiohttp==3.9.3
+# Install aiohttp for HTTP server with increased timeout and retries
+RUN pip3 install --no-cache-dir --timeout=300 --retries=5 aiohttp==3.9.3
 
 WORKDIR /app
 

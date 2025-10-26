@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Settings, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
