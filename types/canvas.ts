@@ -12,11 +12,21 @@ export interface Size {
   height: number;
 }
 
+export interface ObjectConnection {
+  targetId: string;
+  type: 'parent' | 'reference' | 'derived';
+  label?: string;
+}
+
 export interface CanvasObjectMetadata {
   createdAt: number;
   turnId: string;
   referenceName?: string;
   tags: string[];
+  // Parent/source objects this was derived from
+  parentObjectIds?: string[];
+  // Visual connections to other objects
+  connections?: ObjectConnection[];
   // Allow additional metadata from MCP tools
   [key: string]: any;
 }

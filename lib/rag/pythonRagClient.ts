@@ -10,6 +10,36 @@ import { logger } from '@/lib/utils/logger';
 // Configuration
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || 'http://localhost:8006';
 
+/**
+ * Sanitize metadata for ChromaDB ingestion
+ * ChromaDB only accepts str, int, float, bool - NOT arrays or objects
+ */
+function sanitizeMetadata(metadata: Record<string, any>): Record<string, any> {
+  const sanitized: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value === null || value === undefined) {
+      continue; // Skip null/undefined values
+    }
+
+    if (Array.isArray(value)) {
+      // Convert arrays to JSON strings
+      sanitized[key] = JSON.stringify(value);
+    } else if (typeof value === 'object') {
+      // Convert objects to JSON strings
+      sanitized[key] = JSON.stringify(value);
+    } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      // Keep primitives as-is
+      sanitized[key] = value;
+    } else {
+      // Convert anything else to string
+      sanitized[key] = String(value);
+    }
+  }
+
+  return sanitized;
+}
+
 // Type definitions
 export interface IngestRequest {
   ids: string[];
@@ -259,16 +289,24 @@ export async function ingestCanvasObjects(
 
     documents.push(content);
 
-    // Add metadata
-    metadatas.push({
+    // Add metadata - sanitize to avoid ChromaDB errors
+    const metadata = {
       sessionId,
       subject,
       objectType: obj.type,
       objectId: obj.id,
       timestamp: Date.now(),
       ...(obj.metadata || {})
-    });
+    };
+
+    metadatas.push(sanitizeMetadata(metadata));
   }
+
+  logger.info('📦 Ingesting canvas objects to RAG', {
+    objectCount: objects.length,
+    objectTypes: objects.map(o => o.type),
+    sessionId
+  });
 
   await ingestDocuments({ ids, documents, metadatas });
 }
@@ -286,19 +324,28 @@ export async function ingestConversation(
 ): Promise<void> {
   const conversationText = `Question: ${question}\n\nResponse: ${response}`;
 
+  const metadata = {
+    type: 'conversation',
+    sessionId,
+    subject,
+    turnId,
+    question: question.substring(0, 200),
+    objectIds: objectIds, // Will be sanitized
+    objectCount: objectIds.length,
+    timestamp: Date.now()
+  };
+
+  logger.info('💬 Ingesting conversation to RAG', {
+    turnId,
+    sessionId,
+    questionPreview: question.substring(0, 100),
+    objectCount: objectIds.length
+  });
+
   await ingestDocuments({
     ids: [turnId],
     documents: [conversationText],
-    metadatas: [{
-      type: 'conversation',
-      sessionId,
-      subject,
-      turnId,
-      question: question.substring(0, 200),
-      objectIds: JSON.stringify(objectIds), // Convert array to JSON string
-      objectCount: objectIds.length,
-      timestamp: Date.now()
-    }]
+    metadatas: [sanitizeMetadata(metadata)]
   });
 }
 
@@ -310,7 +357,7 @@ export async function retrieveContext(
   sessionId?: string,
   subject?: string,
   topK: number = 5,
-  minScore: number = 0.7
+  minScore: number = 0.1  // Lowered from 0.7 for better retrieval
 ): Promise<{
   textSnippets: string[];
   relevanceScores: number[];
@@ -318,8 +365,10 @@ export async function retrieveContext(
   objectIds: string[];
 }> {
   // Build where filter
+  // NOTE: Don't filter by sessionId - we want to retrieve from ALL previous sessions
+  // This allows RAG to use knowledge from past conversations
   const where: Record<string, any> = {};
-  if (sessionId) where.sessionId = sessionId;
+  // if (sessionId) where.sessionId = sessionId;  // DISABLED - retrieve from all sessions
   if (subject) where.subject = subject;
 
   const results = await searchRAG({

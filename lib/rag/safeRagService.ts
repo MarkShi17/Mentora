@@ -22,7 +22,36 @@ export function isRAGEnabled(): boolean {
 }
 
 /**
+ * Extract content from canvas object for RAG indexing
+ */
+function extractObjectContent(obj: any): string {
+  if (!obj) return '';
+
+  switch (obj.type) {
+    case 'latex':
+      return `LaTeX equation: ${obj.data?.equation || ''}`;
+    case 'code':
+      return `Code (${obj.data?.language || 'unknown'}): ${obj.data?.code || ''}`;
+    case 'text':
+      return `Text: ${obj.data?.text || ''}`;
+    case 'diagram':
+      return `Diagram: ${obj.data?.description || 'Visual diagram'}`;
+    case 'graph':
+      return `Graph: ${obj.data?.title || 'Mathematical graph'}`;
+    case 'image':
+      return `Image: ${obj.data?.altText || obj.data?.url || 'Image content'}`;
+    case 'video':
+      return `Video: ${obj.data?.title || obj.data?.url || 'Video content'}`;
+    case 'screenshot':
+      return `Screenshot: ${obj.data?.description || 'Screenshot'}`;
+    default:
+      return `${obj.type}: ${JSON.stringify(obj.data || {})}`;
+  }
+}
+
+/**
  * Safe RAG context retrieval using Python RAG service
+ * Prioritizes highlighted objects and retrieves related content
  */
 export async function safeRetrieveContext(
   currentMessage: string,
@@ -44,24 +73,31 @@ export async function safeRetrieveContext(
       return { context: '', objectIds: [] };
     }
 
-    // Build query from current message and context
+    // Build query from current message and highlighted objects
     let query = currentMessage;
 
     // Add highlighted object context if available
     if (highlightedObjects && highlightedObjects.length > 0) {
       const objectContext = highlightedObjects
-        .map(obj => {
-          if (obj.type === 'latex') return obj.data.equation;
-          if (obj.type === 'code') return obj.data.code;
-          if (obj.type === 'text') return obj.data.text;
-          return '';
-        })
+        .map(obj => extractObjectContent(obj))
         .filter(Boolean)
         .join(' ');
+
+      logger.info('🎯 RAG Query with Highlighted Objects', {
+        highlightedCount: highlightedObjects.length,
+        highlightedTypes: highlightedObjects.map(o => o.type),
+        highlightedIds: highlightedObjects.map(o => o.id),
+        objectContextLength: objectContext.length,
+        objectContextPreview: objectContext.substring(0, 200)
+      });
 
       if (objectContext) {
         query = `${currentMessage} Context: ${objectContext}`;
       }
+    } else {
+      logger.warn('⚠️ No highlighted objects in RAG query', {
+        currentMessage: currentMessage.substring(0, 100)
+      });
     }
 
     // Retrieve context from Python RAG service
@@ -69,9 +105,26 @@ export async function safeRetrieveContext(
       query,
       sessionId,
       subject,
-      parseInt(process.env.RAG_TOP_K || '5'),
-      parseFloat(process.env.RAG_MIN_RELEVANCE_SCORE || '0.7')
+      parseInt(process.env.RAG_TOP_K || '10'),
+      parseFloat(process.env.RAG_MIN_RELEVANCE_SCORE || '0.2')
     );
+
+    logger.info('📚 RAG CONTEXT RETRIEVED', {
+      snippetCount: retrieved.textSnippets.length,
+      relevanceScores: retrieved.relevanceScores,
+      objectIds: retrieved.objectIds,
+      topK: parseInt(process.env.RAG_TOP_K || '10'),
+      minScore: parseFloat(process.env.RAG_MIN_RELEVANCE_SCORE || '0.2')
+    });
+
+    // Log each snippet for debugging
+    retrieved.textSnippets.forEach((snippet, idx) => {
+      logger.info(`📄 Snippet ${idx + 1}/${retrieved.textSnippets.length}`, {
+        score: retrieved.relevanceScores[idx],
+        metadata: retrieved.metadata[idx],
+        preview: snippet.substring(0, 150) + (snippet.length > 150 ? '...' : '')
+      });
+    });
 
     // Format retrieved context for the AI
     const contextParts: string[] = [];
@@ -90,7 +143,9 @@ export async function safeRetrieveContext(
         contextParts.push(`\n${relevanceIndicator} [${idx + 1}] `);
 
         // Add metadata context
-        if (meta?.type === 'conversation') {
+        if (meta?.boosted) {
+          contextParts.push('🎯 (from highlighted objects) ');
+        } else if (meta?.type === 'conversation') {
           contextParts.push('(from previous conversation) ');
         } else if (meta?.objectType) {
           contextParts.push(`(${meta.objectType} object) `);

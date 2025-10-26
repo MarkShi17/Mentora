@@ -375,6 +375,8 @@ export const useSessionStore = create<SessionState>()(
       });
     },
     updateCanvasObject: (sessionId, object) => {
+      const isNewObject = !get().canvasObjects[sessionId]?.find((item) => item.id === object.id);
+
       set((state) => {
         if (!state.canvasObjects[sessionId]) {
           state.canvasObjects[sessionId] = [];
@@ -386,6 +388,20 @@ export const useSessionStore = create<SessionState>()(
           state.canvasObjects[sessionId].push(object);
         }
       });
+
+      // Auto-create connections from parent objects if metadata contains parentObjectIds
+      if (isNewObject && object.metadata?.parentObjectIds) {
+        const parentIds = Array.isArray(object.metadata.parentObjectIds)
+          ? object.metadata.parentObjectIds
+          : JSON.parse(object.metadata.parentObjectIds as string);
+
+        if (Array.isArray(parentIds) && parentIds.length > 0) {
+          // Create connections from each parent object to this new object
+          parentIds.forEach((parentId: string) => {
+            get().createConnection(sessionId, parentId, object.id, 'south', 'north');
+          });
+        }
+      }
     },
     updateCanvasObjects: (sessionId, objects) => {
       // Save state before update for undo
