@@ -513,14 +513,21 @@ export function useContinuousAI() {
                                      lowerTranscript.includes('hey mentora') ||
                                      lowerTranscript.includes('ok mentora');
 
-            // Process immediately for interrupts, delay for normal questions
-            const delay = isInterruptAttempt ? 0 : 2000;
+            // Determine delay based on confidence and interrupt detection
+            // High confidence questions (>0.7) or interrupt attempts → process immediately (0ms)
+            // Medium confidence questions (0.4-0.7) → short delay (500ms) for more natural conversation
+            // This ensures voice interruptions are snappy while still filtering noise
+            let delay = 500; // Default for medium confidence
 
-            if (isInterruptAttempt) {
-              console.log('🚨 INTERRUPT ATTEMPT DETECTED - Processing immediately!');
+            if (isInterruptAttempt || questionResult.confidence > 0.7) {
+              delay = 0; // Immediate processing for interrupts and high-confidence questions
+              console.log('🚨 HIGH PRIORITY - Processing immediately!', {
+                isInterrupt: isInterruptAttempt,
+                confidence: questionResult.confidence
+              });
             }
 
-            // Set a timeout to process the question after a brief silence (or immediately for interrupts)
+            // Set a timeout to process the question
             silenceTimeoutRef.current = setTimeout(() => {
               if (onQuestionDetectedRef.current) {
                 // Clean up the question to extract just the question part

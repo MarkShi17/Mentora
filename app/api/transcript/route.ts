@@ -4,7 +4,7 @@ import { TranscriptRequest, TranscriptResponse } from '@/types/api';
 import { handleError, ValidationError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
 
-export async function POST(request: NextRequest): Promise<NextResponse<TranscriptResponse>> {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = (await request.json()) as TranscriptRequest;
 

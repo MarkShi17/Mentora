@@ -5,9 +5,9 @@ import { handleError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { id: string } }
-): Promise<NextResponse<SessionDetailsResponse>> {
+): Promise<NextResponse> {
   try {
     const sessionId = params.id;
     const session = sessionManager.getSession(sessionId);
