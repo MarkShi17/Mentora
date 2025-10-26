@@ -412,12 +412,15 @@ export function ContinuousAI() {
     }
   }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
 
-  // Keep microphone ALWAYS ACTIVE when live tutor is on - allow natural interruption
-  // No pausing when AI speaks - user can interrupt anytime like a real conversation
+  // Keep microphone ALWAYS ACTIVE in live tutor mode - allow natural voice interruption
+  // Question detection will filter out non-questions, so AI's voice won't cause false interrupts
+  // When user speaks a question while AI is speaking, it will be detected and stop AI immediately
   useEffect(() => {
-    // Live tutor should ALWAYS be listening when enabled
-    if (voiceInputState.isLiveTutorOn && !liveTutorListening && isActive) {
-      console.log('🎤 Ensuring live tutor is listening');
+    if (!voiceInputState.isLiveTutorOn) return;
+
+    // Ensure microphone is always active when live tutor is on
+    if (!liveTutorListening && isActive) {
+      console.log('🎤 Ensuring microphone stays active - ready for voice interruption');
       startLiveTutor();
     }
   }, [voiceInputState.isLiveTutorOn, liveTutorListening, isActive, startLiveTutor]);

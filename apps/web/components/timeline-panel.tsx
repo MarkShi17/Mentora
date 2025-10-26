@@ -24,6 +24,7 @@ export function TimelinePanel() {
   const [dragState, setDragState] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const hasAutoOpenedRef = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const messages = useSessionStore((state) => state.messages);
@@ -65,6 +66,16 @@ export function TimelinePanel() {
   useEffect(() => {
     if (dialogue.length === 1 && !isExpanded) {
       setTimelineOpen(true);
+    }
+  }, [dialogue.length, isExpanded]);
+
+  // Auto-scroll to bottom when new messages are added and panel is expanded
+  useEffect(() => {
+    if (isExpanded && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
     }
   }, [dialogue.length, isExpanded]);
 
@@ -263,7 +274,7 @@ export function TimelinePanel() {
           </Button>
         </div>
       </div>
-      <div className="space-y-3 overflow-y-auto px-5 py-5 scrollbar-thin">
+      <div ref={scrollContainerRef} className="space-y-3 overflow-y-auto px-5 py-5 scrollbar-thin">
         {dialogue.map((message) => (
           <Fragment key={message.id}>
             <div className="rounded-2xl border border-white/60 bg-white/40 backdrop-blur-sm px-4 py-3 shadow-sm hover:shadow-md transition-all duration-300">

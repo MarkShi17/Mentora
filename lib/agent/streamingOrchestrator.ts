@@ -177,6 +177,7 @@ export class StreamingOrchestrator {
 
       let finalResponseText = '';
       const toolGeneratedObjects: CanvasObject[] = [];
+      let preToolComponents: any[] = []; // Components from initial response before tool execution
       const maxIterations = 5; // Prevent infinite tool use loops
       let iteration = 0;
 
@@ -210,9 +211,99 @@ export class StreamingOrchestrator {
           const toolUses = response.content.filter(block => block.type === 'tool_use');
           const textBlocks = response.content.filter(block => block.type === 'text');
 
-          // Store any text explanation
-          if (textBlocks.length > 0 && !finalResponseText) {
-            finalResponseText = textBlocks.map((block: any) => block.text).join('\n');
+          // STREAM NARRATION IMMEDIATELY BEFORE EXECUTING TOOLS
+          // This allows user to hear response while tools execute
+          // Also extract components to stream after tools complete
+          if (textBlocks.length > 0) {
+            const narrationText = textBlocks.map((block: any) => block.text).join('\n');
+
+            // Store for later use
+            if (!finalResponseText) {
+              finalResponseText = narrationText;
+            }
+
+            logger.info('🎤 Streaming narration BEFORE tool execution', {
+              narrationLength: narrationText.length,
+              toolCount: toolUses.length
+            });
+
+            // Parse and stream the narration immediately
+            // Also extract components to stream after tools
+            const agentResponse = this.parseResponse(narrationText);
+
+            // Store components for after tool execution
+            if (agentResponse.objects && agentResponse.objects.length > 0) {
+              preToolComponents = agentResponse.objects;
+              logger.info('📦 Found components in pre-tool response', {
+                componentCount: preToolComponents.length,
+                types: preToolComponents.map(c => c.type)
+              });
+            }
+
+            if (agentResponse.narration && agentResponse.narration.trim().length > 0) {
+              const sentenceParser = new SentenceParser();
+              const sentences = sentenceParser.addChunk(agentResponse.narration);
+
+              // Stream each sentence with TTS
+              for (const sentence of sentences) {
+                yield {
+                  type: 'text_chunk',
+                  timestamp: Date.now(),
+                  data: {
+                    text: sentence.text,
+                    sentenceIndex: sentence.index
+                  }
+                };
+
+                try {
+                  const audioResult = await ttsService.generateSentenceSpeech(
+                    sentence.text,
+                    voice,
+                    sentence.index
+                  );
+                  yield {
+                    type: 'audio_chunk',
+                    timestamp: Date.now(),
+                    data: audioResult
+                  };
+                } catch (error) {
+                  logger.warn('TTS generation failed during pre-tool streaming', {
+                    sentenceIndex: sentence.index,
+                    error: error instanceof Error ? error.message : 'Unknown'
+                  });
+                }
+              }
+
+              // Flush final sentence
+              const finalSentence = sentenceParser.flush();
+              if (finalSentence) {
+                yield {
+                  type: 'text_chunk',
+                  timestamp: Date.now(),
+                  data: {
+                    text: finalSentence.text,
+                    sentenceIndex: finalSentence.index
+                  }
+                };
+
+                try {
+                  const audioResult = await ttsService.generateSentenceSpeech(
+                    finalSentence.text,
+                    voice,
+                    finalSentence.index
+                  );
+                  yield {
+                    type: 'audio_chunk',
+                    timestamp: Date.now(),
+                    data: audioResult
+                  };
+                } catch (error) {
+                  logger.warn('TTS generation failed for final sentence', { error });
+                }
+              }
+            }
+
+            logger.info('✅ Narration streamed, now executing tools');
           }
 
           // Add assistant's message with tool use to conversation
@@ -240,14 +331,15 @@ export class StreamingOrchestrator {
                 throw new Error(`Unknown tool: ${toolUse.name}`);
               }
 
-              // Emit tool_start event
+              // Emit tool_start event with visual placeholder
               yield {
                 type: 'mcp_tool_start',
                 timestamp: Date.now(),
                 data: {
                   toolName: toolUse.name,
                   serverId,
-                  description: MCP_TOOLS_FOR_CLAUDE.find(t => t.name === toolUse.name)?.description || ''
+                  description: MCP_TOOLS_FOR_CLAUDE.find(t => t.name === toolUse.name)?.description || '',
+                  isGeneratingComponent: isVisualizationTool(toolUse.name)
                 }
               };
 
@@ -275,6 +367,7 @@ export class StreamingOrchestrator {
                 const mcpObjects = this.convertMCPResultToCanvasObjects(
                   mcpResult,
                   toolUse.name,
+                  toolUse.input as Record<string, any>,
                   session.canvasObjects,
                   toolGeneratedObjects,
                   turnId
@@ -536,10 +629,11 @@ export class StreamingOrchestrator {
         }
       }
 
-      // Generate remaining canvas objects (non-priority) from Claude's response
-      if (regularObjects && regularObjects.length > 0) {
-        logger.info('Generating regular canvas objects from Claude response', {
-          objectCount: regularObjects.length
+      // Generate additional canvas objects from Claude's response (if any)
+      // ONLY if no MCP visualization tools were used (to avoid spurious diagrams)
+      if (agentResponse.objects && agentResponse.objects.length > 0 && toolGeneratedObjects.length === 0) {
+        logger.info('Generating canvas objects from Claude response', {
+          objectCount: agentResponse.objects.length
         });
 
         for (const request of regularObjects) {
@@ -697,10 +791,11 @@ finally {
 - Break explanations into small steps
 - Provide hints before solutions
 - Check understanding at checkpoints`
-        : `Provide direct explanations:
-- Give clear, complete answers
-- Still break into logical steps
-- Be thorough but concise`;
+        : `Provide concise direct explanations:
+- Start with brief 3-4 sentence summaries (5 sentence MAX)
+- Create visualizations to supplement brevity
+- Save detailed explanations for follow-up questions
+- Be clear but encourage further exploration`;
 
     let contextualInfo = '';
     if (conversationContext) {
@@ -763,7 +858,8 @@ VISUAL CREATION:
 - Position new objects spatially relative to existing ones
 - Use directional language: "as shown in the equation above", "let's place this below"
 - Make text objects detailed and well-formatted with bullet points and clear structure
-- Ensure content is comprehensive but concise - avoid overly short explanations
+- Keep initial explanations brief (3-4 sentences, 5 MAX) - let visuals do the teaching
+- Save comprehensive details for follow-up questions
 - Use proper line breaks and formatting in text content
 - For diagrams: Create meaningful visualizations that demonstrate the concept being discussed
 - Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms
@@ -780,19 +876,34 @@ Stream your response using these markers. Start with text immediately, then defi
 [NARRATION]: Continue with more explanation
 [REFERENCE mention="as shown above" objectId="obj_xyz"]: Reference existing objects
 
-Example:
+Example (Math):
 [NARRATION]: Let me help you understand quadratic equations.
 [NARRATION]: A quadratic equation has the general form where the highest power is 2.
-[OBJECT_START type="latex" id="eq_1"]: Starting equation
-[OBJECT_CONTENT]: ax^2 + bx + c = 0
-[OBJECT_META referenceName="general form"]:
-[OBJECT_END]:
+[OBJECT_START type="latex" id="eq_1"]
+[OBJECT_CONTENT]:
+ax^2 + bx + c = 0
+[OBJECT_META referenceName="general form"]
+[OBJECT_END]
 [NARRATION]: As you can see in the general form above, we have three coefficients.
-[OBJECT_START type="graph" id="graph_1"]: Creating visualization
-[OBJECT_CONTENT]: y = x^2 - 4x + 3
-[OBJECT_META equation="x^2 - 4x + 3"]:
-[OBJECT_END]:
-[NARRATION]: This parabola shows how the equation creates a U-shaped curve.
+
+Example (Code):
+[NARRATION]: Here's how to implement binary search in Python.
+[OBJECT_START type="code" id="code_1"]
+[OBJECT_CONTENT]:
+def binary_search(arr, target):
+    left, right = 0, len(arr) - 1
+    while left <= right:
+        mid = (left + right) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            left = mid + 1
+        else:
+            right = mid - 1
+    return -1
+[OBJECT_META language="python"]
+[OBJECT_END]
+[NARRATION]: This efficiently finds elements in sorted arrays.
 
 IMPORTANT:
 - Start with [NARRATION] immediately - don't wait to plan objects
@@ -800,11 +911,25 @@ IMPORTANT:
 - Keep narration conversational and natural
 - Objects can be defined while you continue explaining
 
+CRITICAL STREAMING PATTERN FOR TOOL USE:
+- When you want to use tools (like sequential_thinking), ALWAYS generate [NARRATION] text FIRST
+- Your response should be: [NARRATION] text + tool_use blocks
+- NOT: tool_use only without narration first
+- This ensures the user hears your explanation immediately while tools execute in the background
+- Example: Start with [NARRATION], explain the concept, THEN use sequential_thinking to deepen analysis
+
 Subject: ${session.subject}
 
-Be canvas-aware and create appropriate visuals for the subject area.
+${selectedBrain && selectedBrain.promptEnhancement ? `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SPECIALIZED BRAIN INSTRUCTIONS (${selectedBrain.name.toUpperCase()}):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${selectedBrain.promptEnhancement}` : ''}`;
+${selectedBrain.promptEnhancement}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : ''}
+
+Be canvas-aware and create appropriate visuals for the subject area.`;
   }
 
   private buildUserPrompt(question: string, context: any): string {
@@ -892,11 +1017,28 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
           content: content.trim()
         };
 
-        // Parse metadata if present
+        // Parse metadata if present (can have multiple key="value" pairs)
         if (meta) {
-          const metaMatch = meta.match(/(\w+)="([^"]+)"/);
-          if (metaMatch) {
-            obj.referenceName = metaMatch[2];
+          const metaMatches = meta.matchAll(/(\w+)="([^"]+)"/g);
+          const metadataObj: Record<string, string> = {};
+          let hasReferenceName = false;
+
+          for (const metaMatch of metaMatches) {
+            const key = metaMatch[1];
+            const value = metaMatch[2];
+
+            // referenceName goes directly on obj, everything else goes in metadata
+            if (key === 'referenceName') {
+              obj.referenceName = value;
+              hasReferenceName = true;
+            } else {
+              metadataObj[key] = value;
+            }
+          }
+
+          // Only add metadata object if there's something in it
+          if (Object.keys(metadataObj).length > 0) {
+            obj.metadata = metadataObj;
           }
         }
 
@@ -957,6 +1099,7 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
   private convertMCPResultToCanvasObjects(
     mcpResult: any,
     toolName: string,
+    toolInput: Record<string, any>,
     existingObjects: CanvasObject[],
     currentToolResults: CanvasObject[],
     turnId: string
@@ -967,6 +1110,39 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
       logger.warn('MCP result has no content array', { toolName });
       return objects;
     }
+
+    // Generate meaningful label from tool name and parameters
+    const generateLabel = (): string => {
+      switch (toolName) {
+        case 'render_biology_diagram':
+          const diagramType = toolInput.diagram_type || '';
+          const title = toolInput.title || '';
+          if (title) return title;
+          // Convert diagram_type to readable label: "crispr_mechanism" -> "CRISPR Mechanism"
+          return diagramType
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+
+        case 'generate':
+          return toolInput.title || 'Pathway Diagram';
+
+        case 'visualize_molecule':
+          const pdbId = toolInput.pdb_id || '';
+          return pdbId ? `${pdbId.toUpperCase()} Structure` : 'Molecular Structure';
+
+        case 'render_animation':
+          return toolInput.title || 'Math Animation';
+
+        case 'execute_python':
+          return toolInput.title || 'Data Visualization';
+
+        default:
+          return 'Visualization';
+      }
+    };
+
+    const label = generateLabel();
 
     // Process each content item from MCP result
     for (const content of mcpResult.content) {
@@ -997,10 +1173,11 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
         const imageObject: CanvasObject = {
           id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
           type: 'image',
+          label,
           data: {
             type: 'image',
             url: `data:${content.mimeType};base64,${content.data}`,
-            alt: `Visualization from ${toolName}`,
+            alt: label,
           },
           position,
           size: { width: 600, height: 400 },
@@ -1066,10 +1243,11 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
             const videoObject: CanvasObject = {
               id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
               type: 'video',
+              label,
               data: {
                 type: 'video',
                 url,
-                alt: `Animation from ${toolName}`,
+                alt: label,
               },
               position,
               size: { width: 600, height: 400 },
@@ -1090,10 +1268,11 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
             const imageObject: CanvasObject = {
               id: `obj_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
               type: 'image',
+              label,
               data: {
                 type: 'image',
                 url,
-                alt: `Visualization from ${toolName}`,
+                alt: label,
               },
               position,
               size: { width: 600, height: 400 },

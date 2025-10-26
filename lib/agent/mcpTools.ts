@@ -72,7 +72,7 @@ class MainScene(Scene):
       properties: {
         diagram_type: {
           type: 'string',
-          enum: ['cell_structure', 'dna_transcription', 'photosynthesis'],
+          enum: ['cell_structure', 'dna_transcription', 'photosynthesis', 'mitosis_phases', 'crispr_mechanism', 'cell_cycle', 'gene_expression'],
           description: 'Choose the built-in diagram template to render'
         },
         title: {
@@ -132,7 +132,7 @@ class MainScene(Scene):
   },
   {
     name: 'generate',
-    description: `Create custom flowchart diagrams using Mermaid syntax. PREFERRED for biological pathways, metabolic processes, signaling cascades, regulatory networks. Shows branching, feedback loops, decision points. Provide Mermaid code (flowchart/sequence/state).`,
+    description: `LAST RESORT: Create simple flowchart diagrams using Mermaid syntax. Only use when execute_python cannot provide visual detail. DO NOT use for: protein structures, metabolic pathways with molecules, cellular processes with specific structures, or any biology concept that needs visual examples. Shows branching, feedback loops, decision points. Provide Mermaid code (flowchart/sequence/state).`,
     input_schema: {
       type: 'object',
       properties: {
