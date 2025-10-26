@@ -83,10 +83,10 @@ export function useSpeechRecognition() {
     try {
       const recognition = new SpeechRecognition();
       recognition.continuous = false; // Single recognition session
-      recognition.interimResults = false; // Only final results to avoid duplicates
+      recognition.interimResults = true; // Show real-time transcript as user speaks
       recognition.lang = "en-US";
       recognition.maxAlternatives = 1;
-      
+
       setSupported(true);
       return recognition;
     } catch (error) {
@@ -123,28 +123,26 @@ export function useSpeechRecognition() {
     setSupported(true);
 
     const handleResult = (event: SpeechRecognitionEvent) => {
-      // Prevent duplicate processing
-      if (hasProcessedRef.current) {
-        console.log('Ignoring duplicate result');
-        return;
-      }
-      
       const result = event.results[event.results.length - 1];
-      const transcript = result[0].transcript.trim();
-      
-      console.log('Speech result received:', transcript);
-      
-      if (transcript && transcript !== lastTranscriptRef.current) {
+      // DON'T TRIM - Keep EVERYTHING including stutters, pauses, etc.
+      const transcript = result[0].transcript;
+      const isFinal = result.isFinal;
+
+      // Always update transcript in real-time (interim and final) - NO CLEANING
+      setTranscript(transcript);
+      console.log(isFinal ? 'Final transcript:' : 'Interim transcript:', transcript);
+
+      // Only process final results for auto-submit
+      if (isFinal && !hasProcessedRef.current) {
         hasProcessedRef.current = true;
         lastTranscriptRef.current = transcript;
-        
-        setTranscript(transcript);
-        console.log('Processing final transcript:', transcript);
-        
-        // Auto-submit after a longer delay to give user time to review
+
+        console.log('Processing final transcript for auto-submit (RAW):', transcript);
+
+        // Auto-submit instantly for push-to-talk mode
         setTimeout(() => {
-          if (onAutoSubmitRef.current && transcript) {
-            console.log('Auto-submitting transcript:', transcript);
+          if (onAutoSubmitRef.current) {
+            console.log('Auto-submitting RAW transcript:', transcript);
             onAutoSubmitRef.current(transcript);
             setTranscript(""); // Clear transcript after auto-submit
           }
@@ -158,7 +156,7 @@ export function useSpeechRecognition() {
             }
           }
           recognitionRef.current = null;
-        }, 3000); // 3 second delay to give user more time to review the result
+        }, 100); // 100ms delay for instant submission in push-to-talk mode
       }
     };
 

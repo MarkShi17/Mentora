@@ -16,9 +16,9 @@ export function nanoid(size = 10): string {
 
 export function formatTime(timeIso: string): string {
   const date = new Date(timeIso);
-  // Use UTC to avoid server/client timezone mismatch
-  const hours = date.getUTCHours();
-  const minutes = date.getUTCMinutes();
+  // Use local time for accurate display
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
   const ampm = hours >= 12 ? 'PM' : 'AM';
   const displayHours = hours % 12 || 12;
   const displayMinutes = minutes.toString().padStart(2, '0');
