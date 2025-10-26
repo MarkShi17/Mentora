@@ -8,7 +8,8 @@ import { getAnchorPosition, getConnectionPath } from '@/lib/connection-utils';
 type ConnectionDragState = {
   sourceObjectId: string;
   sourceAnchor: ConnectionAnchor;
-  currentWorld: { x: number; y: number };
+  sourcePosition: { x: number; y: number }; // Fixed source position
+  currentWorld: { x: number; y: number }; // Current mouse position
 };
 
 type DragState = {
@@ -162,14 +163,8 @@ export function ConnectionLayer({
             const sourceObj = objectMap.get(connectionDragState.sourceObjectId);
             if (!sourceObj) return null;
 
-            // Calculate base position
-            const baseSourcePos = getAnchorPosition(sourceObj, connectionDragState.sourceAnchor);
-
-            // Apply drag delta if source object is being dragged
-            const isSourceDragged = dragState?.selectedObjectIds?.includes(sourceObj.id) ?? false;
-            const sourcePos = isSourceDragged && dragState
-              ? { x: baseSourcePos.x + dragState.currentDelta.x, y: baseSourcePos.y + dragState.currentDelta.y }
-              : baseSourcePos;
+            // Use the fixed source position from when connection started
+            const sourcePos = connectionDragState.sourcePosition;
 
             // If hovering over a valid target anchor, snap to it; otherwise follow cursor
             let targetPos = connectionDragState.currentWorld;

@@ -10,7 +10,7 @@ import { ConnectionLayer } from "@/components/connection-layer";
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
 import type { CanvasObject, Pin, ConnectionAnchor } from "@/types";
-import { getHoveredAnchor } from "@/lib/connection-utils";
+import { getHoveredAnchor, getAnchorPosition } from "@/lib/connection-utils";
 import { useClipboardPaste } from "@/hooks/use-clipboard-paste";
 import { processImageFile } from "@/lib/image-upload";
 
@@ -51,7 +51,8 @@ type DragState = {
 type ConnectionDragState = {
   sourceObjectId: string;
   sourceAnchor: ConnectionAnchor;
-  currentWorld: { x: number; y: number };
+  sourcePosition: { x: number; y: number }; // Fixed source position
+  currentWorld: { x: number; y: number }; // Current mouse position
 };
 
 
@@ -143,6 +144,14 @@ const initialPinCenteredRef = useRef<string | null>(null);
 
   // Hovered anchor state
   const [hoveredAnchor, setHoveredAnchor] = useState<{ objectId: string; anchor: ConnectionAnchor } | null>(null);
+
+  // Cleanup connection state when session changes or component unmounts
+  useEffect(() => {
+    return () => {
+      setConnectionDragState(null);
+      setHoveredAnchor(null);
+    };
+  }, [activeSessionId]);
 
   const [lasso, setLasso] = useState<LassoState | null>(null);
   const lassoRef = useRef<LassoState | null>(null);
@@ -1075,28 +1084,26 @@ const initialPinCenteredRef = useRef<string | null>(null);
       event.stopPropagation();
       event.preventDefault();
 
-      // Check if this anchor already has a connection
-      const existingConnection = connections.find(conn =>
-        (conn.sourceObjectId === objectId && conn.sourceAnchor === anchor) ||
-        (conn.targetObjectId === objectId && conn.targetAnchor === anchor)
-      );
+      // Clear any existing connection drag state first
+      setConnectionDragState(null);
+      setHoveredAnchor(null);
 
-      // If anchor already has a connection, delete it instead of starting a new one
-      if (existingConnection) {
-        deleteConnection(activeSessionId, existingConnection.id);
+      // Find the source object to get its anchor position
+      const sourceObject = canvasObjects.find(obj => obj.id === objectId);
+      if (!sourceObject) {
+        console.error('❌ Source object not found:', objectId);
         return;
       }
 
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
-      const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
+      // Use the actual anchor position instead of mouse cursor position
+      const anchorPos = getAnchorPosition(sourceObject, anchor);
+      console.log('🎯 Starting connection from:', { objectId, anchor, position: anchorPos });
 
       setConnectionDragState({
         sourceObjectId: objectId,
         sourceAnchor: anchor,
-        currentWorld: { x: worldX, y: worldY }
+        sourcePosition: { x: anchorPos.x, y: anchorPos.y }, // Store fixed source position
+        currentWorld: { x: anchorPos.x, y: anchorPos.y } // Start with source position
       });
 
       // Capture pointer for smooth dragging
@@ -1104,7 +1111,7 @@ const initialPinCenteredRef = useRef<string | null>(null);
         containerRef.current.setPointerCapture(event.pointerId);
       }
     },
-    [activeSessionId, connections, deleteConnection]
+    [activeSessionId, canvasObjects]
   );
 
   const handleConnectionMove = useCallback(
@@ -1119,20 +1126,22 @@ const initialPinCenteredRef = useRef<string | null>(null);
       const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
 
       // Update current position
-      setConnectionDragState({
+      const newDragState = {
         ...connDrag,
         currentWorld: { x: worldX, y: worldY }
-      });
+      };
+      setConnectionDragState(newDragState);
 
-      // Check if hovering over an anchor
+      // Check if hovering over an anchor (scale radius with zoom for accuracy)
+      const anchorRadius = Math.max(16, 24 / transformRef.current.k);
       const hoveredObject = canvasObjects.find(obj => {
         if (obj.id === connDrag.sourceObjectId) return false; // Can't connect to self
-        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, 12);
+        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, anchorRadius);
         return anchor !== null;
       });
 
       if (hoveredObject) {
-        const anchor = getHoveredAnchor(hoveredObject, { x: worldX, y: worldY }, 12);
+        const anchor = getHoveredAnchor(hoveredObject, { x: worldX, y: worldY }, anchorRadius);
         if (anchor) {
           setHoveredAnchor({ objectId: hoveredObject.id, anchor });
         } else {
@@ -1156,55 +1165,58 @@ const initialPinCenteredRef = useRef<string | null>(null);
       const worldX = (event.clientX - rect.left - transformRef.current.x) / transformRef.current.k;
       const worldY = (event.clientY - rect.top - transformRef.current.y) / transformRef.current.k;
 
-      // Check if we're over a valid target anchor
+      // Check if we're over a valid target anchor (use same scaled radius as move)
+      const anchorRadius = Math.max(16, 24 / transformRef.current.k);
       const targetObject = canvasObjects.find(obj => {
         if (obj.id === connDrag.sourceObjectId) return false;
-        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, 12);
+        const anchor = getHoveredAnchor(obj, { x: worldX, y: worldY }, anchorRadius);
         return anchor !== null;
       });
 
       if (targetObject) {
-        const targetAnchor = getHoveredAnchor(targetObject, { x: worldX, y: worldY }, 12);
+        const targetAnchor = getHoveredAnchor(targetObject, { x: worldX, y: worldY }, anchorRadius);
         if (targetAnchor) {
-          // Check if source anchor already has a connection
-          const sourceAnchorHasConnection = connections.some(conn =>
-            (conn.sourceObjectId === connDrag.sourceObjectId && conn.sourceAnchor === connDrag.sourceAnchor) ||
-            (conn.targetObjectId === connDrag.sourceObjectId && conn.targetAnchor === connDrag.sourceAnchor)
+          // Check if this exact connection already exists (prevent duplicates)
+          const duplicateConnection = connections.some(conn =>
+            (conn.sourceObjectId === connDrag.sourceObjectId && 
+             conn.sourceAnchor === connDrag.sourceAnchor &&
+             conn.targetObjectId === targetObject.id && 
+             conn.targetAnchor === targetAnchor) ||
+            (conn.sourceObjectId === targetObject.id && 
+             conn.sourceAnchor === targetAnchor &&
+             conn.targetObjectId === connDrag.sourceObjectId && 
+             conn.targetAnchor === connDrag.sourceAnchor)
           );
 
-          // Check if target anchor already has a connection
-          const targetAnchorHasConnection = connections.some(conn =>
-            (conn.sourceObjectId === targetObject.id && conn.sourceAnchor === targetAnchor) ||
-            (conn.targetObjectId === targetObject.id && conn.targetAnchor === targetAnchor)
-          );
-
-          // Check if these two objects already have ANY connection between them
-          const objectsAlreadyConnected = connections.some(conn =>
-            (conn.sourceObjectId === connDrag.sourceObjectId && conn.targetObjectId === targetObject.id) ||
-            (conn.sourceObjectId === targetObject.id && conn.targetObjectId === connDrag.sourceObjectId)
-          );
-
-          // Only create connection if both anchors are free AND objects aren't already connected
-          if (!sourceAnchorHasConnection && !targetAnchorHasConnection && !objectsAlreadyConnected) {
-            createConnection(
-              activeSessionId,
-              connDrag.sourceObjectId,
-              targetObject.id,
-              connDrag.sourceAnchor,
-              targetAnchor
-            );
+          if (!duplicateConnection) {
+            try {
+              createConnection(
+                activeSessionId,
+                connDrag.sourceObjectId,
+                targetObject.id,
+                connDrag.sourceAnchor,
+                targetAnchor
+              );
+              console.log('✅ Connection created successfully - now you can create connection maps!');
+            } catch (error) {
+              console.error('❌ Failed to create connection:', error);
+            }
+          } else {
+            console.log('⚠️ Cannot create connection - duplicate connection exists');
           }
         }
       }
+
+      // Always clear connection drag state and hover state
+      setConnectionDragState(null);
+      setHoveredAnchor(null);
 
       // Release pointer capture
       if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
         containerRef.current.releasePointerCapture(event.pointerId);
       }
 
-      // Clear connection drag state
-      setConnectionDragState(null);
-      setHoveredAnchor(null);
+      console.log('🔄 Connection drag ended, state cleared');
     },
     [activeSessionId, canvasObjects, createConnection, connections]
   );
@@ -1268,20 +1280,6 @@ const initialPinCenteredRef = useRef<string | null>(null);
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
         {isInitialized && (
           <>
-            <ObjectLayer
-              objects={canvasObjects}
-              transform={transform}
-              onDragStart={handleObjectDragStart}
-              onDragMove={handleObjectDragMove}
-              onDragEnd={handleObjectDragEnd}
-              onContextMenu={undefined}
-              onDimensionsMeasured={handleDimensionsMeasured}
-              isDragging={!!dragState}
-              dragState={dragState}
-              onConnectionStart={handleConnectionStart}
-              onAnchorHover={handleAnchorHover}
-              hoveredAnchor={hoveredAnchor}
-            />
             <ConnectionLayer
               connections={connections}
               objects={canvasObjects}
@@ -1293,6 +1291,21 @@ const initialPinCenteredRef = useRef<string | null>(null);
                 // Handle connection click (e.g., for deletion)
                 console.log('Connection clicked:', connectionId);
               }}
+            />
+            <ObjectLayer
+              objects={canvasObjects}
+              transform={transform}
+              onDragStart={handleObjectDragStart}
+              onDragMove={handleObjectDragMove}
+              onDragEnd={handleObjectDragEnd}
+              onContextMenu={undefined}
+              onDimensionsMeasured={handleDimensionsMeasured}
+              isDragging={!!dragState}
+              isConnectionMode={true}
+              dragState={dragState}
+              onConnectionStart={handleConnectionStart}
+              onAnchorHover={handleAnchorHover}
+              hoveredAnchor={hoveredAnchor}
             />
             <PinLayer
               pins={pins}
