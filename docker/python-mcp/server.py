@@ -224,6 +224,10 @@ class PythonMCPServer:
                 fig, ax = plt.subplots(figsize=(12, 9))
             else:
                 fig, ax = plt.subplots(figsize=(8, 6))
+
+            # Adjust subplot to minimize padding
+            fig.subplots_adjust(left=0.05, right=0.95, top=0.88, bottom=0.05)
+
             ax.set_xlim(0, 10)
             ax.set_ylim(0, 10)
             ax.set_aspect('equal')
@@ -262,7 +266,7 @@ class PythonMCPServer:
                 }
 
             if title:
-                fig.suptitle(title, fontsize=16, weight='bold')
+                fig.suptitle(title, fontsize=20, weight='bold', y=0.92)
 
             if annotations:
                 for idx, note in enumerate(annotations):
@@ -282,7 +286,7 @@ class PythonMCPServer:
             height_px = int(fig_height_inches * dpi)
 
             buf = io.BytesIO()
-            fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.1, dpi=dpi)
+            fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.02, dpi=dpi)
             buf.seek(0)
             img_base64 = base64.b64encode(buf.read()).decode('utf-8')
             plt.close(fig)
@@ -577,12 +581,12 @@ class PythonMCPServer:
                             edgecolor=cut_color, linewidth=2), zorder=11)
 
         # Key mechanism steps - simplified and well-spaced
-        ax.text(0.8, 1.5, "How It Works:", fontsize=12, color="#1e293b", weight='bold')
-        ax.text(0.8, 0.8,
+        ax.text(0.8, 1.6, "How It Works:", fontsize=14, color="#1e293b", weight='bold')
+        ax.text(0.8, 1.3,
                 "1. Guide RNA directs Cas9 to target DNA sequence\n"
                 "2. PAM sequence (NGG) enables Cas9 binding\n"
                 "3. Cas9 cuts both DNA strands precisely",
-                fontsize=10, color="#334155", verticalalignment='top',
+                fontsize=12, color="#334155", verticalalignment='top',
                 linespacing=1.8)
 
         # Axes setup with more space
@@ -698,10 +702,10 @@ class PythonMCPServer:
 
         # Four panels showing Primary, Secondary, Tertiary, and Quaternary structure
         levels = [
-            ("primary", "Primary Structure", "#3b82f6", 1.5),
-            ("secondary", "Secondary Structure", "#10b981", 4.5),
-            ("tertiary", "Tertiary Structure", "#f59e0b", 7.5),
-            ("quaternary", "Quaternary Structure", "#a855f7", 10.5)
+            ("primary", "Primary", "#3b82f6", 1.5),
+            ("secondary", "Secondary", "#10b981", 4.5),
+            ("tertiary", "Tertiary", "#f59e0b", 7.5),
+            ("quaternary", "Quaternary", "#a855f7", 10.5)
         ]
 
         ax.set_xlim(0, 13)
@@ -726,7 +730,7 @@ class PythonMCPServer:
             # Draw structure visualization
             if key == "primary":
                 # Linear sequence of amino acids
-                y_pos = 5.5
+                y_pos = 6.2
                 amino_acids = ["Gly", "Ala", "Val", "Leu", "Ile"]
                 for i, aa in enumerate(amino_acids):
                     y = y_pos - i * 0.6
@@ -735,24 +739,24 @@ class PythonMCPServer:
                     ax.text(cx, y, aa[0], ha='center', va='center', fontsize=7, color="white", weight='bold')
                     if i < len(amino_acids) - 1:
                         ax.plot([cx, cx], [y-0.22, y-0.38], color="#64748b", linewidth=2)
-                ax.text(cx, 2.6, "Amino acid\nsequence", ha='center', fontsize=7.5, color="#475569")
+                ax.text(cx, 2.8, "Amino acid\nsequence", ha='center', fontsize=7.5, color="#475569")
 
             elif key == "secondary":
                 # Alpha helix and beta sheet
                 # Alpha helix (spiral)
-                t = np.linspace(0, 4*np.pi, 50)
+                t = np.linspace(0, 3.5*np.pi, 50)
                 helix_x = cx - 0.5 + 0.15 * np.cos(t)
-                helix_y = 6.5 - t * 0.3
+                helix_y = 7.0 - t * 0.32
                 ax.plot(helix_x, helix_y, color=base_color, linewidth=3)
-                ax.text(cx - 0.5, 2.8, "α-helix", ha='center', fontsize=7.5, color="#475569")
+                ax.text(cx - 0.5, 3.2, "α-helix", ha='center', fontsize=7.5, color="#475569")
 
                 # Beta sheet (zigzag)
                 beta_x = [cx+0.4, cx+0.6, cx+0.4, cx+0.6, cx+0.4, cx+0.6]
-                beta_y = [6.5, 5.8, 5.1, 4.4, 3.7, 3.0]
+                beta_y = [7.0, 6.3, 5.6, 4.9, 4.2, 3.5]
                 ax.plot(beta_x, beta_y, color=base_color, linewidth=3)
                 for x, y in zip(beta_x, beta_y):
                     ax.plot([x-0.15, x+0.15], [y, y], color=base_color, linewidth=2)
-                ax.text(cx + 0.5, 2.8, "β-sheet", ha='center', fontsize=7.5, color="#475569")
+                ax.text(cx + 0.5, 3.2, "β-sheet", ha='center', fontsize=7.5, color="#475569")
 
             elif key == "tertiary":
                 # 3D folded structure
@@ -769,16 +773,36 @@ class PythonMCPServer:
                 ax.text(cx, 2.6, "3D folded\npolypeptide", ha='center', fontsize=7.5, color="#475569")
 
             else:  # quaternary
-                # Multiple subunits
-                subunit_positions = [(cx-0.4, 5.5), (cx+0.4, 5.5), (cx-0.4, 4.2), (cx+0.4, 4.2)]
+                # Multiple subunits forming a complex (hemoglobin-like)
+                # Draw 4 subunits in a tetrahedral arrangement
+                subunit_positions = [(cx-0.45, 5.8), (cx+0.45, 5.8), (cx-0.45, 4.5), (cx+0.45, 4.5)]
                 colors = [base_color, "#ec4899", "#06b6d4", "#eab308"]
-                for i, (sx, sy) in enumerate(subunit_positions):
-                    blob_theta = np.linspace(0, 2*np.pi, 30)
-                    blob_r = 0.35
-                    blob_x = sx + blob_r * np.cos(blob_theta)
-                    blob_y = sy + blob_r * np.sin(blob_theta) * 0.8
-                    ax.fill(blob_x, blob_y, color=colors[i], alpha=0.7, edgecolor="#1e293b", linewidth=1.5)
-                ax.text(cx, 2.6, "Multiple\nsubunits", ha='center', fontsize=7.5, color="#475569")
+                labels = ["α₁", "α₂", "β₁", "β₂"]
+
+                for i, ((sx, sy), color, label) in enumerate(zip(subunit_positions, colors, labels)):
+                    # Draw 3D-looking folded subunit
+                    blob_theta = np.linspace(0, 2*np.pi, 40)
+                    blob_r = 0.42
+                    blob_x = sx + blob_r * np.cos(blob_theta) + 0.05 * np.sin(3*blob_theta)
+                    blob_y = sy + blob_r * np.sin(blob_theta) * 0.85 + 0.05 * np.cos(3*blob_theta)
+                    ax.fill(blob_x, blob_y, color=color, alpha=0.75, edgecolor="#1e293b", linewidth=2)
+                    # Add label on subunit
+                    ax.text(sx, sy, label, ha='center', va='center', fontsize=8,
+                           color="white", weight='bold')
+                    # Add some internal detail (folded structure hints)
+                    ax.plot([sx-0.15, sx+0.15], [sy, sy], color="#1e293b", linewidth=1, alpha=0.4)
+
+                # Draw bonds between subunits
+                ax.plot([cx-0.45, cx+0.45], [5.8, 5.8], color="#64748b", linewidth=2,
+                       linestyle='--', alpha=0.5, zorder=0)
+                ax.plot([cx-0.45, cx+0.45], [4.5, 4.5], color="#64748b", linewidth=2,
+                       linestyle='--', alpha=0.5, zorder=0)
+                ax.plot([cx-0.45, cx-0.45], [5.8, 4.5], color="#64748b", linewidth=2,
+                       linestyle='--', alpha=0.5, zorder=0)
+                ax.plot([cx+0.45, cx+0.45], [5.8, 4.5], color="#64748b", linewidth=2,
+                       linestyle='--', alpha=0.5, zorder=0)
+
+                ax.text(cx, 3.0, "Multiple\nsubunits", ha='center', fontsize=7.5, color="#475569")
 
         # Add overall title and summary
         ax.text(6.5, 9.5, "Four Levels of Protein Structure", ha='center', fontsize=13, weight='bold', color="#0f172a")

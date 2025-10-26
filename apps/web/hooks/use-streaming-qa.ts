@@ -53,6 +53,13 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
       };
     }
   ) => {
+    // Check if we're in demo mode - if so, don't run the actual tutoring system
+    const demoMode = useSessionStore.getState().demoMode;
+    if (demoMode.isDemoMode && demoMode.demoSessionId === sessionId) {
+      console.log('🎭 Demo mode active - skipping actual tutoring system');
+      return;
+    }
+
     // Stop any existing stream
     if (eventSourceRef.current) {
       eventSourceRef.current.close();

@@ -64,13 +64,23 @@ export function CodeBlock({
     <div className={cn("relative group h-full rounded-lg overflow-hidden", className)}>
       {/* Header with language tag and copy button */}
       <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
-        <span className="text-xs font-mono text-slate-400 bg-slate-800/90 px-2 py-1 rounded backdrop-blur-sm">
+        <span className={cn(
+          "text-xs font-mono px-2 py-1 rounded backdrop-blur-sm",
+          theme === 'dark'
+            ? "text-slate-400 bg-slate-800/90"
+            : "text-slate-600 bg-slate-200/90"
+        )}>
           {language}
         </span>
         {showCopyButton && (
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-800/90 hover:bg-slate-700/90 px-2 py-1 rounded backdrop-blur-sm transition-colors"
+            className={cn(
+              "flex items-center gap-1.5 text-xs px-2 py-1 rounded backdrop-blur-sm transition-colors",
+              theme === 'dark'
+                ? "text-slate-300 bg-slate-800/90 hover:bg-slate-700/90"
+                : "text-slate-700 bg-slate-200/90 hover:bg-slate-300/90"
+            )}
             aria-label="Copy code"
           >
             {copied ? (

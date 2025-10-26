@@ -3,9 +3,25 @@ import { CanvasObject, Subject } from '@/types/canvas';
 import { generateSessionId, generateTurnId } from '@/lib/utils/ids';
 import { NotFoundError } from '@/lib/utils/errors';
 import { logger } from '@/lib/utils/logger';
+import { createDemoSession } from '@/lib/demo/demoSession';
 
 class SessionManager {
   private sessions: Map<string, Session> = new Map();
+
+  constructor() {
+    // Auto-load demo session on startup
+    this.initializeDemoSession();
+  }
+
+  private initializeDemoSession(): void {
+    try {
+      const demoSession = createDemoSession();
+      this.sessions.set(demoSession.id, demoSession);
+      logger.info('Demo session initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize demo session', error);
+    }
+  }
 
   createSession(subject: Subject, title?: string): Session {
     const sessionId = generateSessionId();
@@ -103,11 +119,21 @@ class SessionManager {
   }
 
   deleteSession(sessionId: string): void {
+    // Prevent deletion of demo session
+    if (sessionId === 'demo_session') {
+      logger.warn('Cannot delete demo session');
+      throw new Error('Cannot delete demo session');
+    }
+
     const deleted = this.sessions.delete(sessionId);
     if (!deleted) {
       throw new NotFoundError(`Session not found: ${sessionId}`);
     }
     logger.info(`Deleted session: ${sessionId}`);
+  }
+
+  getDemoSession(): Session | undefined {
+    return this.sessions.get('demo_session');
   }
 }
 

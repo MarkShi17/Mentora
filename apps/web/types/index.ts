@@ -35,6 +35,7 @@ export type Message = {
   interruptedAt?: string;  // Timestamp when interrupted
   isStreaming?: boolean;  // Currently streaming text
   isPlayingAudio?: boolean;  // Currently playing audio
+  audioComplete?: boolean;  // Audio has finished playing naturally (not interrupted)
 };
 
 export type CanvasObjectType = "diagram" | "note" | "formula" | "image" | "text" | "code" | "graph" | "latex";
@@ -50,6 +51,8 @@ export type CanvasObject = {
   color: string;
   selected?: boolean;
   zIndex?: number;
+  hidden?: boolean;  // For voice-activated demo reveals
+  demoGroup?: 'intro' | 'architecture' | 'features';  // Demo reveal grouping
   data?: {
     content?: string;    // For text/note type (supports Markdown with inline math)
     svg?: string;        // For diagram/graph type

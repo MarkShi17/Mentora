@@ -447,59 +447,7 @@ TEACHING STYLE (${mode} mode):
 ${teachingStyle}
 
 VISUAL CREATION:
-<<<<<<< HEAD
-${selectedBrain?.type === 'math'
-  ? `- ABSOLUTELY CRITICAL FOR MATH: MINIMUM 3 TOTAL COMPONENTS REQUIRED (NON-NEGOTIABLE)
-- THIS APPLIES TO EVERY RESPONSE: first question, follow-ups, clarifications, ALL responses
-- Components = LaTeX objects + videos/animations + graphs
-- COUNT YOUR TOTAL COMPONENTS: Must be ≥3 minimum EVERY TIME
-
-**IF YOU USE render_animation TOOL:**
-- render_animation creates 1 video component automatically
-- You MUST ALSO add 2+ LaTeX objects to your JSON "objects" array
-- Total: 1 video + 2 LaTeX = 3 components ✓
-- Example objects array: [{"type":"latex","content":"f(x)=x^2"}, {"type":"latex","content":"f'(x)=2x"}]
-
-**IF YOU DON'T USE render_animation:**
-- You MUST create 3+ LaTeX/graph objects in your JSON "objects" array
-- Total: 3+ LaTeX objects = 3 components ✓
-
-- Every mathematical formula, equation, or expression MUST be a separate LaTeX object
-- Provide 4-6 sentences of clear narration per response
-- MANDATORY: End every narration with 1-2 engaging questions for the student
-- Question examples: "What do you notice about...?", "Can you see why...?", "How would this change if...?"
-- Break derivations into multiple small LaTeX objects, not long text explanations
-- Text objects should NEVER contain formulas - always use LaTeX instead
-- Position visual objects spatially: equation above, graph below, related formulas side-by-side
-
-**FINAL VALIDATION (DO THIS BEFORE RESPONDING):**
-- Count video/animations from tools: ___
-- Count items in your JSON objects array: ___
-- TOTAL = video + objects array items = ___
-- If TOTAL < 3, you FAILED - add more LaTeX objects immediately`
-  : `- IMPORTANT: Use the render_animation or execute_python tools for creating visualizations, plots, and graphs
-- For mathematical concepts, functions, and animated visualizations: ALWAYS use the render_animation tool
-- For static plots, data visualizations, and scientific diagrams: Use the execute_python tool
-- Only use built-in canvas objects (LaTeX, graph, code, diagram, text) when tools are not appropriate
-- The tools will generate actual images/videos that are much better than basic canvas objects`}
-- Reference existing canvas objects naturally in your explanation
-- Position new objects spatially relative to existing ones
-- Use directional language: "as shown in the equation above", "let's place this below"
-${selectedBrain?.type !== 'math'
-  ? `- Make text objects detailed and well-formatted with bullet points and clear structure
-- Ensure content is comprehensive but concise - avoid overly short explanations
-- Use proper line breaks and formatting in text content`
-  : ''}
-- For diagrams: Create meaningful visualizations that demonstrate the concept being discussed
-- Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms
-- Make diagrams contextually relevant to the specific question or concept being explained
-- When creating diagrams, provide specific descriptions that relate to the user's question
-- For tree recursion: describe the actual tree structure being discussed
-- For algorithms: describe the specific steps or data flow
-- For processes: describe the actual workflow or decision points
-=======
 ${this.getVisualCreationGuidance(selectedBrain)}
->>>>>>> 004eba055c1e5560da7844dc0089eaae1b44559b
 
 RESPONSE FORMAT:
 You must respond with a JSON object in the following format:
@@ -621,8 +569,6 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     selectedBrain?: { type: string; name: string; description: string; promptEnhancement: string }
   ): string {
     const commonGuidance = [
-      '- Only use built-in canvas objects (LaTeX, graph, code, diagram, text) when tools are not appropriate',
-      '- The tools will generate actual images/videos that are much better than basic canvas objects',
       '- Reference existing canvas objects naturally in your explanation',
       '- Position new objects spatially relative to existing ones',
       '- Use directional language: "as shown in the equation above", "let\'s place this below"',
@@ -637,6 +583,42 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       '- For algorithms: describe the specific steps or data flow',
       '- For processes: describe the actual workflow or decision points',
     ];
+
+    if (selectedBrain?.type === 'math') {
+      const mathGuidance = [
+        '- ABSOLUTELY CRITICAL FOR MATH: MINIMUM 3 TOTAL COMPONENTS REQUIRED (NON-NEGOTIABLE)',
+        '- THIS APPLIES TO EVERY RESPONSE: first question, follow-ups, clarifications, ALL responses',
+        '- Components = LaTeX objects + videos/animations + graphs',
+        '- COUNT YOUR TOTAL COMPONENTS: Must be ≥3 minimum EVERY TIME',
+        '',
+        '**IF YOU USE render_animation TOOL:**',
+        '- render_animation creates 1 video component automatically',
+        '- You MUST ALSO add 2+ LaTeX objects to your JSON "objects" array',
+        '- Total: 1 video + 2 LaTeX = 3 components ✓',
+        '- Example objects array: [{"type":"latex","content":"f(x)=x^2"}, {"type":"latex","content":"f\'(x)=2x"}]',
+        '',
+        '**IF YOU DON\'T USE render_animation:**',
+        '- You MUST create 3+ LaTeX/graph objects in your JSON "objects" array',
+        '- Total: 3+ LaTeX objects = 3 components ✓',
+        '',
+        '- Every mathematical formula, equation, or expression MUST be a separate LaTeX object',
+        '- Provide 4-6 sentences of clear narration per response',
+        '- MANDATORY: End every narration with 1-2 engaging questions for the student',
+        '- Question examples: "What do you notice about...?", "Can you see why...?", "How would this change if...?"',
+        '- Break derivations into multiple small LaTeX objects, not long text explanations',
+        '- Text objects should NEVER contain formulas - always use LaTeX instead',
+        '- For animated visualizations: ALWAYS use the render_animation tool',
+        '- The tools will generate actual videos that are much better than basic canvas objects',
+        '',
+        '**FINAL VALIDATION (DO THIS BEFORE RESPONDING):**',
+        '- Count video/animations from tools: ___',
+        '- Count items in your JSON objects array: ___',
+        '- TOTAL = video + objects array items = ___',
+        '- If TOTAL < 3, you FAILED - add more LaTeX objects immediately',
+      ];
+
+      return [...mathGuidance, ...commonGuidance].join('\n');
+    }
 
     if (selectedBrain?.type === 'biology') {
       const biologyGuidance = [
@@ -656,6 +638,8 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       '- IMPORTANT: Use the render_animation or execute_python tools for creating visualizations, plots, and graphs',
       '- For mathematical concepts, functions, and animated visualizations: ALWAYS use the render_animation tool',
       '- For static plots, data visualizations, and scientific diagrams: Use the execute_python tool',
+      '- Only use built-in canvas objects (LaTeX, graph, code, diagram, text) when tools are not appropriate',
+      '- The tools will generate actual images/videos that are much better than basic canvas objects',
     ];
 
     return [...defaultGuidance, ...commonGuidance].join('\n');
@@ -815,6 +799,13 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
       // Handle image content (from Python MCP matplotlib)
       if (content.type === 'image' && content.data && content.mimeType) {
+        // Use dimensions from MCP response if available (Python MCP sends actual pixel dimensions)
+        // Add padding to account for component chrome (header ~50px + padding 32px)
+        const HEADER_HEIGHT = 50;
+        const PADDING = 32;
+        const imageWidth = (content.width || 1600) + PADDING;
+        const imageHeight = (content.height || 1200) + HEADER_HEIGHT + PADDING;
+
         const position = layoutEngine.calculatePosition(
           {
             existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
@@ -823,7 +814,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
               size: obj.size,
             })),
           },
-          { width: 600, height: 400 }
+          { width: imageWidth, height: imageHeight }
         );
 
         const imageObject: CanvasObject = {
@@ -835,7 +826,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             alt: `Visualization from ${toolName}`,
           },
           position,
-          size: { width: 600, height: 400 },
+          size: { width: imageWidth, height: imageHeight },
           zIndex: 1,
           metadata: {
             createdAt: Date.now(),
@@ -863,6 +854,25 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         const isImage = resource.mimeType?.startsWith('image/');
 
         if (isVideo || isImage) {
+          // Use proper dimensions based on content type
+          // Add padding to account for component chrome (header ~50px + padding 32px)
+          const HEADER_HEIGHT = 50;
+          const PADDING = 32;
+
+          let resourceWidth: number;
+          let resourceHeight: number;
+
+          if (isImage) {
+            // For images from content (Python MCP sends actual dimensions)
+            // Add padding to the actual content dimensions
+            resourceWidth = (content.width || 1600) + PADDING;
+            resourceHeight = (content.height || 1200) + HEADER_HEIGHT + PADDING;
+          } else {
+            // Videos (Manim): Default 1280×720 + padding
+            resourceWidth = 1280 + PADDING;
+            resourceHeight = 720 + HEADER_HEIGHT + PADDING;
+          }
+
           const position = layoutEngine.calculatePosition(
             {
               existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
@@ -871,7 +881,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 size: obj.size,
               })),
             },
-            { width: 600, height: 400 }
+            { width: resourceWidth, height: resourceHeight }
           );
 
           const url = resource.text ? `data:${resource.mimeType};base64,${resource.text}` : resource.uri;
@@ -886,7 +896,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 alt: `Animation from ${toolName}`,
               },
               position,
-              size: { width: 600, height: 400 },
+              size: { width: resourceWidth, height: resourceHeight },
               zIndex: 1,
               metadata: {
                 createdAt: Date.now(),
@@ -909,7 +919,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 alt: `Visualization from ${toolName}`,
               },
               position,
-              size: { width: 600, height: 400 },
+              size: { width: resourceWidth, height: resourceHeight },
               zIndex: 1,
               metadata: {
                 createdAt: Date.now(),
