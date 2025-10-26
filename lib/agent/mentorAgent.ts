@@ -29,6 +29,16 @@ interface AgentResponse {
   }>;
 }
 
+const CANVAS_TYPE_PRIORITY: Record<string, number> = {
+  text: 0,
+  latex: 1,
+  code: 2,
+  diagram: 3,
+  graph: 4,
+  image: 5,
+  video: 6,
+};
+
 export class MentorAgent {
   private anthropic: Anthropic;
 
@@ -268,14 +278,31 @@ export class MentorAgent {
       // Combine MCP-generated objects with Claude-generated objects
       const allCanvasObjects = [...toolResults, ...claudeObjects];
 
+      const sortedCanvasObjects = allCanvasObjects
+        .map((object, index) => ({ object, index }))
+        .sort((a, b) => {
+          const priorityA = CANVAS_TYPE_PRIORITY[a.object.type] ?? 99;
+          const priorityB = CANVAS_TYPE_PRIORITY[b.object.type] ?? 99;
+          if (priorityA !== priorityB) {
+            return priorityA - priorityB;
+          }
+          const createdA = typeof a.object.metadata?.createdAt === 'number' ? a.object.metadata.createdAt : 0;
+          const createdB = typeof b.object.metadata?.createdAt === 'number' ? b.object.metadata.createdAt : 0;
+          if (createdA !== createdB) {
+            return createdA - createdB;
+          }
+          return a.index - b.index;
+        })
+        .map(entry => entry.object);
+
       // Generate object placements
-      const objectPlacements = this.generateObjectPlacements(allCanvasObjects);
+      const objectPlacements = this.generateObjectPlacements(sortedCanvasObjects);
 
       // Generate references with timestamps
       const references = this.generateReferences(
         agentResponse.references,
         session.canvasObjects,
-        allCanvasObjects
+        sortedCanvasObjects
       );
 
       logger.info('Teaching response generated successfully with MCPs', {
@@ -302,12 +329,12 @@ export class MentorAgent {
 
         // Store canvas objects for later retrieval
         if (allCanvasObjects.length > 0) {
-          await multimodalRAG.storeCanvasObjects(
-            session.id,
-            allCanvasObjects,
-            brainResult.selectedBrain.type
-          );
-        }
+        await multimodalRAG.storeCanvasObjects(
+          session.id,
+          sortedCanvasObjects,
+          brainResult.selectedBrain.type
+        );
+      }
       } catch (error) {
         logger.warn('Failed to store memories in RAG', error);
         // Don't fail the request if memory storage fails
@@ -316,7 +343,7 @@ export class MentorAgent {
       return {
         text: agentResponse.explanation,
         narration: agentResponse.narration,
-        canvasObjects: allCanvasObjects,
+        canvasObjects: sortedCanvasObjects,
         objectPlacements,
         references,
       };
@@ -498,8 +525,16 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
   ): CanvasObject[] {
     const objects: CanvasObject[] = [];
 
-    for (let i = 0; i < objectRequests.length; i++) {
-      const request = objectRequests[i];
+    const sortedRequests = [...objectRequests].sort((a, b) => {
+      const priorityA = CANVAS_TYPE_PRIORITY[a.type] ?? 99;
+      const priorityB = CANVAS_TYPE_PRIORITY[b.type] ?? 99;
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+      return 0;
+    });
+
+    for (const request of sortedRequests) {
 
       // Calculate position
       const position = layoutEngine.calculatePosition(

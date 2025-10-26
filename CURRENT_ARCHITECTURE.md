@@ -188,6 +188,7 @@ The MCPs are **built and running**, but they're **separate systems** right now. 
 │      • Renders canvas objects with D3.js                    │
 │      • Animates object placement                             │
 │      • Highlights references in sync with audio             │
+│      • Auto-links new objects with sequential connection threads for left-to-right reading │
 └─────────────────────────────────────────────────────────────┘
 ```
 
