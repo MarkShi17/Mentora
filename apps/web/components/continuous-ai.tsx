@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { cn } from "@/lib/cn";
 import { useContinuousAI } from "@/hooks/use-continuous-ai";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useSessionStore } from "@/lib/session-store";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
 import { Brain, StopCircle } from "lucide-react";
@@ -13,30 +14,40 @@ export function ContinuousAI() {
   const [interrupted, setInterrupted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const activeSessionId = useSessionStore((state) => state.activeSessionId);
+  const sessions = useSessionStore((state) => state.sessions);
+  const allMessages = useSessionStore((state) => state.messages);
+  const voiceInputState = useSessionStore((state) => state.voiceInputState);
+
+  // Live Tutor mode (continuous AI with question detection)
   const {
-    isListening,
-    currentTranscript,
+    isListening: liveTutorListening,
+    currentTranscript: liveTutorTranscript,
     conversationContext,
-    supported,
-    error,
-    startListening,
-    stopListening,
+    supported: liveTutorSupported,
+    error: liveTutorError,
+    startListening: startLiveTutor,
+    stopListening: stopLiveTutor,
     pauseListening,
     resumeListening,
     setQuestionCallback,
     forceProcessTranscript
   } = useContinuousAI();
 
-  const activeSessionId = useSessionStore((state) => state.activeSessionId);
-  const sessions = useSessionStore((state) => state.sessions);
-  const allMessages = useSessionStore((state) => state.messages);
+  // Simple spacebar push-to-talk mode (no question detection)
+  const spacebarRecognition = useSpeechRecognition();
+
+  // Determine which mode is active
+  const isListening = voiceInputState.isLiveTutorOn ? liveTutorListening : spacebarRecognition.listening;
+  const currentTranscript = voiceInputState.isLiveTutorOn ? liveTutorTranscript : spacebarRecognition.transcript;
+  const supported = liveTutorSupported || spacebarRecognition.supported;
+  const error = liveTutorError || spacebarRecognition.error;
   const createSession = useSessionStore((state) => state.createSession);
   const addMessage = useSessionStore((state) => state.addMessage);
   const updateMessage = useSessionStore((state) => state.updateMessage);
   const removeMessage = useSessionStore((state) => state.removeMessage);
   const appendTimelineEvent = useSessionStore((state) => state.appendTimelineEvent);
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
-  const voiceInputState = useSessionStore((state) => state.voiceInputState);
   const setLiveTutorOn = useSessionStore((state) => state.setLiveTutorOn);
   const setSpacebarTranscript = useSessionStore((state) => state.setSpacebarTranscript);
   const setIsPushToTalkActive = useSessionStore((state) => state.setIsPushToTalkActive);
@@ -251,32 +262,33 @@ export function ContinuousAI() {
   // Register stop streaming callback
   useEffect(() => {
     setStopStreamingCallback(() => {
-      console.log('🛑 Stop callback invoked');
+      console.log('🛑 Stop callback invoked - completely stopping AI');
 
-      // Stop streaming and audio
+      // Stop streaming and audio IMMEDIATELY
       streamingQA.stopStreaming();
 
-      // Update thinking message to "Stopped" instead of deleting
+      // DELETE the thinking message completely
       const thinkingMessageId = thinkingMessageIdRef.current;
       const sessionId = currentSessionRef.current;
       if (sessionId && thinkingMessageId) {
-        updateMessage(sessionId, thinkingMessageId, {
-          content: "Stopped"
-        });
+        console.log('🗑️ Deleting thinking message:', thinkingMessageId);
+        removeMessage(sessionId, thinkingMessageId);
         thinkingMessageIdRef.current = null;
       }
 
-      // Reset refs
+      // Reset ALL refs to allow new questions immediately
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
+
+      console.log('✅ Stop complete - ready for new questions');
     });
 
     // Cleanup on unmount
     return () => {
       setStopStreamingCallback(null);
     };
-  }, [streamingQA, setStopStreamingCallback, updateMessage]);
+  }, [streamingQA, setStopStreamingCallback, removeMessage]);
 
   // Register rerun question callback
   useEffect(() => {
@@ -310,22 +322,22 @@ export function ContinuousAI() {
     }
   }, [streamingQA.currentText, updateMessage]);
 
-  // Pause microphone when AI is speaking to prevent feedback loop
+  // Pause microphone when AI is speaking to prevent feedback loop (only for live tutor mode)
   useEffect(() => {
     const isAISpeaking = streamingQA.audioState.isPlaying;
 
-    if (isAISpeaking && isListening && isActive) {
+    if (isAISpeaking && liveTutorListening && isActive && voiceInputState.isLiveTutorOn) {
       // AI started speaking - pause the microphone
       console.log('🔇 Pausing microphone (AI speaking)');
       pauseListening();
       setWasListeningBeforeSpeech(true);
-    } else if (!isAISpeaking && wasListeningBeforeSpeech && isActive) {
+    } else if (!isAISpeaking && wasListeningBeforeSpeech && isActive && voiceInputState.isLiveTutorOn) {
       // AI stopped speaking - resume the microphone
       console.log('🎤 Resuming microphone (AI finished)');
       resumeListening();
       setWasListeningBeforeSpeech(false);
     }
-  }, [streamingQA.audioState.isPlaying, isListening, isActive, wasListeningBeforeSpeech, pauseListening, resumeListening]);
+  }, [streamingQA.audioState.isPlaying, liveTutorListening, isActive, wasListeningBeforeSpeech, pauseListening, resumeListening, voiceInputState.isLiveTutorOn]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -339,22 +351,24 @@ export function ContinuousAI() {
     if (newState) {
       // Turning Live Tutor ON - start continuous question detection
       console.log('🔒 Live Tutor ON - Continuous question detection enabled');
-      startListening();
+      startLiveTutor();
       setIsActive(true);
     } else {
       // Turning Live Tutor OFF - stop listening
       console.log('🔓 Live Tutor OFF - Push-to-talk mode enabled');
-      stopListening();
+      stopLiveTutor();
+      spacebarRecognition.stop();
       setIsActive(false);
     }
-  }, [voiceInputState.isLiveTutorOn, setLiveTutorOn, stopListening, startListening]);
+  }, [voiceInputState.isLiveTutorOn, setLiveTutorOn, stopLiveTutor, startLiveTutor, spacebarRecognition]);
 
-  // Sync currentTranscript to store when spacebar is held (not in Live Tutor mode)
+  // Sync spacebar transcript to store when spacebar is held (ALWAYS use spacebar recognition)
   useEffect(() => {
-    if (voiceInputState.isPushToTalkActive && !voiceInputState.isLiveTutorOn) {
-      setSpacebarTranscript(currentTranscript);
+    if (voiceInputState.isPushToTalkActive) {
+      // Always use spacebar recognition transcript when push-to-talk is active
+      setSpacebarTranscript(spacebarRecognition.transcript);
     }
-  }, [currentTranscript, voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, setSpacebarTranscript]);
+  }, [spacebarRecognition.transcript, voiceInputState.isPushToTalkActive, setSpacebarTranscript]);
 
   // Push-to-talk: Hold spacebar to speak, release to submit (ONLY when Live Tutor is OFF)
   useEffect(() => {
@@ -386,12 +400,12 @@ export function ContinuousAI() {
             setTimeout(() => setInterrupted(false), 1500);
           }
 
-          // Start push-to-talk for prompt input
-          console.log('🎤 Push-to-talk activated (input mode)');
+          // Start push-to-talk for prompt input (simple mode, no question detection)
+          console.log('🎤 Push-to-talk activated (spacebar mode only)');
           setIsPushToTalkActive(true);
           setSpacebarTranscript(''); // Clear previous
-          startListening();
-          setIsActive(true);
+          spacebarRecognition.start();
+          // DON'T set isActive - that's only for Live Tutor mode
         }
       }
     };
@@ -407,11 +421,17 @@ export function ContinuousAI() {
           event.preventDefault();
 
           console.log('🔇 Push-to-talk released - transcript will auto-submit');
-          setIsPushToTalkActive(false);
-          stopListening();
-          setIsActive(false);
 
-          // Transcript is in the store, prompt-bar will pick it up and auto-submit
+          // Get the EXACT transcript - NO TRIMMING, NO CLEANING
+          const finalTranscript = spacebarRecognition.transcript;
+
+          setIsPushToTalkActive(false);
+          spacebarRecognition.stop();
+          // Don't touch isActive - that's only for Live Tutor mode
+
+          // Submit EVERYTHING that was heard, even if empty
+          console.log('📤 Submitting EXACT spacebar transcript:', finalTranscript);
+          setSpacebarTranscript(finalTranscript || '');  // Send even if empty
         }
       }
     };
@@ -422,7 +442,7 @@ export function ContinuousAI() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, startListening, stopListening, streamingQA, setIsPushToTalkActive, setSpacebarTranscript]);
+  }, [voiceInputState.isPushToTalkActive, voiceInputState.isLiveTutorOn, spacebarRecognition, streamingQA, setIsPushToTalkActive, setSpacebarTranscript]);
 
   const isQuestionDetected = currentTranscript &&
     currentTranscript.toLowerCase().match(/(what|how|why|explain|tell me|show me|mentora|ai|tutor)/);

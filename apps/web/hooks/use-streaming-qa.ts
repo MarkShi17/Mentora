@@ -214,22 +214,31 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
    * Stop streaming
    */
   const stopStreaming = useCallback(() => {
+    console.log('🛑 Stopping streaming completely');
+
+    // Close event source
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
+    // Abort any pending requests
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
 
+    // Stop audio playback
     audioQueue.stop();
 
-    setState(prev => ({
-      ...prev,
+    // Clear all state immediately
+    setState({
       isStreaming: false,
-    }));
+      currentText: '',  // Clear the text too
+      error: null,
+    });
+
+    console.log('✅ Streaming stopped and state cleared');
   }, [audioQueue]);
 
   return {

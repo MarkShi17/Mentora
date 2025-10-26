@@ -57,14 +57,37 @@ export function PromptBar() {
       }
     }, [activeSessionId, updateCanvasObject]),
     onComplete: useCallback(() => {
+      // Update the thinking message with the final text when streaming completes
+      const sessionId = currentSessionRef.current;
+      const thinkingMessageId = thinkingMessageIdRef.current;
+
+      if (sessionId && thinkingMessageId) {
+        // Note: We'll access currentText inside the callback
+        console.log('✅ Streaming complete - finalizing message');
+        thinkingMessageIdRef.current = null;
+        currentSessionRef.current = null;
+      }
+
       if (activeSessionId) {
         appendTimelineEvent(activeSessionId, {
           description: "AI completed response.",
           type: "response"
         });
       }
-    }, [activeSessionId, appendTimelineEvent])
+    }, [activeSessionId, appendTimelineEvent, updateMessage])
   });
+
+  // Update thinking message in real-time as text streams in
+  useEffect(() => {
+    const sessionId = currentSessionRef.current;
+    const thinkingMessageId = thinkingMessageIdRef.current;
+
+    if (sessionId && thinkingMessageId && streamingQA.isStreaming && streamingQA.currentText.trim()) {
+      updateMessage(sessionId, thinkingMessageId, {
+        content: streamingQA.currentText
+      });
+    }
+  }, [streamingQA.currentText, streamingQA.isStreaming, updateMessage]);
 
   const handleTranscript = useCallback((transcript: string) => {
     setValue((prev) => `${prev} ${transcript}`.trim());
@@ -122,14 +145,7 @@ export function PromptBar() {
         mode: "guided"
       });
 
-      // Replace thinking message with complete text after streaming
-      if (streamingQA.currentText.trim() && thinkingMessageIdRef.current) {
-        updateMessage(sessionId, thinkingMessageIdRef.current, {
-          content: streamingQA.currentText
-        });
-      }
-      thinkingMessageIdRef.current = null;
-      currentSessionRef.current = null;
+      // Note: Message update happens in onComplete callback
     } catch (error) {
       console.error("Streaming error:", error);
 
@@ -165,46 +181,46 @@ export function PromptBar() {
 
   // Watch for spacebar transcript (push-to-talk mode) and auto-submit
   useEffect(() => {
-    if (voiceInputState.spacebarTranscript && !voiceInputState.isPushToTalkActive) {
+    if (voiceInputState.spacebarTranscript !== '' && !voiceInputState.isPushToTalkActive) {
       // Spacebar was just released, transcript is ready
-      const transcript = voiceInputState.spacebarTranscript.trim();
+      // DON'T TRIM - Submit EXACTLY what was said, including stutters
+      const transcript = voiceInputState.spacebarTranscript;
 
-      if (transcript) {
-        console.log('📝 Auto-submitting spacebar transcript:', transcript);
+      console.log('📝 Auto-submitting RAW spacebar transcript:', transcript);
 
-        // Clear from store immediately
-        setSpacebarTranscript('');
+      // Clear from store immediately
+      setSpacebarTranscript('');
 
-        // Submit directly with the transcript (don't wait for state update)
-        void submitPromptWithText(transcript);
-      }
+      // Submit directly with the EXACT transcript (don't filter anything)
+      void submitPromptWithText(transcript);
     }
   }, [voiceInputState.spacebarTranscript, voiceInputState.isPushToTalkActive, setSpacebarTranscript, submitPromptWithText]);
 
   // Register stop streaming callback for prompt-bar initiated streams
   useEffect(() => {
     setStopStreamingCallback(() => {
-      console.log('🛑 Stop callback invoked from prompt-bar');
+      console.log('🛑 Stop callback invoked from prompt-bar - completely stopping');
 
-      // Stop streaming and audio
+      // Stop streaming and audio IMMEDIATELY
       streamingQA.stopStreaming();
 
-      // Update thinking message to "Stopped" instead of deleting
+      // DELETE the thinking message completely
       const thinkingMessageId = thinkingMessageIdRef.current;
       const sessionId = currentSessionRef.current;
       if (sessionId && thinkingMessageId) {
-        updateMessage(sessionId, thinkingMessageId, {
-          content: "Stopped"
-        });
+        console.log('🗑️ Deleting thinking message:', thinkingMessageId);
+        removeMessage(sessionId, thinkingMessageId);
         thinkingMessageIdRef.current = null;
         currentSessionRef.current = null;
       }
+
+      console.log('✅ Stop complete - ready for new questions');
     });
 
     return () => {
       setStopStreamingCallback(null);
     };
-  }, [streamingQA, setStopStreamingCallback, updateMessage]);
+  }, [streamingQA, setStopStreamingCallback, removeMessage]);
 
   // Register rerun question callback
   useEffect(() => {

@@ -287,11 +287,6 @@ export function TimelinePanel() {
                     <StopCircle className="h-4 w-4 text-slate-400 group-hover:text-red-500 transition-colors" />
                   </button>
                 </div>
-              ) : message.content === "Stopped" ? (
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-sm text-slate-600">Generation stopped</span>
-                  <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                </div>
               ) : (
                 <p className="mt-1 text-sm text-slate-700 leading-relaxed">{message.content}</p>
               )}
