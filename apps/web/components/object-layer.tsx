@@ -9,6 +9,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import * as katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { ObjectLoadingState } from "./object-loading-state";
 import { CodeBlock } from "@/components/code-block";
@@ -110,26 +111,32 @@ function renderObjectContent(object: CanvasObject) {
         );
       }
 
-      // Wrap with display mode delimiters for KaTeX if not already wrapped
-      let displayContent = latexSource;
-      if (!displayContent.includes('$')) {
-        // Use display mode ($$...$$) for centered equations
-        displayContent = `$$${displayContent}$$`;
-      }
+      // Render with KaTeX directly (NO markdown processing to avoid interference)
+      try {
+        const html = katex.renderToString(latexSource, {
+          displayMode: true,  // Use display mode for centered equations
+          throwOnError: false,  // Show error instead of throwing
+          errorColor: '#cc0000',
+          strict: false  // Allow relaxed syntax
+        });
 
-      // Render with KaTeX via ReactMarkdown
-      return (
-        <div className="p-4 text-slate-900 flex items-center justify-center h-full">
-          <div className="katex-wrapper">
-            <ReactMarkdown
-              remarkPlugins={[remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-            >
-              {displayContent}
-            </ReactMarkdown>
+        return (
+          <div className="p-4 text-slate-900 flex items-center justify-center h-full">
+            <div className="katex-wrapper" dangerouslySetInnerHTML={{ __html: html }} />
           </div>
-        </div>
-      );
+        );
+      } catch (error) {
+        // If KaTeX fails, fall back to rendered image
+        return (
+          <div className="text-slate-900">
+            <img
+              src={object.data.rendered}
+              alt="LaTeX equation"
+              className=""
+            />
+          </div>
+        );
+      }
     
     case 'image':
       return (
@@ -143,12 +150,19 @@ function renderObjectContent(object: CanvasObject) {
     case 'video':
       const videoUrl = object.data.url;
       const isGif = videoUrl?.endsWith('.gif');
-      
+
+      // Add cache-busting for non-data URLs to prevent browser caching old videos
+      // For data URLs (base64), the content is embedded so no caching issue
+      // For file:// URLs, append timestamp to force reload
+      const cacheBustedUrl = videoUrl?.startsWith('data:')
+        ? videoUrl
+        : `${videoUrl}${videoUrl?.includes('?') ? '&' : '?'}t=${object.metadata?.createdAt || Date.now()}`;
+
       return (
         <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto flex items-center justify-center">
           {isGif ? (
             <img
-              src={videoUrl}
+              src={cacheBustedUrl}
               alt={object.data.alt || 'Animation'}
               className="max-w-full max-h-full rounded"
               style={{ maxHeight: '100%', maxWidth: '100%' }}
@@ -157,9 +171,10 @@ function renderObjectContent(object: CanvasObject) {
             />
           ) : (
             <video
-              src={videoUrl}
+              src={cacheBustedUrl}
               controls
               loop
+              autoPlay
               className="max-w-full max-h-full rounded"
               style={{ maxHeight: '100%', maxWidth: '100%' }}
               onPointerDown={(e) => e.stopPropagation()}

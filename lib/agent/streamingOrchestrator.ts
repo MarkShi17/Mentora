@@ -102,8 +102,7 @@ export class StreamingOrchestrator {
       text: string;
       id: string;
     } | null,
-    selectedBrain?: Brain,
-    images?: Array<{ base64: string; mimeType: string }>
+    selectedBrain?: Brain
   ): AsyncGenerator<StreamEvent, void, unknown> {
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logger.info('🎬 STREAMING ORCHESTRATOR STARTED');
@@ -155,33 +154,24 @@ export class StreamingOrchestrator {
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system and user prompts with user settings
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, images && images.length > 0);
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
-      // MCP tool execution loop - Build user message with optional images
-      const userContent: Anthropic.MessageParam['content'] = images && images.length > 0
-        ? [
-            // Add images first for vision analysis
-            ...images.map(img => ({
-              type: 'image' as const,
-              source: {
-                type: 'base64' as const,
-                media_type: img.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-                data: img.base64.split(',')[1] || img.base64 // Remove data:image/... prefix if present
-              }
-            })),
-            // Then add the text prompt
-            {
-              type: 'text' as const,
-              text: userPrompt
-            }
-          ]
-        : userPrompt; // Just text if no images
+      // Get model from selected brain
+      const model = selectedBrain?.model || 'claude-sonnet-4-5-20250929';
 
+      // NOTE: Tools parameter is commented out for now because:
+      // 1. The streaming orchestrator doesn't handle tool_use blocks yet
+      // 2. MCP servers need to be running to execute tool calls
+      // 3. The brain's promptEnhancement is sufficient to guide JSON responses
+      // TODO: Add tool execution handling to streaming orchestrator
+      // const tools = selectedBrain ? this.getToolsForBrain(selectedBrain) : MCP_TOOLS_FOR_CLAUDE;
+
+      // MCP tool execution loop
       let messages: Anthropic.MessageParam[] = [
         {
           role: 'user',
-          content: userContent
+          content: userPrompt
         }
       ];
 
@@ -203,7 +193,7 @@ export class StreamingOrchestrator {
 
         const response = await this.anthropic.messages.create({
           model: 'claude-sonnet-4-5-20250929',
-          max_tokens: 4096,
+          max_tokens: selectedBrain?.type === 'math' ? 2048 : 4096, // Reduce tokens for Math brain to enforce conciseness
           system: systemPrompt,
           tools: availableTools.length > 0 ? availableTools : undefined,
           messages
@@ -272,20 +262,11 @@ export class StreamingOrchestrator {
                 toolName: toolUse.name,
                 serverId,
                 success: mcpResult.success,
-                contentLength: mcpResult.content?.length || 0,
-                error: mcpResult.error,
-                isError: mcpResult.isError,
-                fullContent: mcpResult.content
+                contentLength: mcpResult.content?.length || 0
               });
 
               if (!mcpResult.success) {
-                const errorMsg = mcpResult.error || 'MCP tool call failed';
-                logger.error('MCP tool returned failure', {
-                  toolName: toolUse.name,
-                  errorMessage: errorMsg,
-                  mcpResult
-                });
-                throw new Error(errorMsg);
+                throw new Error(mcpResult.error || 'MCP tool call failed');
               }
 
               // Convert MCP result to canvas objects if it's a visualization tool
@@ -421,6 +402,63 @@ export class StreamingOrchestrator {
       // Parse the final response to get narration and additional objects
       const agentResponse = this.parseResponse(finalResponseText);
 
+      // Separate objects into priority (latex, graph) and regular for early rendering
+      const priorityObjects = agentResponse.objects.filter(obj =>
+        obj.type === 'latex' || obj.type === 'graph'
+      );
+      const regularObjects = agentResponse.objects.filter(obj =>
+        obj.type !== 'latex' && obj.type !== 'graph'
+      );
+
+      // Emit priority objects BEFORE TTS starts for immediate visual feedback
+      if (priorityObjects.length > 0) {
+        logger.info('🎯 Emitting priority objects before TTS', {
+          priorityObjectCount: priorityObjects.length,
+          types: priorityObjects.map(obj => obj.type)
+        });
+
+        for (const request of priorityObjects) {
+          const position = layoutEngine.calculatePosition(
+            {
+              existingObjects: streamingContext.existingObjects.map(obj => ({
+                id: obj.id,
+                position: obj.position,
+                size: obj.size
+              }))
+            },
+            { width: 400, height: 200 }
+          );
+
+          const canvasObject = objectGenerator.generateObject(
+            {
+              type: request.type,
+              content: request.content,
+              referenceName: request.referenceName,
+              metadata: request.metadata
+            },
+            position,
+            turnId
+          );
+
+          streamingContext.existingObjects.push(canvasObject);
+
+          const placement: ObjectPlacement = {
+            objectId: canvasObject.id,
+            position: canvasObject.position,
+            animateIn: 'fade',
+            timing: totalObjects * 300
+          };
+
+          yield {
+            type: 'canvas_object',
+            timestamp: Date.now(),
+            data: { object: canvasObject, placement }
+          };
+
+          totalObjects++;
+        }
+      }
+
       // Stream narration sentence-by-sentence with TTS
       if (agentResponse.narration && agentResponse.narration.trim().length > 0) {
         logger.info('🗣️ Streaming narration with TTS', {
@@ -498,13 +536,13 @@ export class StreamingOrchestrator {
         }
       }
 
-      // Generate additional canvas objects from Claude's response (if any)
-      if (agentResponse.objects && agentResponse.objects.length > 0) {
-        logger.info('Generating canvas objects from Claude response', {
-          objectCount: agentResponse.objects.length
+      // Generate remaining canvas objects (non-priority) from Claude's response
+      if (regularObjects && regularObjects.length > 0) {
+        logger.info('Generating regular canvas objects from Claude response', {
+          objectCount: regularObjects.length
         });
 
-        for (const request of agentResponse.objects) {
+        for (const request of regularObjects) {
           const position = layoutEngine.calculatePosition(
             {
               existingObjects: streamingContext.existingObjects.map(obj => ({
@@ -593,21 +631,37 @@ export class StreamingOrchestrator {
       logger.info('Total objects:', totalObjects);
       logger.info('Total references:', totalReferences);
     } catch (error) {
-      // Check if this was an abort/cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
-        logger.info('Stream cancelled by client', { turnId });
-        // Don't yield an error event for user cancellation - just exit gracefully
-      } else {
-        logger.error('Streaming error:', error);
-        yield {
-          type: 'error',
-          timestamp: Date.now(),
-          data: {
-            message: error instanceof Error ? error.message : 'Unknown error occurred'
-          }
-        };
+  let event;
+
+  if (error instanceof Error && error.name === 'AbortError') {
+    logger.info('Stream cancelled by client', { turnId });
+    event = {
+      type: 'interrupted',
+      timestamp: Date.now(),
+      data: {
+        message: 'Response generation was stopped',
+        code: 'USER_CANCELLED'
       }
-    } finally {
+    };
+  } else {
+    // Log the full error details
+    console.error('❌ STREAMING ERROR DETAILS:', {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : 'Unknown',
+      stack: error instanceof Error ? error.stack : undefined,
+      fullError: error
+    });
+    logger.error('Streaming error:', error);
+    event = {
+      type: 'error',
+      timestamp: Date.now(),
+      data: {
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      }
+    };
+  }
+}
+finally {
       // Clean up abort controller
       this.abortControllers.delete(turnId);
       logger.debug('Cleaned up abort controller for turn', { turnId });
@@ -634,7 +688,7 @@ export class StreamingOrchestrator {
       text: string;
       id: string;
     } | null,
-    hasImages?: boolean
+    selectedBrain?: Brain
   ): string {
     const teachingStyle =
       mode === 'guided'
@@ -677,22 +731,11 @@ DO NOT repeat this greeting or acknowledgment. Start your [NARRATION] by going D
 Skip phrases like "Let me help", "I can explain", "Sure", etc. Jump straight into teaching.\n`
       : '';
 
-    const imageAnalysisInfo = hasImages
-      ? `\nIMAGE ANALYSIS:
-- The student has uploaded one or more images with their question
-- Carefully analyze the image(s) to understand what they're asking about
-- Extract any text, equations, diagrams, or problems shown in the image(s)
-- Reference specific elements from the image in your explanation
-- If the image contains a homework problem, math equation, diagram, or text, explain it thoroughly
-- Recreate important equations or diagrams as canvas objects so the student can reference them
-- If the image shows code, reproduce relevant parts as code blocks on the canvas\n`
-      : '';
-
     return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.
 ${userName ? `\nSTUDENT NAME: ${userName} - Address them by name occasionally to personalize the interaction.\n` : ''}
 EXPLANATION LEVEL: ${explanationLevel}
 ${levelGuidance}
-${cachedIntroInfo}${imageAnalysisInfo}
+${cachedIntroInfo}
 CANVAS STATE:
 ${context.canvasState}
 
@@ -708,22 +751,14 @@ CONTEXTUAL AWARENESS:
 TEACHING STYLE (${mode} mode):
 ${teachingStyle}
 
-COMPREHENSION CHECKING (REQUIRED):
-- ALWAYS end your explanation with EXACTLY ONE follow-up question as the LAST SENTENCE
-- Ask a single, focused question like: "Does this make sense?", "Can you explain back to me...", "What would happen if..."
-- This is a CONVERSATION - always invite dialogue with your final question
+COMPREHENSION CHECKING:
+- Ask follow-up questions to ensure understanding
+- Check if the student grasps key concepts before moving on
+- Encourage the student to explain concepts back to you
+- Adjust your explanation depth based on their responses
 
-Example endings (use ONLY ONE):
-- "Does this explanation make sense to you?"
-- "Can you tell me what the base case does in your own words?"
-- "What would happen if we changed X to Y?"
-- "Do you see how this connects to what we discussed earlier?"
-
-VISUAL CREATION (CRITICAL - MINIMUM 2-3 OBJECTS PER RESPONSE):
-- YOU MUST create AT LEAST 2-3 visual objects for EVERY response
-- DO NOT just talk - ALWAYS generate visual components
+VISUAL CREATION:
 - Create visual objects to explain concepts (LaTeX equations, graphs, code blocks, diagrams, text notes)
-- For programming topics: Generate multiple code blocks showing progression (basic → intermediate → advanced)
 - Reference existing canvas objects naturally in your explanation
 - Position new objects spatially relative to existing ones
 - Use directional language: "as shown in the equation above", "let's place this below"
@@ -733,13 +768,6 @@ VISUAL CREATION (CRITICAL - MINIMUM 2-3 OBJECTS PER RESPONSE):
 - For diagrams: Create meaningful visualizations that demonstrate the concept being discussed
 - Use diagrams to show: tree structures for recursion, flowcharts for processes, data structures for algorithms
 - Make diagrams contextually relevant to the specific question or concept being explained
-
-MINIMUM COMPONENTS CHECKLIST:
-✓ At least 2-3 visual objects (code blocks, diagrams, equations, etc.)
-✓ Explanatory text between each object
-✓ Progressive complexity (start simple, build up)
-✓ Visual diagrams for complex concepts
-✓ Multiple examples showing different aspects
 
 RESPONSE FORMAT:
 Stream your response using these markers. Start with text immediately, then define objects as they become relevant:
@@ -774,7 +802,9 @@ IMPORTANT:
 
 Subject: ${session.subject}
 
-Be canvas-aware and create appropriate visuals for the subject area.`;
+Be canvas-aware and create appropriate visuals for the subject area.
+
+${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${selectedBrain.promptEnhancement}` : ''}`;
   }
 
   private buildUserPrompt(question: string, context: any): string {
@@ -853,7 +883,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
 
     // Extract objects
     const objects = [];
-    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/);
     for (const match of objectMatches) {
       const [_, type, id, content, meta] = match;
       if (type && content) {
@@ -1012,7 +1042,25 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             { width: 600, height: 400 }
           );
 
-          const url = resource.text ? `data:${resource.mimeType};base64,${resource.text}` : resource.uri;
+          // CRITICAL: Always prefer base64 data URLs to prevent stale file:// URI caching
+          let url: string;
+          if (resource.text && resource.text.length > 0) {
+            // Use base64 data URL - this ensures fresh content every time
+            url = `data:${resource.mimeType};base64,${resource.text}`;
+            logger.info('Using base64 data URL for video', {
+              toolName,
+              base64Length: resource.text.length,
+              mimeType: resource.mimeType
+            });
+          } else {
+            // Fallback to URI - log warning as this may cause caching issues
+            url = resource.uri;
+            logger.warn('⚠️ Using file:// URI for video - may cause caching!', {
+              toolName,
+              uri: resource.uri,
+              reason: 'base64 data missing from MCP response'
+            });
+          }
 
           if (isVideo) {
             const videoObject: CanvasObject = {
@@ -1034,6 +1082,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 toolName,
                 mimeType: resource.mimeType,
                 uri: resource.uri,
+                usedBase64: !!resource.text,  // Track if we used base64
               },
             };
             objects.push(videoObject);

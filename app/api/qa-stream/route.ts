@@ -184,18 +184,38 @@ export async function POST(request: NextRequest): Promise<Response> {
           logger.warn('Failed to send cached intro', { error });
         }
 
-        // Select appropriate brain for this question
-        const brainResult = await brainSelector.selectBrain(body.question, {
-          recentTopics: body.context?.topics,
-          canvasObjects: session.canvasObjects,
-        });
+        // Check if session already has a brain locked in (sticky brain for entire conversation)
+        let brainResult;
+        if (session.selectedBrain) {
+          // Use existing brain from session - NEVER switch mid-conversation
+          const { getBrain } = await import('@/lib/agent/brainRegistry');
+          brainResult = {
+            selectedBrain: getBrain(session.selectedBrain),
+            confidence: 1.0,
+            reasoning: 'Using previously selected brain for conversation continuity'
+          };
 
-        logger.info('🧠 Brain selected for streaming', {
-          brain: brainResult.selectedBrain.type,
-          model: brainResult.selectedBrain.model,
-          confidence: brainResult.confidence,
-          reasoning: brainResult.reasoning,
-        });
+          logger.info('🔒 Using locked brain from session', {
+            brain: session.selectedBrain,
+            sessionId: session.id
+          });
+        } else {
+          // First question in session - select appropriate brain
+          brainResult = await brainSelector.selectBrain(body.question, {
+            recentTopics: body.context?.topics,
+            canvasObjects: session.canvasObjects,
+          });
+
+          // Lock this brain for the entire conversation
+          session.selectedBrain = brainResult.selectedBrain.type;
+
+          logger.info('🧠 Brain selected and locked for conversation', {
+            brain: brainResult.selectedBrain.type,
+            model: brainResult.selectedBrain.model,
+            confidence: brainResult.confidence,
+            reasoning: brainResult.reasoning,
+          });
+        }
 
         // Emit brain_selected event FIRST
         const brainEvent = `data: ${JSON.stringify({
