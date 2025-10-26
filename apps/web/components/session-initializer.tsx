@@ -73,22 +73,36 @@ Ask me questions to explore the platform!`,
           hidden: true,  // Reveal on trigger 1
           demoGroup: 'architecture',
           data: {
-            content: `# **Full-Stack Architecture**
+            content: `# **Mentora: Orchestrated Pipeline with Brains**
 
-## **Frontend Layer** (Port 3001)
-React 18 + Next.js 14 + D3.js
-Infinite canvas with drag, zoom, pan
+## **1. Input Processing**
+Student speaks → mic audio → OpenAI Whisper → streamed transcript
 
-## **Backend Layer** (Port 3000)
-Next.js API Routes + TypeScript
-RESTful endpoints for sessions & AI
+## **2. Context Building**
+Pull chat history + canvas metadata from ChromaDB
+Read current canvas state and user selection
+Build compact Context Bundle
 
-## **AI Engine**
-Claude Sonnet 4.5 (Teaching Agent)
-OpenAI Whisper (Speech-to-Text)
-OpenAI TTS-1 (Text-to-Speech)
+## **3. Brain Routing**
+Claude 3.5 Haiku classifies request → selects Brain
+Output: { brain, teaching_style, toolplan }
 
-**Container**: Docker + Docker Compose`,
+## **4. Agent Generation**
+Claude 4.5 Teaching Agent consumes Context + Brain
+Plans pedagogy → executes MCP tools → streams ND-JSON patches
+
+## **5. Canvas Creation**
+Equations → KaTeX, Graphs → Python/SVG, Code → syntax highlighted
+Infinite-canvas layout engine with auto-grouping
+
+## **6. Live TTS & Sync**
+SSML → OpenAI TTS-1 (streamed)
+Cues keep narration and object highlights in sync
+
+## **7. Persistence**
+ChromaDB stores chat turns, canvas objects, and routing metadata
+
+**Tech Stack**: Next.js 14, React 18, Claude 4.5, MCP Tools, ChromaDB`,
           },
           metadata: {
             description: 'Three-layer architecture diagram',
@@ -148,15 +162,22 @@ OpenAI TTS-1 (Text-to-Speech)
           data: {
             content: `# **Key Features**
 
+## **Live Tutoring with Interruptions**
+- Real-time voice interaction
+- Natural conversation flow
+- Interrupt and ask follow-ups anytime
+- Context-aware responses
+
 ## **Interactive Canvas**
 - Drag, resize, and manipulate objects
 - Real-time visual demonstrations
 - Spatial learning environment
 
-## **Voice Integration**
-- Natural language questions
-- Audio responses with context
-- Hands-free interaction
+## **Context Clues & Memory**
+- Remembers previous conversations
+- References canvas objects naturally
+- Maintains spatial awareness
+- Learns from interaction patterns
 
 ## **Multi-Subject Support**
 - Mathematics with LaTeX

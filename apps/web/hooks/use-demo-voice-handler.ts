@@ -10,7 +10,7 @@ const DEMO_RESPONSES = {
     text: "I'm Mentora, an AI-powered tutoring platform. Let me show you how I work by breaking down my technical foundation.",
   },
   features: {
-    text: "Let me show you what I can do for math! I can create beautiful LaTeX equations and generate interactive Manim animations to help you visualize mathematical concepts. Here are some examples of my mathematical capabilities.",
+    text: "Let me show you what I can do for math! I can create beautiful LaTeX equations and generate interactive Manim animations to help you visualize mathematical concepts.",
   }
 };
 
@@ -125,7 +125,7 @@ export function useDemoVoiceHandler(sessionId: string | null) {
     const lowerText = text.toLowerCase();
     console.log('🔍 Detecting trigger for text:', lowerText);
 
-    // Trigger 2: "Show me what you can do for math" - reveals math examples with LaTeX and Manim
+    // Trigger 2: "What can you do for math" - reveals math examples with LaTeX and Manim
     // Check this FIRST because "show me what you can do" contains "what are you"
     const featureTriggers = [
       'show me what you can do for math',
