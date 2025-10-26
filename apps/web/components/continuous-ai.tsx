@@ -293,11 +293,22 @@ export function ContinuousAI() {
   }, [handleQuestionDetected, setRerunQuestionCallback]);
 
   // Track streaming text in ref so onComplete can access it
+  // AND update the message in real-time as text streams in
   useEffect(() => {
     if (streamingQA.currentText) {
       completeTextRef.current = streamingQA.currentText;
+      
+      // Update the thinking message in real-time as text streams in
+      const thinkingMessageId = thinkingMessageIdRef.current;
+      const sessionId = currentSessionRef.current;
+      
+      if (sessionId && thinkingMessageId && streamingQA.currentText.trim().length > 0) {
+        updateMessage(sessionId, thinkingMessageId, {
+          content: streamingQA.currentText
+        });
+      }
     }
-  }, [streamingQA.currentText]);
+  }, [streamingQA.currentText, updateMessage]);
 
   // Pause microphone when AI is speaking to prevent feedback loop
   useEffect(() => {
