@@ -27,40 +27,50 @@ export function ConnectionAnchor({
   onPointerEnter,
   onPointerLeave
 }: ConnectionAnchorProps) {
-  const baseSize = 10 / scale; // 10px circle that scales inversely with zoom
-  const size = isHovered ? baseSize * 1.4 : baseSize; // Enlarge on hover
-  const offset = size / 2;
+  const baseSize = 12 / scale; // 12px circle that scales inversely with zoom
+  const size = isHovered ? baseSize * 1.5 : baseSize; // Enlarge on hover
+  // Always use baseSize for offset calculation to keep anchor centered at same position
+  const offset = (baseSize * 1.5) / 2; // Use max size for offset so it stays centered
 
-  // Determine colors based on state
+  // Determine colors based on state with modern glassy aesthetic
   const isDeleting = hasConnection && isHovered;
-  const glowColor = isDeleting ? 'rgba(239, 68, 68, 0.3)' : 'rgba(14, 165, 233, 0.3)';
-  const glowShadow = isDeleting ? '0 0 12px rgba(239, 68, 68, 0.6)' : '0 0 12px rgba(14, 165, 233, 0.6)';
-  const bgColor = isDeleting ? '#ef4444' : (isActive || isHovered ? '#0ea5e9' : 'white');
-  const borderColor = isDeleting ? '#dc2626' : (isActive || isHovered ? '#0284c7' : '#64748b');
+  const glowColor = isDeleting ? 'rgba(239, 68, 68, 0.4)' : 'rgba(6, 182, 212, 0.4)';
+  const glowShadow = isDeleting
+    ? '0 0 16px rgba(239, 68, 68, 0.8), 0 0 24px rgba(239, 68, 68, 0.4)'
+    : '0 0 16px rgba(6, 182, 212, 0.8), 0 0 24px rgba(6, 182, 212, 0.4)';
+  const bgColor = isDeleting
+    ? '#ef4444'
+    : (isActive || isHovered ? '#06b6d4' : 'rgba(255, 255, 255, 0.95)');
+  const borderColor = isDeleting
+    ? '#dc2626'
+    : (isActive || isHovered ? '#0891b2' : 'rgba(148, 163, 184, 0.6)');
   const shadow = isDeleting
-    ? '0 0 8px rgba(239, 68, 68, 0.8), 0 2px 4px rgba(0, 0, 0, 0.2)'
-    : (isActive || isHovered ? '0 0 8px rgba(14, 165, 233, 0.8), 0 2px 4px rgba(0, 0, 0, 0.2)' : '0 1px 3px rgba(0, 0, 0, 0.2)');
+    ? '0 4px 12px rgba(239, 68, 68, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3)'
+    : (isActive || isHovered
+      ? '0 4px 12px rgba(6, 182, 212, 0.5), 0 2px 6px rgba(0, 0, 0, 0.2)'
+      : '0 2px 6px rgba(0, 0, 0, 0.15)');
 
   return (
     <>
       {/* Glow ring when hovered */}
       {isHovered && (
         <div
-          className="absolute rounded-full pointer-events-none z-40 animate-pulse"
+          className="absolute rounded-full pointer-events-none z-40"
           style={{
             left: x - offset - 4 / scale,
             top: y - offset - 4 / scale,
             width: size + 8 / scale,
             height: size + 8 / scale,
             backgroundColor: glowColor,
-            boxShadow: glowShadow
+            boxShadow: glowShadow,
+            animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
           }}
         />
       )}
 
       {/* Main anchor circle */}
       <div
-        className="absolute pointer-events-auto rounded-full border-2 z-50"
+        className="absolute pointer-events-auto rounded-full border-[3px] z-50"
         style={{
           left: x - offset,
           top: y - offset,
@@ -69,7 +79,9 @@ export function ConnectionAnchor({
           backgroundColor: bgColor,
           borderColor: borderColor,
           cursor: 'crosshair',
-          boxShadow: shadow
+          boxShadow: shadow,
+          backdropFilter: 'blur(8px)',
+          transition: 'background-color 0.2s, border-color 0.2s, box-shadow 0.2s, width 0.2s, height 0.2s'
         }}
         onPointerDown={(e) => {
           e.stopPropagation();

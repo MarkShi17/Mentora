@@ -18,7 +18,7 @@ function renderObjectContent(object: CanvasObject) {
   switch (object.type) {
     case 'text':
       return (
-        <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed p-4 h-full overflow-auto">
+        <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed">
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
@@ -51,12 +51,10 @@ function renderObjectContent(object: CanvasObject) {
     
     case 'diagram':
       return (
-        <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto">
-          <div
-            className="bg-white rounded"
-            dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
-          />
-        </div>
+        <div
+          className="bg-white rounded"
+          dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
+        />
       );
     
     case 'code':
@@ -72,12 +70,10 @@ function renderObjectContent(object: CanvasObject) {
     
     case 'graph':
       return (
-        <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto">
-          <div
-            className="bg-white rounded"
-            dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
-          />
-        </div>
+        <div
+          className="bg-white rounded"
+          dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
+        />
       );
     
     case 'latex':
@@ -87,11 +83,11 @@ function renderObjectContent(object: CanvasObject) {
       // If no LaTeX source, fall back to rendered image
       if (!latexSource) {
         return (
-          <div className="flex items-center justify-center p-4 h-full">
+          <div className="text-slate-900">
             <img
               src={object.data.rendered}
               alt="LaTeX equation"
-              className="max-w-full max-h-full object-contain"
+              className=""
             />
           </div>
         );
@@ -120,13 +116,11 @@ function renderObjectContent(object: CanvasObject) {
     
     case 'image':
       return (
-        <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto flex items-center justify-center">
-          <img
-            src={object.data.url || object.data.content}
-            alt={object.data.alt || 'Generated image'}
-            className="max-w-full max-h-full object-contain rounded"
-          />
-        </div>
+        <img 
+          src={object.data.url || object.data.content} 
+          alt={object.data.alt || 'Generated image'} 
+          className="rounded"
+        />
       );
 
     case 'video':
@@ -227,8 +221,7 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
             key={object.id}
             data-canvas-object="true"
             className={cn(
-              "pointer-events-auto absolute rounded-lg border-2 border-transparent shadow-lg transition-colors",
-              object.selected ? "border-sky-400" : "border-transparent",
+              "pointer-events-auto absolute rounded-lg shadow-lg transition-colors",
               resizeState ? "cursor-default" : (isDragging ? "cursor-grabbing" : "cursor-grab"),
               !isBeingDragged && !isBeingResized && "transition-all"
             )}
@@ -237,7 +230,9 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               top: objectY,
               width: objectWidth,
               height: objectHeight,
-              maxWidth: object.type === 'latex' ? '800px' : undefined,
+              minWidth: '150px',
+              minHeight: '100px',
+              maxWidth: 'none',
               background: `${object.color}20`,
               zIndex: object.zIndex || 0,
               transform: dragTransform
@@ -286,8 +281,11 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               }
             }}
           >
-            <div className="flex flex-col bg-white/95 p-4 backdrop-blur rounded-lg border border-slate-200 shadow-xl h-full">
-              <div className="mb-3 flex items-center justify-between flex-shrink-0">
+            <div className={cn(
+              "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl transition-colors",
+              object.selected ? "border-2 border-sky-400" : "border border-slate-200"
+            )}>
+              <div className="px-4 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-600 font-medium">
                     {object.type}
@@ -299,7 +297,7 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
               </div>
               <div
-                className="flex-1 overflow-auto"
+                className="px-4 pb-4"
                 style={{
                   fontSize: `${textScale * 100}%`,
                   transformOrigin: 'top left'
@@ -308,9 +306,11 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                 {renderObjectContent(object)}
               </div>
               {object.metadata?.description ? (
-                <p className="text-sm text-slate-600 mt-3 pt-3 border-t border-slate-200 flex-shrink-0">
-                  {String(object.metadata.description)}
-                </p>
+                <div className="px-4 pb-4 pt-2 border-t border-slate-200">
+                  <p className="text-sm text-slate-600">
+                    {String(object.metadata.description)}
+                  </p>
+                </div>
               ) : null}
             </div>
           </div>

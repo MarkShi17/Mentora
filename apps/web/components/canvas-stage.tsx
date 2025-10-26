@@ -1513,6 +1513,19 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
         {isInitialized && (
           <>
+            {/* ConnectionLayer renders first so it appears UNDER the objects */}
+            <ConnectionLayer
+              connections={connections}
+              objects={canvasObjects}
+              transform={transform}
+              connectionDragState={connectionDragState}
+              hoveredAnchor={hoveredAnchor}
+              dragState={dragState}
+              onConnectionClick={(connectionId) => {
+                // Handle connection click (e.g., for deletion)
+                console.log('Connection clicked:', connectionId);
+              }}
+            />
             <ObjectLayer
               objects={canvasObjects}
               transform={transform}
@@ -1530,18 +1543,6 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
               transform={transform}
               interactive={canvasMode !== "pin"}
               onFocus={handlePinFocus}
-            />
-            <ConnectionLayer
-              connections={connections}
-              objects={canvasObjects}
-              transform={transform}
-              connectionDragState={connectionDragState}
-              hoveredAnchor={hoveredAnchor}
-              dragState={dragState}
-              onConnectionClick={(connectionId) => {
-                // Handle connection click (e.g., for deletion)
-                console.log('Connection clicked:', connectionId);
-              }}
             />
           </>
         )}
