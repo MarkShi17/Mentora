@@ -1,20 +1,23 @@
 import { Session, Turn } from '@/types/session';
 import { CanvasObject } from '@/types/canvas';
 import { logger } from '@/lib/utils/logger';
+import type { RAGRetrievalResult } from '@/types/rag';
 
 export interface TeachingContext {
   conversationHistory: string;
   highlightedObjects: string;
   canvasState: string;
   recentTopics: string[];
+  ragContext?: string;
+  retrievedObjects?: string[];
 }
 
 export class ContextBuilder {
-  buildContext(
+  async buildContext(
     session: Session,
     highlightedObjectIds?: string[],
     maxTurns: number = 10
-  ): TeachingContext {
+  ): Promise<TeachingContext> {
     const recentTurns = session.turns.slice(-maxTurns);
     const conversationHistory = this.formatConversationHistory(recentTurns);
 
@@ -25,10 +28,27 @@ export class ContextBuilder {
     const canvasState = this.formatCanvasState(session.canvasObjects);
     const recentTopics = this.extractTopics(recentTurns);
 
+    // Build RAG context if enabled
+    let ragContext: string | undefined;
+    let retrievedObjects: string[] | undefined;
+
+    if (process.env.ENABLE_RAG === 'true') {
+      const currentMessage = recentTurns[recentTurns.length - 1]?.content || '';
+      const ragResult = await this.buildRAGContext(
+        session,
+        currentMessage,
+        highlightedObjectIds || []
+      );
+      ragContext = ragResult.context;
+      retrievedObjects = ragResult.objectIds;
+    }
+
     logger.debug('Built teaching context', {
       turns: recentTurns.length,
       highlightedCount: highlightedObjectIds?.length || 0,
       objectsCount: session.canvasObjects.length,
+      hasRAGContext: !!ragContext,
+      retrievedObjectCount: retrievedObjects?.length || 0
     });
 
     return {
@@ -36,6 +56,8 @@ export class ContextBuilder {
       highlightedObjects,
       canvasState,
       recentTopics,
+      ragContext,
+      retrievedObjects
     };
   }
 
@@ -131,6 +153,59 @@ export class ContextBuilder {
     const uniqueTypes = [...new Set(types)];
 
     return `Student highlighted ${highlighted.length} object(s): ${uniqueTypes.join(', ')}`;
+  }
+
+  /**
+   * Build RAG context by retrieving relevant knowledge from ChromaDB
+   */
+  private async buildRAGContext(
+    session: Session,
+    currentMessage: string,
+    highlightedObjectIds: string[]
+  ): Promise<{ context: string; objectIds: string[] }> {
+    try {
+      // Get highlighted objects
+      const highlightedObjects = session.canvasObjects.filter(
+        obj => highlightedObjectIds.includes(obj.id)
+      );
+
+      // Create summary of recent conversation
+      const recentTurns = session.turns.slice(-3);
+      const chatHistorySummary = recentTurns
+        .map(turn => {
+          const preview = turn.content.substring(0, 100);
+          return `${turn.role}: ${preview}${turn.content.length > 100 ? '...' : ''}`;
+        })
+        .join('\n');
+
+      // Use safe RAG service that doesn't cause build errors
+      const { safeRetrieveContext } = await import('@/lib/rag/safeRagService');
+
+      const result = await safeRetrieveContext(
+        currentMessage,
+        highlightedObjects,
+        chatHistorySummary,
+        session.id,
+        session.subject
+      );
+
+      // If no context retrieved, return early
+      if (!result.context) {
+        return { context: '', objectIds: [] };
+      }
+
+      // Return the formatted context
+      return result;
+
+    } catch (error) {
+      logger.error('Failed to build RAG context', { error });
+
+      // Return empty context on error (graceful degradation)
+      return {
+        context: '',
+        objectIds: []
+      };
+    }
   }
 }
 

@@ -13,11 +13,14 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@modelcontextprotocol/sdk": "^1.20.2",
-    "chromadb": "^3.0.17",
     "next": "14.2.15",
     "openai": "^4.67.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "optionalDependencies": {
+    "chromadb": "^3.0.1",
+    "@chroma-core/openai": "^0.1.7"
   },
   "devDependencies": {
     "@types/node": "^22",
