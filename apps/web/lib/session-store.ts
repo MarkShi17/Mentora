@@ -50,6 +50,11 @@ type VoiceInputState = {
   isPushToTalkActive: boolean;
 };
 
+type DemoMode = {
+  isDemoMode: boolean;
+  demoSessionId: string | null;
+};
+
 type BrainState = {
   brainType: BrainType | null;
   brainName: string | null;
@@ -111,6 +116,8 @@ type SessionState = {
   rerunQuestionCallback: ((question: string) => void) | null;
   activeBrain: Record<string, BrainState>;
   mcpToolStatus: Record<string, MCPToolStatus[]>;
+  demoMode: DemoMode;
+  setDemoMode: (isDemoMode: boolean, demoSessionId?: string) => void;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   updateSessionTitle: (sessionId: string, title: string) => void;
@@ -122,6 +129,7 @@ type SessionState = {
   updateCanvasObject: (sessionId: string, object: CanvasObject) => void;
   updateCanvasObjects: (sessionId: string, objects: CanvasObject[]) => void;
   deleteCanvasObjects: (sessionId: string, objectIds: string[]) => void;
+  revealDemoObjects: (sessionId: string, demoGroup: 'architecture' | 'features', sourceObjectId?: string) => void;
   toggleObjectSelection: (sessionId: string, objectId: string, keepOthers?: boolean) => void;
   clearObjectSelection: (sessionId: string) => void;
   setSelectedObjects: (sessionId: string, ids: string[]) => void;
@@ -213,6 +221,16 @@ export const useSessionStore = create<SessionState>()(
       rerunQuestionCallback: null,
       activeBrain: {},
       mcpToolStatus: {},
+      demoMode: {
+        isDemoMode: false,
+        demoSessionId: null
+      },
+      setDemoMode: (isDemoMode, demoSessionId) => {
+        set((state) => {
+          state.demoMode.isDemoMode = isDemoMode;
+          state.demoMode.demoSessionId = demoSessionId || null;
+        });
+      },
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -426,6 +444,75 @@ export const useSessionStore = create<SessionState>()(
         type: 'delete',
         objects: currentObjects,
         metadata: { deletedIds: objectIds }
+      });
+    },
+    revealDemoObjects: (sessionId, demoGroup, sourceObjectId) => {
+      const state = get();
+      const list = state.canvasObjects[sessionId];
+      if (!list) {
+        return;
+      }
+
+      // Find all objects in the demo group that are hidden
+      const objectsToReveal = list.filter(
+        (obj) => obj.demoGroup === demoGroup && obj.hidden === true
+      );
+
+      if (objectsToReveal.length === 0) {
+        return;
+      }
+
+      const sourceObj = list.find((obj) => obj.id === sourceObjectId);
+      if (!sourceObj) {
+        return;
+      }
+
+      // Calculate sequential left-to-right chain positions
+      // Objects chain sequentially: A -> B -> C -> D (sideways tree)
+      const HORIZONTAL_SPACING = 100; // Distance between sequential objects
+      const VERTICAL_SPACING = 50; // Small vertical offset for visual variety
+
+      // Start from source position
+      let currentX = sourceObj.x + (sourceObj.width || 800) + HORIZONTAL_SPACING;
+      let currentY = sourceObj.y;
+      let previousObjectId = sourceObjectId;
+
+      // Position and reveal each object with staggered animation delays
+      console.log(`🎬 Revealing ${objectsToReveal.length} objects with sequential animation`);
+
+      objectsToReveal.forEach((obj, index) => {
+        const objWidth = obj.width || 600;
+        const objHeight = obj.height || 200;
+        const delay = index * 150; // 150ms delay between each reveal for animation effect
+
+        // Capture current values for the setTimeout closure
+        const targetX = currentX;
+        const targetY = currentY;
+        const prevId = previousObjectId;
+
+        console.log(`⏱️  Object ${index + 1}/${objectsToReveal.length}: "${obj.label}" will appear in ${delay}ms`);
+
+        setTimeout(() => {
+          console.log(`✨ Revealing object: "${obj.label}" at (${targetX}, ${targetY})`);
+
+          set((state) => {
+            const targetObj = state.canvasObjects[sessionId]?.find(o => o.id === obj.id);
+            if (targetObj) {
+              targetObj.hidden = false;
+              targetObj.x = targetX;
+              targetObj.y = targetY;
+            }
+          });
+
+          // Create connection from PREVIOUS object to THIS object (sequential chain)
+          console.log(`🔗 Creating connection: ${prevId} -> ${obj.id}`);
+          get().createConnection(sessionId, prevId, obj.id, 'east', 'west');
+        }, delay);
+
+        // Update for next iteration
+        currentX += objWidth + HORIZONTAL_SPACING;
+        currentY += VERTICAL_SPACING; // Slight vertical stagger
+        previousObjectId = obj.id;
       });
     },
     toggleObjectSelection: (sessionId, objectId, keepOthers = false) => {

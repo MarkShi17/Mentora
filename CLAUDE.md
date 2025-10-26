@@ -663,6 +663,182 @@ All file references updated:
 
 ---
 
+## 🎯 Pre-loaded Demo Session (2025-10-26)
+
+### Changes Made
+
+**Added Demo Session for Hackathon Presentations:**
+
+1. **Created `lib/demo/demoSession.ts`** - New module that generates a comprehensive demo session
+   - Pre-populated with 9 canvas objects showcasing Mentora
+   - Organized in 3 visual clusters for easy navigation
+   - Professional SVG diagrams for architecture and user flow
+   - Code examples, feature lists, and use case demonstrations
+
+2. **Modified `lib/agent/sessionManager.ts`** - Auto-loads demo on startup
+   - Added constructor that initializes demo session
+   - Demo session ID: `demo_session` (fixed for easy access)
+   - Protected from deletion (prevents accidental removal)
+   - Added `getDemoSession()` helper method
+
+3. **Created `DEMO_SESSION.md`** - Complete documentation
+   - Overview of demo session contents
+   - Usage instructions for hackathon presentations
+   - 2-minute demo flow guide
+   - Customization instructions
+
+**Demo Session Contents:**
+
+| Cluster | Objects | Purpose |
+|---------|---------|---------|
+| **Left (Architecture)** | Title, Architecture Diagram, Tech Stack | Show technical foundation |
+| **Center (Features)** | Key Features, How It Works Flowchart | Explain capabilities |
+| **Right (Examples)** | Use Cases, Teaching Modes, API Code, Instructions | Demonstrate real usage |
+
+**Canvas Object Types Used:**
+- 6 Text Objects (titles, features, instructions)
+- 2 Diagram Objects (architecture SVG, flow SVG)
+- 1 Code Object (TypeScript API examples)
+
+**Custom SVG Diagrams Generated:**
+1. **Architecture Diagram** - 3-layer stack (Frontend/Backend/AI) with gradient fills
+2. **Flow Diagram** - User interaction flow (Voice → AI → Canvas → TTS)
+
+### Why These Changes
+
+**Problem**: Need a compelling, ready-to-go demo for hackathon presentations
+- Creating demo content during presentations is time-consuming
+- Need to showcase all platform capabilities quickly
+- Want professional visuals that highlight technical sophistication
+
+**Solution**: Pre-loaded demo session that auto-initializes on startup
+- **Zero Setup**: Loads automatically when server starts
+- **Comprehensive**: Covers architecture, features, use cases, and API usage
+- **Professional**: Custom SVG diagrams with color-coded components
+- **Interactive**: Users can zoom, pan, and explore the canvas
+- **Reusable**: Perfect for multiple demo sessions and presentations
+
+**Benefits**:
+1. **Time-Saving**: No need to prepare demo content before presentations
+2. **Consistent**: Same high-quality demo every time
+3. **Educational**: Serves as documentation for new users
+4. **Impressive**: Shows off canvas capabilities with actual content
+5. **Protected**: Cannot be accidentally deleted
+
+### Demo Session Structure
+
+```
+🚀 Mentora Demo - Hackathon Showcase
+├── Cluster 1: Technical Foundation (x: 50-650)
+│   ├── Main Title
+│   ├── Architecture Diagram (SVG)
+│   └── Tech Stack List
+├── Cluster 2: Core Capabilities (x: 700-1350)
+│   ├── Key Features
+│   └── How It Works Flowchart (SVG)
+└── Cluster 3: Real-World Usage (x: 1400-1950)
+    ├── Use Cases
+    ├── Teaching Modes
+    ├── API Example (TypeScript)
+    └── Demo Instructions
+```
+
+### Usage for Hackathon Demos
+
+**2-Minute Demo Flow:**
+1. **0:00-0:30** - Overview: Main title + Architecture diagram
+2. **0:30-1:15** - Features: Key capabilities + How it works
+3. **1:15-1:45** - Use Cases: Real applications across subjects
+4. **1:45-2:00** - Live Demo: Create new session + ask question
+
+**Accessing the Demo:**
+```bash
+# Via API
+curl http://localhost:3000/api/sessions/demo_session
+
+# Via Frontend
+# Demo session appears automatically in session list
+```
+
+### Implementation Details
+
+**Auto-initialization Flow:**
+```typescript
+SessionManager constructor
+  → initializeDemoSession()
+    → createDemoSession() from lib/demo/demoSession.ts
+      → Generate 9 canvas objects with positions
+      → Create demo turn with assistant message
+      → Return complete Session object
+    → sessions.set('demo_session', demoSession)
+  → Demo ready for immediate use
+```
+
+**Protected Session:**
+```typescript
+deleteSession(sessionId) {
+  if (sessionId === 'demo_session') {
+    throw new Error('Cannot delete demo session');
+  }
+  // ... proceed with deletion
+}
+```
+
+**SVG Generation:**
+- Custom `generateArchitectureSVG()` - 3-layer stack with arrows
+- Custom `generateFlowSVG()` - 4-step user flow diagram
+- Professional color schemes (blue, green, orange gradients)
+- Responsive sizing based on canvas dimensions
+
+### Files Created/Modified
+
+**New Files:**
+1. `lib/demo/demoSession.ts` (400+ lines) - Demo session generator
+2. `DEMO_SESSION.md` (200+ lines) - Complete documentation
+
+**Modified Files:**
+1. `lib/agent/sessionManager.ts` - Added auto-initialization
+
+**Total Lines Added**: ~650 lines
+
+### Success Metrics
+
+| Metric | Value |
+|--------|-------|
+| Demo session auto-loads | ✅ Yes |
+| Canvas objects created | 9 |
+| Visual clusters | 3 |
+| Custom SVG diagrams | 2 |
+| Code examples | 1 |
+| Protected from deletion | ✅ Yes |
+| Ready for hackathon | ✅ Yes |
+
+### Future Enhancements
+
+Potential improvements:
+- [ ] Add video objects showing platform in action
+- [ ] Include sample LaTeX equations from math tutoring
+- [ ] Add actual biology diagram examples (using MCP)
+- [ ] Include interactive graph visualizations
+- [ ] Add animation/transition effects on object creation
+- [ ] Create multiple demo sessions for different subjects
+
+### Migration Notes
+
+**For Developers:**
+- Demo session loads automatically on server startup
+- Access via `sessionManager.getDemoSession()`
+- Session ID is always `demo_session`
+- Appears in session list alongside user sessions
+
+**For Presenters:**
+- No setup required - just start the app
+- Demo session is immediately available
+- Use as template for live demonstrations
+- Safe from accidental deletion
+
+---
+
 ## 🧬 Specialized Biology MCP Servers Added (2025-10-25)
 
 ### Changes Made
