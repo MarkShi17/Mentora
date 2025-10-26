@@ -50,6 +50,8 @@ export type CanvasObject = {
   color: string;
   selected?: boolean;
   zIndex?: number;
+  hidden?: boolean;  // For voice-activated demo reveals
+  demoGroup?: 'intro' | 'architecture' | 'features';  // Demo reveal grouping
   data?: {
     content?: string;    // For text/note type (supports Markdown with inline math)
     svg?: string;        // For diagram/graph type

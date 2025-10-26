@@ -14,6 +14,7 @@ import type { ConnectionAnchor } from "@/types";
 import { getHoveredAnchor, getAnchorPosition } from "@/lib/connection-utils";
 import { useClipboardPaste } from "@/hooks/use-clipboard-paste";
 import { processImageFile, processVideoFile } from "@/lib/image-upload";
+import { useDemoVoiceHandler } from "@/hooks/use-demo-voice-handler";
 
 const GRID_SIZE = 40;
 const MIN_SCALE = 0.25;
@@ -93,10 +94,18 @@ export function CanvasStage() {
   const animationRef = useRef<number | null>(null);
 
 const activeSessionId = useSessionStore((state) => state.activeSessionId);
-const canvasObjects = useSessionStore(
+const allCanvasObjects = useSessionStore(
   (state) => (state.activeSessionId ? state.canvasObjects[state.activeSessionId] ?? [] : [])
 );
+// Filter out hidden objects for display
+const canvasObjects = useMemo(() => {
+  return allCanvasObjects.filter((obj: CanvasObject) => !obj.hidden);
+}, [allCanvasObjects]);
+
 const canvasMode = useSessionStore((state) => state.canvasMode);
+
+// Initialize demo voice handler for voice-activated reveals
+useDemoVoiceHandler(activeSessionId);
 const setCanvasView = useSessionStore((state) => state.setCanvasView);
 const focusTarget = useSessionStore((state) => state.focusTarget);
 const clearFocus = useSessionStore((state) => state.clearFocus);

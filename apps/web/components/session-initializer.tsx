@@ -13,120 +13,275 @@ export function SessionInitializer() {
 
   const createDefaultLesson = async () => {
     try {
-      // Create default session
-      const title = 'Welcome to Mentora';
+      // Create demo session for hackathon presentation
+      const title = 'Mentora Demo - Hackathon Showcase';
       const sessionId = await createSession({ title });
 
       // Store object IDs for creating connections
       const objectIds: Record<string, string> = {};
 
-      // Create highly spaced layout - components very spread out, positioned far up and left
-      // Layout: positioned in upper-left area of viewport, maximum separation
+      // DEMO SESSION: Showcasing Mentora's architecture, tech stack, and capabilities
+      // Organized in 3 clusters for 2-minute hackathon presentation
       const placeholderObjects: CanvasObject[] = [
-        // ==================== HIGHLY SPACED LAYOUT ====================
-        // Welcome Introduction (Top Left)
+        // ==================== CLUSTER 1: ARCHITECTURE & TECH STACK (LEFT) ====================
+
+        // 1. Main Title (VISIBLE - Entry point) - LARGE AND PROMINENT
         {
-          id: objectIds.hero = `obj-${nanoid(8)}`,
+          id: objectIds.title = `obj-${nanoid(8)}`,
           type: 'note',
-          label: 'Welcome',
-          x: 20, // Much further left
-          y: 40, // Much higher up
-          width: 280,
-          height: 180,
+          label: 'Mentora Platform',
+          x: 50,
+          y: 50,
+          width: 800,  // Increased from 600
+          height: 200,  // Increased from 80 - much taller
           color: '#6366f1', // Indigo
           selected: false,
           zIndex: 1,
+          hidden: false,  // Always visible
+          demoGroup: 'intro',
           data: {
-            content: `# **Welcome to Mentora**
+            content: `# **MENTORA**
 
-Your personal AI tutor that speaks, visualizes, and guides you through any subject.
+## AI-Powered Tutoring Platform
 
-Ask questions naturally and get instant spoken explanations with dynamic visual aids.`,
+Voice-interactive learning with infinite canvas workspace
+
+Ask me questions to explore the platform!`,
           },
           metadata: {
-            description: 'Hero section introducing Mentora',
+            description: 'Main title and tagline',
           },
         },
 
-        // Acceleration Video (Top Right)
+        // 2. Architecture Overview (HIDDEN - Reveal on "what are you?")
         {
-          id: objectIds.acceleration = `obj-${nanoid(8)}`,
-          type: 'video',
-          label: 'What is Acceleration?',
-          x: 500, // Much further right for maximum separation
-          y: 40, // Much higher up
-          width: 280,
-          height: 180,
-          color: '#f59e0b', // Amber
+          id: objectIds.architecture = `obj-${nanoid(8)}`,
+          type: 'note',
+          label: 'Architecture',
+          x: 50,
+          y: 150,
+          width: 600,
+          height: 280,
+          color: '#3b82f6', // Blue
           selected: false,
           zIndex: 2,
+          hidden: true,  // Reveal on trigger 1
+          demoGroup: 'architecture',
           data: {
-            type: 'video',
-            url: '/acceleration.gif', // Pre-loaded Manim animation
-            alt: 'Manim animation explaining acceleration concept'
+            content: `# **Full-Stack Architecture**
+
+## **Frontend Layer** (Port 3001)
+React 18 + Next.js 14 + D3.js
+Infinite canvas with drag, zoom, pan
+
+## **Backend Layer** (Port 3000)
+Next.js API Routes + TypeScript
+RESTful endpoints for sessions & AI
+
+## **AI Engine**
+Claude Sonnet 4.5 (Teaching Agent)
+OpenAI Whisper (Speech-to-Text)
+OpenAI TTS-1 (Text-to-Speech)
+
+**Container**: Docker + Docker Compose`,
           },
           metadata: {
-            description: 'Interactive Manim video explaining acceleration concept',
-            createdAt: Date.now()
+            description: 'Three-layer architecture diagram',
           },
         },
 
-        // Features Overview (Bottom Left)
+        // ==================== CLUSTER 2: FEATURES & HOW IT WORKS (CENTER) ====================
+
+        // 4. Key Features (HIDDEN - Reveal on "what are your features?")
         {
           id: objectIds.features = `obj-${nanoid(8)}`,
           type: 'note',
           label: 'Key Features',
-          x: 20, // Much further left
-          y: 300, // Much lower down for maximum vertical separation
-          width: 280,
-          height: 180,
-          color: '#06b6d4', // Cyan
+          x: 700,
+          y: 50,
+          width: 650,
+          height: 450,
+          color: '#f59e0b', // Amber
           selected: false,
-          zIndex: 3,
+          zIndex: 4,
+          hidden: true,  // Reveal on trigger 2
+          demoGroup: 'features',
           data: {
             content: `# **Key Features**
 
-## **Live Voice Tutor**
-Speak naturally and get spoken responses.
+## **Voice-Interactive Learning**
+- Real-time speech-to-text (Whisper)
+- Natural text-to-speech responses
+- Conversational teaching experience
 
-## **Interactive Canvas**
-Organize and explore ideas spatially.
+## **Specialized AI Brains**
+- **Math**: LaTeX equations, graphs, proofs
+- **Biology**: Diagrams, pathways, molecular structures
+- **Code**: Syntax highlighting, algorithms, data structures
+- **Design**: Visual concepts, patterns, workflows
 
-## **Visual Learning**
-Dynamic diagrams, equations, and animations.`,
+## **Infinite Canvas Workspace**
+- Create & arrange objects spatially
+- LaTeX, graphs, code, diagrams, text, videos
+- Drag, zoom, pan interactions
+- Contextual object references
+
+## **MCP Tool Integration**
+- Python for biology visualizations
+- Mermaid for flowcharts
+- ChatMol for molecular structures
+- Extensible architecture for new tools`,
           },
           metadata: {
-            description: 'Feature highlights',
+            description: 'Platform capabilities',
           },
         },
 
-        // Get Started CTA (Bottom Right)
+        // 5. How It Works (HIDDEN - Reveal on "what are you?")
         {
-          id: objectIds.cta = `obj-${nanoid(8)}`,
+          id: objectIds.howItWorks = `obj-${nanoid(8)}`,
           type: 'note',
-          label: 'Get Started',
-          x: 500, // Much further right for maximum separation
-          y: 300, // Much lower down for maximum vertical separation
-          width: 280,
-          height: 180,
-          color: '#10b981', // Green
+          label: 'How It Works',
+          x: 700,
+          y: 540,
+          width: 650,
+          height: 280,
+          color: '#8b5cf6', // Purple
           selected: false,
-          zIndex: 4,
+          zIndex: 5,
+          hidden: true,  // Reveal on trigger 1
+          demoGroup: 'architecture',
           data: {
-            content: `# **Ready to Start Learning?**
+            content: `# **How It Works**
 
-Click the microphone button to begin your conversation with Mentora.
+**1. Student asks question** (voice or text)
+   ↓
+**2. AI processes with context** (conversation history + canvas state)
+   ↓
+**3. Generate visual objects** (equations, diagrams, code, graphs)
+   ↓
+**4. Speak response** (natural TTS with spatial references)
+   ↓
+**5. Continuous feedback loop** (ask follow-ups, explore deeper)
 
-**Example questions to try:**
-- "What is acceleration?"
-- "Explain the water cycle"
-- "Show me how binary search works" 
-- "What is photosynthesis?"
-
-Start speaking now!`,
+**AI maintains spatial awareness** - references objects on canvas naturally!`,
           },
           metadata: {
-            description: 'Call to action with example questions',
+            description: 'User flow and teaching pipeline',
+          },
+        },
+
+        // ==================== CLUSTER 3: USE CASES & DEMO (RIGHT) ====================
+
+        // 6. Use Cases (HIDDEN - Reveal on "what are your features?")
+        {
+          id: objectIds.useCases = `obj-${nanoid(8)}`,
+          type: 'note',
+          label: 'Use Cases',
+          x: 1400,
+          y: 50,
+          width: 550,
+          height: 400,
+          color: '#ec4899', // Pink
+          selected: false,
+          zIndex: 6,
+          hidden: true,  // Reveal on trigger 2
+          demoGroup: 'features',
+          data: {
+            content: `# **Real-World Use Cases**
+
+## **Math Tutoring**
+"Explain the quadratic formula"
+- LaTeX equation + interactive graph + step-by-step derivation
+
+## **Biology Learning**
+"Show me cellular respiration"
+- Pathway diagram + molecular structures + spoken explanation
+
+## **Code Education**
+"How does recursion work?"
+- Code examples + tree visualization + execution walkthrough
+
+## **Design Concepts**
+"Explain design patterns"
+- Visual diagrams + real examples + best practices
+
+**Perfect for STEM education, coding bootcamps, and self-study!**`,
+          },
+          metadata: {
+            description: 'Application scenarios',
+          },
+        },
+
+        // 7. Teaching Modes (HIDDEN - Reveal on "what are your features?")
+        {
+          id: objectIds.teachingModes = `obj-${nanoid(8)}`,
+          type: 'note',
+          label: 'Teaching Modes',
+          x: 1400,
+          y: 490,
+          width: 550,
+          height: 230,
+          color: '#06b6d4', // Cyan
+          selected: false,
+          zIndex: 7,
+          hidden: true,  // Reveal on trigger 2
+          demoGroup: 'features',
+          data: {
+            content: `# **Two Teaching Modes**
+
+## **Socratic Mode** (Guided Discovery)
+- Asks guiding questions
+- Breaks concepts into small steps
+- Checks understanding at checkpoints
+- Perfect for deep learning
+
+## **Direct Mode** (Quick Answers)
+- Clear explanations
+- Step-by-step solutions
+- Fast reference
+- Perfect for review`,
+          },
+          metadata: {
+            description: 'Teaching approaches',
+          },
+        },
+
+        // 8. Demo Instructions (HIDDEN - Reveal on "what are your features?")
+        {
+          id: objectIds.demo = `obj-${nanoid(8)}`,
+          type: 'note',
+          label: 'Try It Now!',
+          x: 1400,
+          y: 760,
+          width: 550,
+          height: 280,
+          color: '#10b981', // Green
+          selected: false,
+          zIndex: 8,
+          hidden: true,  // Reveal on trigger 2
+          demoGroup: 'features',
+          data: {
+            content: `# **Try It Now!**
+
+**Getting Started:**
+1. Click "New Session" to start fresh
+2. Choose a subject (Math/Bio/Code/Design)
+3. Ask a question via text or voice
+4. Watch AI create visual objects on canvas
+5. Interact with objects (drag, zoom, pan)
+6. Ask follow-up questions
+
+**Example Questions:**
+- "What's the derivative of x squared?"
+- "Explain photosynthesis with diagrams"
+- "Show me how bubble sort works"
+- "What is recursion?"
+
+**The AI references existing canvas objects and maintains spatial awareness!**`,
+          },
+          metadata: {
+            description: 'Quick start guide',
           },
         },
       ];
@@ -135,7 +290,6 @@ Start speaking now!`,
       placeholderObjects.forEach((obj) => {
         updateCanvasObject(sessionId, obj);
       });
-
 
       setInitialized(true);
     } catch (error) {
