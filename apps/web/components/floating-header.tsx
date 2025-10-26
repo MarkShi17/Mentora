@@ -26,20 +26,20 @@ export function FloatingHeader() {
   const sessions = useSessionStore((state) => state.sessions);
   const canvasMode = useSessionStore((state) => state.canvasMode);
   const setCanvasMode = useSessionStore((state) => state.setCanvasMode);
-  const pins = useSessionStore((state) =>
-    state.activeSessionId ? state.pins[state.activeSessionId] ?? [] : []
-  );
-  const requestFocus = useSessionStore((state) => state.requestFocus);
-  const removePin = useSessionStore((state) => state.removePin);
+  // const pins = useSessionStore((state) =>
+  //   state.activeSessionId ? state.pins[state.activeSessionId] ?? [] : []
+  // );
+  // const requestFocus = useSessionStore((state) => state.requestFocus);
+  // const removePin = useSessionStore((state) => state.removePin);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId);
 
-  const togglePinMode = () => {
-    if (!activeSessionId) {
-      return;
-    }
-    setCanvasMode(canvasMode === "pin" ? "pan" : "pin");
-  };
+  // const togglePinMode = () => {
+  //   if (!activeSessionId) {
+  //     return;
+  //   }
+  //   setCanvasMode(canvasMode === "pin" ? "pan" : "pin");
+  // };
 
   return (
     <div className="pointer-events-none absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-3">
@@ -81,17 +81,17 @@ export function FloatingHeader() {
           disabled={!activeSessionId}
           tooltip="Box Select"
         />
-        <IconButton
+        {/* <IconButton
           icon={MapPin}
           active={canvasMode === "pin"}
           onClick={togglePinMode}
           disabled={!activeSessionId}
           tooltip={canvasMode === "pin" ? "Click to place pin" : "Drop Pin"}
-        />
+        /> */}
       </div>
 
       {/* Pin Tray */}
-      {pins.length > 0 && (
+      {/* {pins.length > 0 && (
         <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur-md">
           <MapPin className="h-4 w-4 text-slate-600" />
           {pins.map((pin) => (
@@ -119,7 +119,7 @@ export function FloatingHeader() {
             </div>
           ))}
         </div>
-      )}
+      )} */}
     </div>
   );
 }
