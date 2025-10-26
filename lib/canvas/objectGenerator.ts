@@ -227,7 +227,7 @@ export class ObjectGenerator {
       case 'code':
         return this.generateCodeObject(
           request.content,
-          request.metadata?.language || 'javascript',
+          request.metadata?.language || 'python',
           position,
           turnId,
           request.referenceName

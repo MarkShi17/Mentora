@@ -319,10 +319,27 @@ export function TimelinePanel() {
                     </p>
                   )}
 
-                  {/* Status bar with stop button */}
+                  {/* Status bar with stop/restart button */}
                   <div className="flex items-center justify-between gap-2 py-1">
-                    <div className="flex items-center gap-2.5">
-                      {message.isPlayingAudio ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {message.audioComplete && message.canvasObjectIds && message.canvasObjectIds.length > 0 ? (
+                        // Show canvas object pins when audio completes
+                        message.canvasObjectIds.map(objId => {
+                          const sessionObjects = activeSessionId ? canvasObjects[activeSessionId] || [] : [];
+                          const obj = sessionObjects.find(o => o.id === objId);
+                          if (!obj) return null;
+
+                          return (
+                            <button
+                              key={objId}
+                              onClick={() => handleObjectClick(objId)}
+                              className="px-2.5 py-1 text-xs rounded-full bg-gradient-to-r from-sky-50 to-blue-50 text-sky-700 hover:from-sky-100 hover:to-blue-100 transition-all duration-300 border border-sky-200/60 font-bold shadow-sm hover:shadow-md hover:scale-105 active:scale-95 backdrop-blur-sm"
+                            >
+                              📌 {obj.label}
+                            </button>
+                          );
+                        })
+                      ) : message.isPlayingAudio ? (
                         <>
                           <span className="text-xs text-sky-600 font-bold">Speaking</span>
                           <div className="flex gap-1">
@@ -359,20 +376,47 @@ export function TimelinePanel() {
                       )}
                     </div>
 
-                    {/* Minimal stop button */}
-                    <button
-                      onClick={() => {
-                        if (stopStreamingCallback) {
-                          console.log('🛑 Stopping AI generation from timeline panel');
-                          stopStreamingCallback();
-                        }
-                      }}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/60 hover:bg-red-50 text-slate-600 hover:text-red-600 transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-200/60 hover:border-red-200/60 shadow-sm hover:shadow-md"
-                      title="Stop generating (ESC)"
-                    >
-                      <StopCircle className="h-3 w-3" />
-                      <span>Stop</span>
-                    </button>
+                    {message.audioComplete ? (
+                      /* Restart button when audio is complete */
+                      <button
+                        onClick={() => {
+                          // Find the previous user message to rerun
+                          const currentIndex = dialogue.findIndex(m => m.id === message.id);
+                          if (currentIndex > 0) {
+                            // Look backwards for the most recent user message
+                            for (let i = currentIndex - 1; i >= 0; i--) {
+                              if (dialogue[i].role === "user") {
+                                if (rerunQuestionCallback) {
+                                  console.log('🔄 Restarting with question:', dialogue[i].content);
+                                  rerunQuestionCallback(dialogue[i].content);
+                                }
+                                break;
+                              }
+                            }
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/60 hover:bg-green-50 text-slate-600 hover:text-green-600 transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-200/60 hover:border-green-200/60 shadow-sm hover:shadow-md"
+                        title="Restart with same question"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        <span>Restart</span>
+                      </button>
+                    ) : (
+                      /* Stop button while generating/speaking */
+                      <button
+                        onClick={() => {
+                          if (stopStreamingCallback) {
+                            console.log('🛑 Stopping AI generation from timeline panel');
+                            stopStreamingCallback();
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/60 hover:bg-red-50 text-slate-600 hover:text-red-600 transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-200/60 hover:border-red-200/60 shadow-sm hover:shadow-md"
+                        title="Stop generating (ESC)"
+                      >
+                        <StopCircle className="h-3 w-3" />
+                        <span>Stop</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : message.content === "Stopped" || message.interrupted ? (
@@ -397,7 +441,8 @@ export function TimelinePanel() {
               ) : (
                 <p className="mt-2 text-sm text-slate-700 leading-relaxed font-medium">{message.content}</p>
               )}
-              {message.canvasObjectIds && message.canvasObjectIds.length > 0 && (
+              {/* Show canvas object pins below message only when audio hasn't completed (they appear in status bar when complete) */}
+              {message.canvasObjectIds && message.canvasObjectIds.length > 0 && !message.audioComplete && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {message.canvasObjectIds.map(objId => {
                     const sessionObjects = activeSessionId ? canvasObjects[activeSessionId] || [] : [];

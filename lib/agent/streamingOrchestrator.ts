@@ -263,7 +263,12 @@ export class StreamingOrchestrator {
               const sentenceParser = new SentenceParser();
               const sentences = sentenceParser.addChunk(agentResponse.narration);
 
-              // Stream each sentence with TTS
+              // OPTIMIZATION: Skip pre-tool TTS to make objects arrive faster
+              // Stream text chunks immediately without waiting for TTS
+              logger.info('⚡ Streaming text without TTS for faster object rendering', {
+                sentenceCount: sentences.length
+              });
+
               for (const sentence of sentences) {
                 yield {
                   type: 'text_chunk',
@@ -273,24 +278,6 @@ export class StreamingOrchestrator {
                     sentenceIndex: sentence.index
                   }
                 };
-
-                try {
-                  const audioResult = await ttsService.generateSentenceSpeech(
-                    sentence.text,
-                    voice,
-                    sentence.index
-                  );
-                  yield {
-                    type: 'audio_chunk',
-                    timestamp: Date.now(),
-                    data: audioResult
-                  };
-                } catch (error) {
-                  logger.warn('TTS generation failed during pre-tool streaming', {
-                    sentenceIndex: sentence.index,
-                    error: error instanceof Error ? error.message : 'Unknown'
-                  });
-                }
               }
 
               // Flush final sentence
@@ -304,22 +291,9 @@ export class StreamingOrchestrator {
                     sentenceIndex: finalSentence.index
                   }
                 };
-
-                try {
-                  const audioResult = await ttsService.generateSentenceSpeech(
-                    finalSentence.text,
-                    voice,
-                    finalSentence.index
-                  );
-                  yield {
-                    type: 'audio_chunk',
-                    timestamp: Date.now(),
-                    data: audioResult
-                  };
-                } catch (error) {
-                  logger.warn('TTS generation failed for final sentence', { error });
-                }
               }
+
+              // TTS will be generated later with final narration to avoid duplication
             }
 
             logger.info('✅ Narration streamed, now executing tools');
@@ -676,13 +650,17 @@ export class StreamingOrchestrator {
         );
       }
 
-      // Emit priority objects BEFORE TTS starts for immediate visual feedback
+      // OPTIMIZATION: Pre-calculate all priority objects before yielding
+      // This batches layout calculations and allows rapid-fire yielding
       if (priorityObjects.length > 0) {
-        logger.info('🎯 Emitting priority objects before TTS', {
+        logger.info('🎯 Pre-calculating priority objects for batch emission', {
           priorityObjectCount: priorityObjects.length,
           types: priorityObjects.map(obj => obj.type)
         });
 
+        const preparedObjects: Array<{ canvasObject: CanvasObject; placement: ObjectPlacement }> = [];
+
+        // Pre-calculate all positions and generate all objects first
         for (const request of priorityObjects) {
           try {
             const position = layoutEngine.calculatePosition(
@@ -713,15 +691,10 @@ export class StreamingOrchestrator {
               objectId: canvasObject.id,
               position: canvasObject.position,
               animateIn: 'fade',
-              timing: totalObjects * 300
+              timing: totalObjects * 50  // Reduced from 300ms to 50ms for rapid succession
             };
 
-            yield {
-              type: 'canvas_object',
-              timestamp: Date.now(),
-              data: { object: canvasObject, placement }
-            };
-
+            preparedObjects.push({ canvasObject, placement });
             totalObjects++;
           } catch (error) {
             // Skip empty text objects or other generation errors
@@ -732,6 +705,23 @@ export class StreamingOrchestrator {
             continue;
           }
         }
+
+        // Now yield all prepared objects in rapid succession (no blocking operations)
+        logger.info('⚡ Yielding all priority objects in rapid succession', {
+          objectCount: preparedObjects.length
+        });
+
+        for (const { canvasObject, placement } of preparedObjects) {
+          yield {
+            type: 'canvas_object',
+            timestamp: Date.now(),
+            data: { object: canvasObject, placement }
+          };
+        }
+
+        logger.info('✅ All priority objects yielded', {
+          objectCount: preparedObjects.length
+        });
       }
 
       // Stream narration sentence-by-sentence with TTS
@@ -742,71 +732,60 @@ export class StreamingOrchestrator {
 
         // Split narration into sentences
         const sentences = sentenceParser.addChunk(agentResponse.narration);
-
-        // Process each sentence
-        for (const sentence of sentences) {
-          logger.debug('Processing narration sentence', {
-            sentenceIndex: sentence.index,
-            text: sentence.text.substring(0, 100)
-          });
-
-          // Send text chunk event
-          yield {
-            type: 'text_chunk',
-            timestamp: Date.now(),
-            data: {
-              text: sentence.text,
-              sentenceIndex: sentence.index
-            }
-          };
-
-          // Generate TTS for the sentence
-          try {
-            const audioResult = await ttsService.generateSentenceSpeech(
-              sentence.text,
-              voice,
-              sentence.index
-            );
-
-            yield {
-              type: 'audio_chunk',
-              timestamp: Date.now(),
-              data: audioResult
-            };
-          } catch (error) {
-            logger.warn('TTS generation failed for sentence', {
-              sentenceIndex: sentence.index,
-              error: error instanceof Error ? error.message : 'Unknown'
-            });
-          }
-        }
-
-        // Flush any remaining sentence
         const finalSentence = sentenceParser.flush();
         if (finalSentence) {
-          yield {
-            type: 'text_chunk',
-            timestamp: Date.now(),
-            data: {
-              text: finalSentence.text,
-              sentenceIndex: finalSentence.index
-            }
-          };
+          sentences.push(finalSentence);
+        }
 
+        // OPTIMIZATION: Generate TTS in parallel batches of 3 sentences
+        const BATCH_SIZE = 3;
+        logger.info('⚡ Generating TTS in parallel batches', {
+          totalSentences: sentences.length,
+          batchSize: BATCH_SIZE
+        });
+
+        for (let i = 0; i < sentences.length; i += BATCH_SIZE) {
+          const batch = sentences.slice(i, i + BATCH_SIZE);
+
+          // First, yield all text chunks immediately (non-blocking)
+          for (const sentence of batch) {
+            yield {
+              type: 'text_chunk',
+              timestamp: Date.now(),
+              data: {
+                text: sentence.text,
+                sentenceIndex: sentence.index
+              }
+            };
+          }
+
+          // Then generate TTS for all sentences in batch in parallel
           try {
-            const audioResult = await ttsService.generateSentenceSpeech(
-              finalSentence.text,
-              voice,
-              finalSentence.index
+            const audioPromises = batch.map(sentence =>
+              ttsService.generateSentenceSpeech(sentence.text, voice, sentence.index)
+                .catch(error => {
+                  logger.warn('TTS generation failed for sentence', {
+                    sentenceIndex: sentence.index,
+                    error: error instanceof Error ? error.message : 'Unknown'
+                  });
+                  return null;
+                })
             );
 
-            yield {
-              type: 'audio_chunk',
-              timestamp: Date.now(),
-              data: audioResult
-            };
+            const audioResults = await Promise.all(audioPromises);
+
+            // Yield audio chunks for successfully generated TTS
+            for (const audioResult of audioResults) {
+              if (audioResult) {
+                yield {
+                  type: 'audio_chunk',
+                  timestamp: Date.now(),
+                  data: audioResult
+                };
+              }
+            }
           } catch (error) {
-            logger.warn('TTS generation failed for final sentence', { error });
+            logger.warn('Batch TTS generation failed', { error });
           }
         }
       }

@@ -69,6 +69,9 @@ export function ContinuousAI() {
   const objectsInCurrentResponse = useRef<string[]>([]);  // Track objects created in current response
   const thinkingMessageIdRef = useRef<string | null>(null);  // Track thinking message to replace it
   const sequenceKeyRef = useRef<string | null>(null);
+  // Separate refs for tracking audio completion (not cleared until audio finishes)
+  const audioCompletionSessionRef = useRef<string | null>(null);
+  const audioCompletionMessageIdRef = useRef<string | null>(null);
 
   // Streaming QA with audio
   const streamingQA = useStreamingQA({
@@ -93,11 +96,13 @@ export function ContinuousAI() {
         });
       }
 
-      // Reset refs
+      // Reset all refs (including audio completion refs since we interrupted)
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
       thinkingMessageIdRef.current = null;
+      audioCompletionSessionRef.current = null;
+      audioCompletionMessageIdRef.current = null;
       endSequence();
       sequenceKeyRef.current = null;
     }, [updateMessage, appendTimelineEvent, endSequence]),
@@ -159,10 +164,14 @@ export function ContinuousAI() {
           updateMessage(sessionId, thinkingMessageId, {
             content: finalText,
             canvasObjectIds: objectIds.length > 0 ? objectIds : undefined,
-            isStreaming: false,
-            isPlayingAudio: false
+            isStreaming: false
+            // Don't set isPlayingAudio here - audio might still be playing!
           });
           console.log('✅ Updated thinking message with final response');
+
+          // Store message ID for audio completion tracking (don't clear until audio finishes)
+          audioCompletionSessionRef.current = sessionId;
+          audioCompletionMessageIdRef.current = thinkingMessageId;
         } else {
           // Fallback: add new message if thinking message wasn't created
           addMessage(sessionId, {
@@ -183,14 +192,14 @@ export function ContinuousAI() {
         setLastAIMessage(finalText);
       }
 
-      // Reset refs
+      // Reset streaming refs (but keep audio completion refs for audio finish detection)
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
       thinkingMessageIdRef.current = null;
       endSequence();
       sequenceKeyRef.current = null;
-    }, [addMessage, updateMessage, appendTimelineEvent, endSequence]),
+    }, [addMessage, updateMessage, appendTimelineEvent, endSequence, setLastAIMessage]),
     onError: useCallback(() => {
       endSequence();
       sequenceKeyRef.current = null;
@@ -367,6 +376,8 @@ export function ContinuousAI() {
       currentSessionRef.current = null;
       completeTextRef.current = '';
       objectsInCurrentResponse.current = [];
+      audioCompletionSessionRef.current = null;
+      audioCompletionMessageIdRef.current = null;
 
       console.log('✅ Stop complete - ready for new questions');
     });
@@ -392,25 +403,53 @@ export function ContinuousAI() {
   }, [handleQuestionDetected, setRerunQuestionCallback]);
 
   // Track streaming text in ref so onComplete can access it
-  // AND update the message in real-time as text streams in
+  // AND update the message in real-time as text streams in (including audio state)
   useEffect(() => {
     if (streamingQA.currentText) {
       completeTextRef.current = streamingQA.currentText;
+    }
 
-      // Update the thinking message in real-time as text streams in
-      const thinkingMessageId = thinkingMessageIdRef.current;
-      const sessionId = currentSessionRef.current;
+    // Update the message in real-time with streaming and audio state
+    // Use streaming refs while streaming, or audio completion refs after streaming ends
+    const thinkingMessageId = thinkingMessageIdRef.current || audioCompletionMessageIdRef.current;
+    const sessionId = currentSessionRef.current || audioCompletionSessionRef.current;
 
-      if (sessionId && thinkingMessageId) {
-        const content = streamingQA.currentText.trim() || "Thinking...";
-        updateMessage(sessionId, thinkingMessageId, {
-          content: content,
-          isStreaming: streamingQA.isStreaming,
-          isPlayingAudio: streamingQA.audioState.isPlaying
-        });
-      }
+    if (sessionId && thinkingMessageId) {
+      const content = streamingQA.currentText?.trim() || "Thinking...";
+      updateMessage(sessionId, thinkingMessageId, {
+        content: content,
+        isStreaming: streamingQA.isStreaming,
+        isPlayingAudio: streamingQA.audioState.isPlaying
+      });
     }
   }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
+
+  // Detect when audio finishes naturally (not interrupted) and set audioComplete flag
+  const prevIsPlayingRef = useRef<boolean>(false);
+  useEffect(() => {
+    const isPlaying = streamingQA.audioState.isPlaying;
+    const wasPlaying = prevIsPlayingRef.current;
+
+    // Audio finished: was playing, now stopped
+    if (wasPlaying && !isPlaying) {
+      const sessionId = audioCompletionSessionRef.current;
+      const messageId = audioCompletionMessageIdRef.current;
+
+      if (sessionId && messageId) {
+        console.log('✅ Audio playback completed naturally - setting audioComplete flag');
+        updateMessage(sessionId, messageId, {
+          audioComplete: true,
+          isPlayingAudio: false
+        });
+
+        // Clear audio completion refs now that audio is done
+        audioCompletionSessionRef.current = null;
+        audioCompletionMessageIdRef.current = null;
+      }
+    }
+
+    prevIsPlayingRef.current = isPlaying;
+  }, [streamingQA.audioState.isPlaying, updateMessage]);
 
   // Keep microphone ALWAYS ACTIVE in live tutor mode - allow natural voice interruption
   // Question detection will filter out non-questions, so AI's voice won't cause false interrupts

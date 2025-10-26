@@ -35,6 +35,7 @@ export type Message = {
   interruptedAt?: string;  // Timestamp when interrupted
   isStreaming?: boolean;  // Currently streaming text
   isPlayingAudio?: boolean;  // Currently playing audio
+  audioComplete?: boolean;  // Audio has finished playing naturally (not interrupted)
 };
 
 export type CanvasObjectType = "diagram" | "note" | "formula" | "image" | "text" | "code" | "graph" | "latex";
