@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { logger } from '@/lib/utils/logger';
 import { ExternalServiceError } from '@/lib/utils/errors';
+import type { VoiceOption } from '@/types/api';
 
 export class Synthesizer {
   private openai: OpenAI;
@@ -13,13 +14,13 @@ export class Synthesizer {
     this.openai = new OpenAI({ apiKey });
   }
 
-  async synthesize(text: string): Promise<string> {
+  async synthesize(text: string, voice: VoiceOption = 'alloy'): Promise<string> {
     try {
-      logger.info('Starting TTS synthesis');
+      logger.info('Starting TTS synthesis', { voice });
 
       const response = await this.openai.audio.speech.create({
         model: 'tts-1',
-        voice: 'alloy',
+        voice,
         input: text,
         response_format: 'mp3',
       });
@@ -43,13 +44,13 @@ export class Synthesizer {
     }
   }
 
-  async synthesizeWithTimings(text: string): Promise<{
+  async synthesizeWithTimings(text: string, voice: VoiceOption = 'alloy'): Promise<{
     audioUrl: string;
     wordTimings: Array<{ word: string; start: number; end: number }>;
   }> {
     // For now, just synthesize without detailed timings
     // In a full implementation, you could use word-level timestamps
-    const audioUrl = await this.synthesize(text);
+    const audioUrl = await this.synthesize(text, voice);
 
     // Estimate word timings (simplified)
     const words = text.split(/\s+/);

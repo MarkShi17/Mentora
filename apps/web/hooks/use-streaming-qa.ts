@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useAudioQueue } from './use-audio-queue';
 import { useSessionStore } from '@/lib/session-store';
-import type { StreamEvent, CanvasObject, ObjectPlacement, ObjectReference } from '@/types';
+import type { StreamEvent, CanvasObject, ObjectPlacement, ObjectReference, VoiceOption } from '@/types';
 
 interface StreamingQAState {
   isStreaming: boolean;
@@ -94,7 +94,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
           stream: true,
           // Include user settings
           userName: settings.preferredName || '',
-          voice: settings.voice || 'nova',
+          voice: settings.voice || 'alloy',
           explanationLevel: settings.explanationLevel || 'intermediate',
         }),
         signal: abortControllerRef.current.signal,

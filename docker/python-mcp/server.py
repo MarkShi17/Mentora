@@ -65,6 +65,7 @@ class PythonMCPServer:
                                 "crispr_mechanism",
                                 "cell_cycle",
                                 "gene_expression",
+                                "protein_structure_levels",
                             ],
                             "description": "The diagram template to render"
                         },
@@ -190,7 +191,11 @@ class PythonMCPServer:
     ) -> Dict[str, Any]:
         try:
             plt.close('all')
-            fig, ax = plt.subplots(figsize=(8, 6))
+            # Use larger figure for CRISPR to prevent text overlap
+            if diagram_type == "crispr_mechanism":
+                fig, ax = plt.subplots(figsize=(12, 9))
+            else:
+                fig, ax = plt.subplots(figsize=(8, 6))
             ax.set_xlim(0, 10)
             ax.set_ylim(0, 10)
             ax.set_aspect('equal')
@@ -213,6 +218,8 @@ class PythonMCPServer:
                 self._draw_cell_cycle(ax, highlight)
             elif diagram_type == "gene_expression":
                 self._draw_gene_expression(ax, highlight)
+            elif diagram_type == "protein_structure_levels":
+                self._draw_protein_structure_levels(ax, highlight)
             else:
                 return {
                     "content": [{
@@ -220,7 +227,7 @@ class PythonMCPServer:
                         "text": (
                             "Unknown diagram_type '{diagram_type}'. Supported: "
                             "cell_structure, dna_transcription, photosynthesis, "
-                            "mitosis_phases, crispr_mechanism, cell_cycle, gene_expression."
+                            "mitosis_phases, crispr_mechanism, cell_cycle, gene_expression, protein_structure_levels."
                         ).format(diagram_type=diagram_type)
                     }],
                     "isError": True
@@ -459,164 +466,94 @@ class PythonMCPServer:
                 ha='center', fontsize=9.5, color="#334155", weight='bold')
 
     def _draw_crispr_mechanism(self, ax: plt.Axes, highlight: List[str]) -> None:
+        """Simplified CRISPR-Cas9 mechanism diagram"""
         highlight_set = {h.lower() for h in highlight}
 
-        # Draw DNA double helix - target and non-target strands
-        x = np.linspace(0.5, 9.5, 200)
-        # Target strand (top): y~7.2, Non-target strand (bottom): y~1.8
-        target_strand = 7.2 + 0.3 * np.sin(1.4 * x)
-        non_target_strand = 1.8 + 0.3 * np.sin(1.4 * x + np.pi)
+        # DNA double helix - cleaner and simpler
+        x = np.linspace(1.0, 9.0, 250)
+        target_strand = 6.0 + 0.2 * np.sin(1.5 * x)
+        non_target_strand = 4.0 + 0.2 * np.sin(1.5 * x + np.pi)
 
-        dna_color = "#1d4ed8" if "dna" in highlight_set else "#2563eb"
-        ax.plot(x, target_strand, color=dna_color, linewidth=2.8, zorder=1, label="Target strand")
-        ax.plot(x, non_target_strand, color="#1e40af", linewidth=2.8, zorder=1, label="Non-target strand")
+        dna_color = "#2563eb"
+        ax.plot(x, target_strand, color=dna_color, linewidth=3.5, zorder=1, label="DNA Target")
+        ax.plot(x, non_target_strand, color="#1e40af", linewidth=3.5, zorder=1)
 
-        # DNA base pairs (connecting strands)
-        for tick in np.linspace(0.7, 9.3, 22):
+        # DNA base pairs - fewer for clarity
+        for tick in np.linspace(1.5, 8.5, 15):
             upper = target_strand[np.argmin(np.abs(x - tick))]
             lower = non_target_strand[np.argmin(np.abs(x - tick))]
-            ax.plot([tick, tick], [lower, upper], color="#60a5fa", linewidth=1.3, alpha=0.6, zorder=1)
+            ax.plot([tick, tick], [lower, upper], color="#60a5fa", linewidth=1.5, alpha=0.6, zorder=1)
 
-        # Protospacer region (target sequence on DNA)
-        protospacer_highlight = "protospacer" in highlight_set
-        proto_color = "#8b5cf6" if protospacer_highlight else "#a78bfa"
-        protospacer = patches.Rectangle((3.2, 1.5), 4.3, 0.5,
-                                        facecolor="#ede9fe", edgecolor=proto_color,
-                                        linewidth=2, alpha=0.8, zorder=2)
-        ax.add_patch(protospacer)
-        ax.text(5.35, 1.75, "Protospacer (20 bp)", ha='center', fontsize=9,
-                color="#5b21b6", weight='bold', zorder=3)
-
-        # RNA-DNA hybrid region (guide RNA pairing with target strand)
-        hybrid_highlight = "hybrid" in highlight_set or "rna_dna_hybrid" in highlight_set
-        hybrid_color = "#06b6d4" if hybrid_highlight else "#22d3ee"
-        # Draw wavy line showing RNA-DNA base pairing
-        hybrid_x = np.linspace(3.2, 6.0, 50)
-        hybrid_y = 6.5 + 0.15 * np.sin(8 * hybrid_x)
-        ax.plot(hybrid_x, hybrid_y, color=hybrid_color, linewidth=2.5, zorder=8, linestyle='-')
-        ax.text(4.6, 6.1, "RNA-DNA hybrid", ha='center', fontsize=9,
-                color="#0e7490", style='italic', zorder=11)
-
-        # Cas9 complex with nuclease domains
-        cas9_highlight = "cas9" in highlight_set or "cas9 nuclease" in highlight_set
-        cas9_color = "#f97316" if cas9_highlight else "#fb923c"
-
-        # Main Cas9 body
-        cas9_main = patches.FancyBboxPatch((2.5, 3.0), 4.2, 3.3,
-                                           boxstyle="round,pad=0.25",
-                                           facecolor="#fff7ed",
-                                           edgecolor=cas9_color,
-                                           linewidth=3.2,
-                                           zorder=10)
+        # Cas9 protein complex - compact and positioned on DNA
+        cas9_color = "#f97316"
+        cas9_main = patches.FancyBboxPatch((3.5, 4.4), 2.0, 1.3,
+                                        boxstyle="round,pad=0.2",
+                                        facecolor="#fff7ed",
+                                        edgecolor=cas9_color,
+                                        linewidth=2.5, zorder=10)
         ax.add_patch(cas9_main)
-        ax.text(4.6, 5.6, "Cas9 Nuclease", ha='center', fontsize=13,
+        ax.text(4.5, 5.05, "Cas9", ha='center', fontsize=11,
                 color="#9a3412", weight='bold', zorder=11)
 
-        # HNH domain (cuts target strand)
-        hnh_highlight = "hnh" in highlight_set or "hnh domain" in highlight_set
-        hnh_color = "#dc2626" if hnh_highlight else "#ef4444"
-        hnh = patches.FancyBboxPatch((5.2, 4.8), 1.2, 0.9,
-                                     boxstyle="round,pad=0.1",
-                                     facecolor="#fee2e2",
-                                     edgecolor=hnh_color,
-                                     linewidth=2,
-                                     zorder=11)
-        ax.add_patch(hnh)
-        ax.text(5.8, 5.25, "HNH", ha='center', fontsize=9, color="#7f1d1d", weight='bold', zorder=12)
-
-        # RuvC domain (cuts non-target strand)
-        ruvc_highlight = "ruvc" in highlight_set or "ruvc domain" in highlight_set
-        ruvc_color = "#dc2626" if ruvc_highlight else "#f87171"
-        ruvc = patches.FancyBboxPatch((3.0, 3.5), 1.2, 0.9,
-                                      boxstyle="round,pad=0.1",
-                                      facecolor="#fee2e2",
-                                      edgecolor=ruvc_color,
-                                      linewidth=2,
-                                      zorder=11)
-        ax.add_patch(ruvc)
-        ax.text(3.6, 3.95, "RuvC", ha='center', fontsize=9, color="#7f1d1d", weight='bold', zorder=12)
-
-        # Guide RNA (scaffold + spacer)
-        guide_highlight = "guide_rna" in highlight_set or "grna" in highlight_set
-        guide_color = "#0ea5e9" if guide_highlight else "#38bdf8"
-        guide = patches.FancyBboxPatch((2.8, 7.5), 3.6, 1.0,
-                                       boxstyle="round,pad=0.2",
-                                       facecolor="#e0f2fe",
-                                       edgecolor=guide_color,
-                                       linewidth=2.8,
-                                       zorder=10)
+        # Guide RNA - positioned above Cas9, compact
+        guide_color = "#0ea5e9"
+        guide = patches.FancyBboxPatch((3.3, 6.2), 2.4, 0.7,
+                                    boxstyle="round,pad=0.15",
+                                    facecolor="#e0f2fe", edgecolor=guide_color,
+                                    linewidth=2.5, zorder=10)
         ax.add_patch(guide)
-        ax.text(4.6, 8.0, "Guide RNA (gRNA)", ha='center', fontsize=11,
+        ax.text(4.5, 6.55, "Guide RNA", ha='center', fontsize=10,
                 color="#0c4a6e", weight='bold', zorder=11)
-        ax.text(4.6, 7.7, "Spacer (20 nt) + Scaffold", ha='center', fontsize=8,
-                color="#075985", zorder=11)
 
-        # PAM sequence (NGG motif)
-        pam_highlight = "pam" in highlight_set or "pam sequence" in highlight_set
-        pam_color = "#22c55e" if pam_highlight else "#4ade80"
-        pam = patches.FancyBboxPatch((7.7, 3.5), 1.4, 2.2,
-                                     boxstyle="round,pad=0.2",
-                                     facecolor="#dcfce7",
-                                     edgecolor=pam_color,
-                                     linewidth=2.8,
-                                     zorder=10)
+        # PAM sequence - compact and positioned at DNA end
+        pam_color = "#22c55e"
+        pam = patches.FancyBboxPatch((7.2, 4.4), 1.3, 1.3,
+                                    boxstyle="round,pad=0.2",
+                                    facecolor="#dcfce7", edgecolor=pam_color,
+                                    linewidth=2.5, zorder=10)
         ax.add_patch(pam)
-        ax.text(8.4, 4.9, "PAM", ha='center', fontsize=12, color="#166534", weight='bold', zorder=11)
-        ax.text(8.4, 4.4, "(NGG)", ha='center', fontsize=9, color="#166534", zorder=11)
-        ax.text(8.4, 3.9, "Recognition", ha='center', fontsize=8, color="#14532d", zorder=11)
+        ax.text(7.85, 5.4, "PAM", ha='center', fontsize=11,
+                color="#166534", weight='bold', zorder=11)
+        ax.text(7.85, 4.85, "NGG", ha='center', fontsize=9,
+                color="#166534", style='italic', zorder=11)
 
-        # Double-strand break (DSB) - positioned BETWEEN the strands
-        cut_highlight = "cut_site" in highlight_set or "double_strand_break" in highlight_set
-        cut_color = "#ef4444" if cut_highlight else "#f87171"
-
-        # Calculate midpoint between strands at cut position
-        cut_x = 6.5
-        cut_upper = target_strand[np.argmin(np.abs(x - cut_x))] - 0.2
-        cut_lower = non_target_strand[np.argmin(np.abs(x - cut_x))] + 0.2
+        # DNA cut site - simpler visualization
+        cut_color = "#ef4444"
+        cut_x = 6.3
+        cut_upper = target_strand[np.argmin(np.abs(x - cut_x))]
+        cut_lower = non_target_strand[np.argmin(np.abs(x - cut_x))]
         cut_mid = (cut_upper + cut_lower) / 2
 
-        # Draw cut lines on each strand
-        ax.plot([cut_x, cut_x], [cut_upper, cut_mid + 0.3], color=cut_color,
-                linewidth=3.5, linestyle='--', zorder=5)
-        ax.plot([cut_x, cut_x], [cut_mid - 0.3, cut_lower], color=cut_color,
-                linewidth=3.5, linestyle='--', zorder=5)
+        # Cut lines
+        ax.plot([cut_x, cut_x], [cut_upper + 0.2, cut_mid + 0.3], color=cut_color,
+                linewidth=4, linestyle='--', zorder=5)
+        ax.plot([cut_x, cut_x], [cut_mid - 0.3, cut_lower - 0.2], color=cut_color,
+                linewidth=4, linestyle='--', zorder=5)
 
-        # Add scissor-like marks at cut site
-        ax.plot([cut_x - 0.15, cut_x + 0.15], [cut_mid + 0.2, cut_mid + 0.2],
-                color=cut_color, linewidth=2.5, zorder=6)
-        ax.plot([cut_x - 0.15, cut_x + 0.15], [cut_mid - 0.2, cut_mid - 0.2],
-                color=cut_color, linewidth=2.5, zorder=6)
+        # Cut indicator
+        ax.scatter(cut_x, cut_mid, s=200, color=cut_color, marker='X', zorder=6, edgecolors='white', linewidths=2)
 
-        # Cut site annotation
-        ax.annotate("Double-Strand\nBreak (DSB)", xy=(cut_x, cut_mid), xytext=(7.2, 6.8),
-                    arrowprops=dict(arrowstyle="->", color=cut_color, linewidth=2.2,
-                                   connectionstyle="arc3,rad=0.3"),
-                    fontsize=10, color=cut_color, weight='bold', zorder=11,
-                    ha='left', bbox=dict(boxstyle="round,pad=0.3", facecolor='white',
-                                        edgecolor=cut_color, linewidth=1.5))
+        # Simple annotation for cut site
+        ax.annotate("DNA Cut", xy=(cut_x, cut_mid), xytext=(5.2, 2.0),
+                    arrowprops=dict(arrowstyle="->", color=cut_color, linewidth=2.5),
+                    fontsize=11, color=cut_color, weight='bold', ha='center',
+                    bbox=dict(boxstyle="round,pad=0.4", facecolor='white',
+                            edgecolor=cut_color, linewidth=2), zorder=11)
 
-        # Mechanism arrows
-        # Arrow from gRNA to hybrid region
-        ax.annotate("", xy=(4.6, 6.5), xytext=(4.6, 7.5),
-                    arrowprops=dict(arrowstyle="->", color="#0891b2", linewidth=2,
-                                   connectionstyle="arc3,rad=0"))
+        # Key mechanism steps - simplified and well-spaced
+        ax.text(0.8, 1.5, "How It Works:", fontsize=12, color="#1e293b", weight='bold')
+        ax.text(0.8, 0.8,
+                "1. Guide RNA directs Cas9 to target DNA sequence\n"
+                "2. PAM sequence (NGG) enables Cas9 binding\n"
+                "3. Cas9 cuts both DNA strands precisely",
+                fontsize=10, color="#334155", verticalalignment='top',
+                linespacing=1.8)
 
-        # Arrow from RuvC to non-target strand
-        ax.annotate("", xy=(4.2, 2.3), xytext=(3.6, 3.5),
-                    arrowprops=dict(arrowstyle="->", color="#dc2626", linewidth=1.8))
+        # Axes setup with more space
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        ax.axis("off")
 
-        # Arrow from HNH to target strand
-        ax.annotate("", xy=(6.2, 6.8), xytext=(5.8, 5.7),
-                    arrowprops=dict(arrowstyle="->", color="#dc2626", linewidth=1.8))
-
-        # Detailed mechanism steps at bottom
-        ax.text(0.7, 0.7, "Mechanism:", fontsize=11, color="#1e293b", weight='bold', zorder=11)
-        ax.text(0.7, 0.3,
-                "1. PAM (NGG) recognized on non-target strand\n"
-                "2. Guide RNA binds complementary to target DNA\n"
-                "3. HNH domain cleaves target strand, RuvC cleaves non-target\n"
-                "4. Blunt-ended double-strand break (DSB) created 3 bp upstream of PAM",
-                fontsize=8.5, color="#334155", zorder=11, verticalalignment='top')
 
     def _draw_cell_cycle(self, ax: plt.Axes, highlight: List[str]) -> None:
         highlight_set = {h.lower() for h in highlight}
@@ -718,6 +655,99 @@ class PythonMCPServer:
         ax.text(6.1, 6.0, "Translation", fontsize=10, color="#0f172a")
 
         ax.text(5, 2.4, "Central Dogma: DNA → mRNA → Protein", ha='center', fontsize=12, color="#0f172a", weight='bold')
+
+    def _draw_protein_structure_levels(self, ax: plt.Axes, highlight: List[str]) -> None:
+        """Draw 4 levels of protein structure diagram"""
+        highlight_set = {h.lower() for h in highlight}
+
+        # Four panels showing Primary, Secondary, Tertiary, and Quaternary structure
+        levels = [
+            ("primary", "Primary Structure", "#3b82f6", 1.5),
+            ("secondary", "Secondary Structure", "#10b981", 4.5),
+            ("tertiary", "Tertiary Structure", "#f59e0b", 7.5),
+            ("quaternary", "Quaternary Structure", "#a855f7", 10.5)
+        ]
+
+        ax.set_xlim(0, 13)
+        ax.set_ylim(0, 10)
+        ax.axis('off')
+
+        for key, title, base_color, cx in levels:
+            is_highlighted = key in highlight_set
+            box_color = base_color if is_highlighted else f"{base_color}80"
+
+            # Draw bounding box for each level
+            box = patches.FancyBboxPatch((cx-1.3, 2.2), 2.6, 5.6,
+                                         boxstyle="round,pad=0.1",
+                                         facecolor="#f8fafc",
+                                         edgecolor=base_color,
+                                         linewidth=3 if is_highlighted else 2)
+            ax.add_patch(box)
+
+            # Title
+            ax.text(cx, 8.2, title, ha='center', fontsize=10, weight='bold', color=base_color)
+
+            # Draw structure visualization
+            if key == "primary":
+                # Linear sequence of amino acids
+                y_pos = 5.5
+                amino_acids = ["Gly", "Ala", "Val", "Leu", "Ile"]
+                for i, aa in enumerate(amino_acids):
+                    y = y_pos - i * 0.6
+                    circle = patches.Circle((cx, y), 0.22, facecolor=base_color, edgecolor="#1e293b", linewidth=1.5)
+                    ax.add_patch(circle)
+                    ax.text(cx, y, aa[0], ha='center', va='center', fontsize=7, color="white", weight='bold')
+                    if i < len(amino_acids) - 1:
+                        ax.plot([cx, cx], [y-0.22, y-0.38], color="#64748b", linewidth=2)
+                ax.text(cx, 2.6, "Amino acid\nsequence", ha='center', fontsize=7.5, color="#475569")
+
+            elif key == "secondary":
+                # Alpha helix and beta sheet
+                # Alpha helix (spiral)
+                t = np.linspace(0, 4*np.pi, 50)
+                helix_x = cx - 0.5 + 0.15 * np.cos(t)
+                helix_y = 6.5 - t * 0.3
+                ax.plot(helix_x, helix_y, color=base_color, linewidth=3)
+                ax.text(cx - 0.5, 2.8, "α-helix", ha='center', fontsize=7.5, color="#475569")
+
+                # Beta sheet (zigzag)
+                beta_x = [cx+0.4, cx+0.6, cx+0.4, cx+0.6, cx+0.4, cx+0.6]
+                beta_y = [6.5, 5.8, 5.1, 4.4, 3.7, 3.0]
+                ax.plot(beta_x, beta_y, color=base_color, linewidth=3)
+                for x, y in zip(beta_x, beta_y):
+                    ax.plot([x-0.15, x+0.15], [y, y], color=base_color, linewidth=2)
+                ax.text(cx + 0.5, 2.8, "β-sheet", ha='center', fontsize=7.5, color="#475569")
+
+            elif key == "tertiary":
+                # 3D folded structure
+                # Draw a complex folded shape
+                theta = np.linspace(0, 2*np.pi, 100)
+                r1 = 0.8 + 0.3 * np.sin(5*theta)
+                fold_x = cx + r1 * np.cos(theta) * 0.7
+                fold_y = 5.2 + r1 * np.sin(theta) * 0.8
+                ax.plot(fold_x, fold_y, color=base_color, linewidth=3)
+                ax.fill(fold_x, fold_y, color=base_color, alpha=0.2)
+                # Add some internal bonds
+                ax.plot([cx-0.3, cx+0.3], [5.2, 5.2], color="#64748b", linewidth=1.5, linestyle='--')
+                ax.plot([cx, cx], [4.6, 5.8], color="#64748b", linewidth=1.5, linestyle='--')
+                ax.text(cx, 2.6, "3D folded\npolypeptide", ha='center', fontsize=7.5, color="#475569")
+
+            else:  # quaternary
+                # Multiple subunits
+                subunit_positions = [(cx-0.4, 5.5), (cx+0.4, 5.5), (cx-0.4, 4.2), (cx+0.4, 4.2)]
+                colors = [base_color, "#ec4899", "#06b6d4", "#eab308"]
+                for i, (sx, sy) in enumerate(subunit_positions):
+                    blob_theta = np.linspace(0, 2*np.pi, 30)
+                    blob_r = 0.35
+                    blob_x = sx + blob_r * np.cos(blob_theta)
+                    blob_y = sy + blob_r * np.sin(blob_theta) * 0.8
+                    ax.fill(blob_x, blob_y, color=colors[i], alpha=0.7, edgecolor="#1e293b", linewidth=1.5)
+                ax.text(cx, 2.6, "Multiple\nsubunits", ha='center', fontsize=7.5, color="#475569")
+
+        # Add overall title and summary
+        ax.text(6.5, 9.5, "Four Levels of Protein Structure", ha='center', fontsize=13, weight='bold', color="#0f172a")
+        ax.text(6.5, 0.6, "Each level builds upon the previous: Sequence → Folding → 3D Shape → Complex Assembly",
+                ha='center', fontsize=9, color="#475569", style='italic')
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Call a tool by name"""

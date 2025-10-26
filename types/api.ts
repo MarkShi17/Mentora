@@ -4,6 +4,8 @@ import { Session, SessionPreview } from './session';
 // POST /api/qa Request/Response
 export type TeachingMode = 'guided' | 'direct';
 
+export type VoiceOption = 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+
 export interface ImageInput {
   base64: string;  // Base64-encoded image data (with data:image/... prefix)
   mimeType: string;  // image/png, image/jpeg, etc.
@@ -20,6 +22,9 @@ export interface QARequest {
     topics?: string[];
     conversationHistory?: string[];
   };
+  userName?: string;
+  voice?: VoiceOption;
+  explanationLevel?: 'beginner' | 'intermediate' | 'advanced';
 }
 
 export interface QAResponse {
