@@ -1237,9 +1237,9 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     }
     const narration = narrationParts.join(' ');
 
-    // Extract objects
+    // Extract objects (using [\s\S] to match any character including newlines for multiline code)
     const objects = [];
-    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\][\s\S]*?\[OBJECT_CONTENT\]:\s*([\s\S]*?)(?:\[OBJECT_META[^\]]*\]:\s*([\s\S]*?))?\[OBJECT_END\]/g);
     for (const match of objectMatches) {
       const [_, type, id, content, meta] = match;
       if (type && content) {
