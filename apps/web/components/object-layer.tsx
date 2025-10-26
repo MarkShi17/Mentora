@@ -37,7 +37,7 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
       
       return (
         <div 
-          className="prose prose-sm max-w-none text-slate-800 leading-relaxed"
+          className="prose prose-sm max-w-none text-slate-800 leading-relaxed select-none"
           style={{
             fontSize: `${scaleFactor}em`,
             lineHeight: 1.5,
@@ -77,7 +77,7 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
     case 'diagram':
       return (
         <div
-          className="bg-white rounded overflow-hidden"
+          className="bg-white rounded overflow-hidden select-none"
           style={{
             width: '100%',
             height: '100%',
@@ -121,7 +121,7 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
     case 'graph':
       return (
         <div
-          className="bg-white rounded overflow-hidden"
+          className="bg-white rounded overflow-hidden select-none"
           style={{
             width: '100%',
             height: '100%',
@@ -238,7 +238,7 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
 
       return (
         <div 
-          className="bg-white rounded-lg p-4 shadow-lg h-full overflow-hidden flex items-center justify-center"
+          className="bg-white rounded-lg p-4 shadow-lg h-full overflow-hidden flex items-center justify-center select-none"
           style={{
             width: '100%',
             height: '100%'
@@ -432,7 +432,7 @@ function CanvasObjectItem({
       data-canvas-object="true"
       data-object-id={object.id}
       className={cn(
-        "pointer-events-auto absolute transition-shadow duration-200",
+        "pointer-events-auto absolute transition-shadow duration-200 select-none",
         isDragging ? "cursor-grabbing" : "cursor-grab"
       )}
       style={{
@@ -476,7 +476,7 @@ function CanvasObjectItem({
     >
       <div
         className={cn(
-          "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl border relative",
+          "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl border relative select-none",
           object.selected ? "border-blue-400" : "border-slate-200"
         )}
       >
@@ -488,7 +488,7 @@ function CanvasObjectItem({
           </div>
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
         </div>
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 select-none">
           {object.generationState === 'generating' || object.placeholder ? (
             <ObjectLoadingState type={object.type} />
           ) : (

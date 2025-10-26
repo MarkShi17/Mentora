@@ -13,7 +13,7 @@ import type { CanvasObject, Pin } from "@/types";
 import type { ConnectionAnchor } from "@/types";
 import { getHoveredAnchor, getAnchorPosition } from "@/lib/connection-utils";
 import { useClipboardPaste } from "@/hooks/use-clipboard-paste";
-import { processImageFile } from "@/lib/image-upload";
+import { processImageFile, processVideoFile } from "@/lib/image-upload";
 
 const GRID_SIZE = 40;
 const MIN_SCALE = 0.25;
@@ -239,6 +239,100 @@ const initialPinCenteredRef = useRef<string | null>(null);
     } catch (error) {
       console.error('Failed to paste image:', error);
       alert(error instanceof Error ? error.message : 'Failed to paste image');
+    }
+  }, [activeSessionId, updateCanvasObject]);
+
+  // Handle file upload for images and videos
+  const handleFileUpload = useCallback(async (file: File) => {
+    if (!activeSessionId) return;
+
+    try {
+      console.log('📁 Processing uploaded file for canvas:', file.type);
+      
+      // Get viewport center in world coordinates
+      const container = containerRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      // Convert screen coordinates to world coordinates
+      const currentTransform = transformRef.current;
+      const worldX = (centerX - currentTransform.x) / currentTransform.k;
+      const worldY = (centerY - currentTransform.y) / currentTransform.k;
+
+      // Check if it's an image or video
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+
+      if (isImage) {
+        const imageData = await processImageFile(file);
+        
+        // Create canvas object for the uploaded image
+        const imageObject: CanvasObject = {
+          id: crypto.randomUUID(),
+          type: 'image',
+          label: file.name || 'Uploaded Image',
+          x: worldX - 150, // Center the 300px wide image
+          y: worldY - 150, // Center the 300px tall image
+          width: 300,
+          height: 300,
+          color: '#6b7280',
+          selected: false,
+          zIndex: 1,
+          data: {
+            content: imageData.base64 // Store base64 data URL
+          },
+          metadata: {
+            mimeType: imageData.mimeType,
+            size: imageData.size,
+            originalWidth: imageData.width,
+            originalHeight: imageData.height
+          }
+        };
+
+        // Add to canvas
+        updateCanvasObject(activeSessionId, imageObject);
+        console.log('✅ Uploaded image added to canvas at viewport center');
+
+      } else if (isVideo) {
+        const videoData = await processVideoFile(file);
+        
+        // Create canvas object for the uploaded video
+        const videoObject: CanvasObject = {
+          id: crypto.randomUUID(),
+          type: 'video',
+          label: file.name || 'Uploaded Video',
+          x: worldX - 150, // Center the 300px wide video
+          y: worldY - 150, // Center the 300px tall video
+          width: 300,
+          height: 300,
+          color: '#6b7280',
+          selected: false,
+          zIndex: 1,
+          data: {
+            type: 'video',
+            url: videoData.url,
+            alt: file.name || 'Uploaded video'
+          },
+          metadata: {
+            mimeType: videoData.mimeType,
+            size: videoData.size,
+            originalWidth: videoData.width,
+            originalHeight: videoData.height,
+            createdAt: Date.now()
+          }
+        };
+
+        // Add to canvas
+        updateCanvasObject(activeSessionId, videoObject);
+        console.log('✅ Uploaded video added to canvas at viewport center');
+      }
+
+    } catch (error) {
+      console.error('❌ Failed to process uploaded file:', error);
+      alert(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }, [activeSessionId, updateCanvasObject]);
 

@@ -5,9 +5,10 @@ import { VoiceToggle } from "@/components/voice-toggle";
 import { ImageUploadButton } from "@/components/image-upload-button";
 import { ImagePreview } from "@/components/image-preview";
 import { useSessionStore } from "@/lib/session-store";
+import type { CanvasObject } from "@/types";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
 import { useSequentialConnections } from "@/hooks/use-sequential-connections";
-import { processImageFile } from "@/lib/image-upload";
+import { processImageFile, processVideoFile } from "@/lib/image-upload";
 import type { ImageAttachment } from "@/types";
 
 // Helper function to get color for object type
@@ -44,6 +45,7 @@ export function PromptBar() {
   const setTimelineOpen = useSessionStore((state) => state.setTimelineOpen);
   const markSessionAsHavingFirstInput = useSessionStore((state) => state.markSessionAsHavingFirstInput);
   const sessionsWithFirstInput = useSessionStore((state) => state.sessionsWithFirstInput);
+  const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
   const { startSequence, addObjectToSequence, endSequence } = useSequentialConnections();
 
   // Streaming QA hook - always enabled
@@ -206,26 +208,89 @@ export function PromptBar() {
     setValue((prev) => `${prev} ${transcript}`.trim());
   }, []);
 
-  const handleImageSelect = useCallback(async (file: File) => {
-    try {
-      const imageData = await processImageFile(file);
-      const attachment: ImageAttachment = {
-        id: crypto.randomUUID(),
-        type: 'image',
-        base64: imageData.base64,
-        mimeType: imageData.mimeType,
-        size: imageData.size,
-        width: imageData.width,
-        height: imageData.height
-      };
+  const handleFileUpload = useCallback(async (file: File) => {
+    if (!activeSessionId) return;
 
-      setSelectedImages(prev => [...prev, file]);
-      setImageAttachments(prev => [...prev, attachment]);
+    try {
+      console.log('📁 Processing uploaded file for canvas:', file.type);
+      
+      // Get viewport center coordinates (approximate center of screen)
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+
+      // Check if it's an image or video
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+
+      if (isImage) {
+        const imageData = await processImageFile(file);
+        
+        // Create canvas object for the uploaded image
+        const imageObject: CanvasObject = {
+          id: crypto.randomUUID(),
+          type: 'image',
+          label: file.name || 'Uploaded Image',
+          x: centerX - 150, // Center the 300px wide image
+          y: centerY - 150, // Center the 300px tall image
+          width: 300,
+          height: 300,
+          color: '#6b7280',
+          selected: false,
+          zIndex: 1,
+          data: {
+            content: imageData.base64 // Store base64 data URL
+          },
+          metadata: {
+            mimeType: imageData.mimeType,
+            size: imageData.size,
+            originalWidth: imageData.width,
+            originalHeight: imageData.height
+          }
+        };
+
+        // Add to canvas
+        updateCanvasObject(activeSessionId, imageObject);
+        console.log('✅ Uploaded image added to canvas at viewport center');
+
+      } else if (isVideo) {
+        const videoData = await processVideoFile(file);
+        
+        // Create canvas object for the uploaded video
+        const videoObject: CanvasObject = {
+          id: crypto.randomUUID(),
+          type: 'video',
+          label: file.name || 'Uploaded Video',
+          x: centerX - 150, // Center the 300px wide video
+          y: centerY - 150, // Center the 300px tall video
+          width: 300,
+          height: 300,
+          color: '#6b7280',
+          selected: false,
+          zIndex: 1,
+          data: {
+            type: 'video',
+            url: videoData.url,
+            alt: file.name || 'Uploaded video'
+          },
+          metadata: {
+            mimeType: videoData.mimeType,
+            size: videoData.size,
+            originalWidth: videoData.width,
+            originalHeight: videoData.height,
+            createdAt: Date.now()
+          }
+        };
+
+        // Add to canvas
+        updateCanvasObject(activeSessionId, videoObject);
+        console.log('✅ Uploaded video added to canvas at viewport center');
+      }
+
     } catch (error) {
-      console.error('Failed to process image:', error);
-      alert(error instanceof Error ? error.message : 'Failed to process image');
+      console.error('❌ Failed to process uploaded file:', error);
+      alert(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, []);
+  }, [activeSessionId, updateCanvasObject]);
 
   const handleRemoveImage = useCallback((index: number) => {
     setSelectedImages(prev => prev.filter((_, i) => i !== index));
@@ -431,7 +496,7 @@ export function PromptBar() {
         className="flex w-full items-center gap-4 rounded-3xl glass-white px-6 py-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] backdrop-blur-2xl border border-white/50 hover:shadow-[0_12px_40px_rgba(0,0,0,0.16)] transition-all duration-300"
       >
         <ImageUploadButton
-          onImageSelect={handleImageSelect}
+          onFileSelect={handleFileUpload}
           disabled={streamingQA.isStreaming || voiceInputState.isPushToTalkActive}
         />
         <input
