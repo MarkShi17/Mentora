@@ -250,6 +250,39 @@ ChromaDB stores chat turns, canvas objects, and routing metadata
           },
         },
 
+        // 7. Inspiration Component (HIDDEN - Reveal on "how were you made") - BRANCHES DOWN
+        {
+          id: objectIds.inspiration = `obj-${nanoid(8)}`,
+          type: 'note',
+          label: 'Inspiration',
+          x: 2500,
+          y: 950,
+          width: 500,
+          height: 250,
+          color: '#f97316', // Orange
+          selected: false,
+          zIndex: 7,
+          hidden: true,  // Reveal on trigger 3
+          demoGroup: 'inspiration',
+          data: {
+            content: `# **Inspiration**
+
+## **The Problem**
+Voice agents often lack visual material to build full understanding. When we learn from a person, **they don't just talk.**
+
+## **The Vision**
+They draw, gesture, highlight, and point to things as they explain.
+
+## **Our Solution**
+We wanted to recreate that dynamic: the feeling of someone explaining with both words and visuals, like a human conversation that unfolds naturally on a whiteboard or canvas.
+
+**Mentora brings the human touch to AI tutoring.**`,
+          },
+          metadata: {
+            description: 'Inspiration behind Mentora',
+          },
+        },
+
       ];
 
       // Add objects to the session

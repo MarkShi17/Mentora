@@ -11,6 +11,9 @@ const DEMO_RESPONSES = {
   },
   features: {
     text: "Let me show you what I can do for math! I can create beautiful LaTeX equations and generate interactive Manim animations to help you visualize mathematical concepts.",
+  },
+  inspiration: {
+    text: "Great question! The inspiration came from watching how humans actually teach. When we learn from a person, they don't just talk - they draw, gesture, highlight, and point to things as they explain. We wanted to recreate that natural dynamic on a digital canvas.",
   }
 };
 
@@ -18,7 +21,7 @@ const DEMO_RESPONSES = {
 const audioCache = new Map<string, HTMLAudioElement>();
 
 // Helper functions for localStorage audio caching
-const getCachedAudioUrl = (cacheKey: string): string | null => {
+const getCachedAudioData = (cacheKey: string): string | null => {
   try {
     return localStorage.getItem(`mentora_tts_${cacheKey}`);
   } catch (error) {
@@ -27,9 +30,15 @@ const getCachedAudioUrl = (cacheKey: string): string | null => {
   }
 };
 
-const setCachedAudioUrl = (cacheKey: string, audioUrl: string): void => {
+const setCachedAudioData = (cacheKey: string, base64Data: string): void => {
   try {
-    localStorage.setItem(`mentora_tts_${cacheKey}`, audioUrl);
+    // Check if data is too large for localStorage
+    const sizeInBytes = new Blob([base64Data]).size;
+    if (sizeInBytes > 4 * 1024 * 1024) { // 4MB limit
+      console.warn('Audio too large for localStorage, skipping cache');
+      return;
+    }
+    localStorage.setItem(`mentora_tts_${cacheKey}`, base64Data);
   } catch (error) {
     console.warn('Failed to cache audio in localStorage:', error);
   }
@@ -86,11 +95,11 @@ export function useDemoVoiceHandler(sessionId: string | null) {
       }
       
       // Check localStorage first
-      const cachedUrl = getCachedAudioUrl(cacheKey);
-      if (cachedUrl) {
+      const cachedBase64 = getCachedAudioData(cacheKey);
+      if (cachedBase64) {
         try {
           const audio = new Audio();
-          audio.src = cachedUrl;
+          audio.src = `data:audio/mp3;base64,${cachedBase64}`;
           audioCache.set(cacheKey, audio);
           console.log(`✅ Loaded cached audio from localStorage for ${key}`);
           continue;
@@ -111,19 +120,12 @@ export function useDemoVoiceHandler(sessionId: string | null) {
           const data = await ttsResponse.json();
           const audio = new Audio();
           
-          // Convert base64 to blob URL
-          const binaryString = atob(data.audio);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          const blob = new Blob([bytes], { type: 'audio/mp3' });
-          const audioUrl = URL.createObjectURL(blob);
+          // Store base64 data directly
+          audio.src = `data:audio/mp3;base64,${data.audio}`;
           
-          // Cache in localStorage for persistence
-          setCachedAudioUrl(cacheKey, audioUrl);
+          // Cache base64 data in localStorage for persistence
+          setCachedAudioData(cacheKey, data.audio);
           
-          audio.src = audioUrl;
           audioCache.set(cacheKey, audio);
           console.log(`✅ Generated and cached TTS audio for ${key}`);
         }
@@ -151,11 +153,11 @@ export function useDemoVoiceHandler(sessionId: string | null) {
     }
     
     // Check localStorage as fallback
-    const cachedUrl = getCachedAudioUrl(cacheKey);
-    if (cachedUrl) {
+    const cachedBase64 = getCachedAudioData(cacheKey);
+    if (cachedBase64) {
       try {
         const audio = new Audio();
-        audio.src = cachedUrl;
+        audio.src = `data:audio/mp3;base64,${cachedBase64}`;
         audio.currentTime = 0;
         audio.play();
         
@@ -180,9 +182,26 @@ export function useDemoVoiceHandler(sessionId: string | null) {
   }, [speak]);
 
   // Detect trigger phrases in text
-  const detectTrigger = (text: string): 'architecture' | 'features' | null => {
+  const detectTrigger = (text: string): 'architecture' | 'features' | 'inspiration' | null => {
     const lowerText = text.toLowerCase();
     console.log('🔍 Detecting trigger for text:', lowerText);
+
+    // Trigger 3: "How were you made" - reveals inspiration component
+    const inspirationTriggers = [
+      'how were you made',
+      'how were you created',
+      'what inspired you',
+      'where did the idea come from',
+      'how did you come to be',
+      'what was the inspiration',
+      'tell me about your creation',
+      'how did this start'
+    ];
+
+    if (inspirationTriggers.some((trigger) => lowerText.includes(trigger))) {
+      console.log('✅ Inspiration trigger detected');
+      return 'inspiration';
+    }
 
     // Trigger 2: "What can you do for math" - reveals math examples with LaTeX and Manim
     // Check this FIRST because "show me what you can do" contains "what are you"
@@ -275,19 +294,30 @@ export function useDemoVoiceHandler(sessionId: string | null) {
     // Mark this message as processed
     lastProcessedMessageIdRef.current = latestUnprocessedUserMessage.id;
 
-    const trigger = detectTrigger(latestUnprocessedUserMessage.content);
-    console.log('🎯 Trigger detection result:', trigger, 'for message:', latestUnprocessedUserMessage.content);
+    // Determine which step we're on based on revealed groups
+    let currentStep = 'architecture';
+    if (revealedGroupsRef.current.has('architecture') && !revealedGroupsRef.current.has('features')) {
+      currentStep = 'features';
+    } else if (revealedGroupsRef.current.has('features') && !revealedGroupsRef.current.has('inspiration')) {
+      currentStep = 'inspiration';
+    } else if (revealedGroupsRef.current.has('inspiration')) {
+      // All steps completed, don't process
+      console.log('⏭️ All demo steps completed');
+      return;
+    }
+
+    console.log('🎯 Auto-proceeding to step:', currentStep, 'for message:', latestUnprocessedUserMessage.content);
     console.log('🎯 Revealed groups:', Array.from(revealedGroupsRef.current));
     console.log('🎯 Is processing:', isProcessingRef.current);
 
-    if (trigger && !revealedGroupsRef.current.has(trigger) && !isProcessingRef.current) {
+    if (!isProcessingRef.current) {
       // Mark as processing to prevent duplicates
       isProcessingRef.current = true;
       
       // Mark as revealed to prevent duplicate reveals
-      revealedGroupsRef.current.add(trigger);
+      revealedGroupsRef.current.add(currentStep);
 
-      console.log(`🎯 Demo trigger detected: "${trigger}" from message: "${latestUnprocessedUserMessage.content}"`);
+      console.log(`🎯 Demo step proceeding: "${currentStep}" from message: "${latestUnprocessedUserMessage.content}"`);
 
       // Find the source object (main title) to create connections from
       const sourceObject = canvasObjects.find(
@@ -307,7 +337,7 @@ export function useDemoVoiceHandler(sessionId: string | null) {
          console.log('🎭 Demo mode - adding hardcoded response to chat and speaking it');
          
          // Get the hardcoded response
-         const response = DEMO_RESPONSES[trigger];
+         const response = DEMO_RESPONSES[currentStep];
          const responseSentences = response.text.split('. ').map(s => s.trim() + (s.endsWith('.') ? '' : '.'));
 
         // Add "Thinking..." message first (like real system) and get its ID
@@ -324,7 +354,7 @@ export function useDemoVoiceHandler(sessionId: string | null) {
            });
 
            // Start TTS immediately
-           if (trigger === 'architecture') {
+           if (currentStep === 'architecture') {
              // Architecture: TTS for entire response with completion callback
              speakCached(response.text, settings.voice, () => {
                console.log('🎤 TTS completed, revealing architecture components');
@@ -342,7 +372,7 @@ export function useDemoVoiceHandler(sessionId: string | null) {
                  }
                }, 1000);
              });
-           } else if (trigger === 'features') {
+           } else if (currentStep === 'features') {
              // Features: TTS for entire response with completion callback
              speakCached(response.text, settings.voice, () => {
                console.log('🎤 Features TTS completed, revealing components one by one');
@@ -372,6 +402,27 @@ export function useDemoVoiceHandler(sessionId: string | null) {
                    revealDemoObjects(sessionId, 'features', latexObject.id);
                  }
                }, 2000);
+             });
+           } else if (currentStep === 'inspiration') {
+             // Inspiration: TTS for entire response with completion callback
+             speakCached(response.text, settings.voice, () => {
+               console.log('🎤 Inspiration TTS completed, revealing inspiration component');
+               
+               // Find the Manim video object to branch from
+               const manimObject = canvasObjects.find(
+                 (obj) => obj.demoGroup === 'features' && !obj.hidden && obj.label === 'Manim Animation'
+               );
+               let sourceObjectId = sourceObject.id;
+               if (manimObject) {
+                 sourceObjectId = manimObject.id;
+                 console.log('🔗 Branching from Manim object:', manimObject.label);
+               }
+               
+               // Reveal inspiration component
+               setTimeout(() => {
+                 console.log('🎯 Revealing Inspiration component');
+                 revealDemoObjects(sessionId, 'inspiration', sourceObjectId);
+               }, 500);
              });
            }
          }, 1000);
