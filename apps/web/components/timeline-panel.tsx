@@ -36,10 +36,11 @@ export function TimelinePanel() {
   const stopStreamingCallback = useSessionStore((state) => state.stopStreamingCallback);
   const rerunQuestionCallback = useSessionStore((state) => state.rerunQuestionCallback);
 
-  // Global ESC key handler for stopping generation
+  // Global ESC and Spacebar handler for stopping generation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && stopStreamingCallback) {
+      // Check for stop keys (ESC or Spacebar) when AI is generating
+      if (stopStreamingCallback && (event.key === 'Escape' || event.code === 'Space')) {
         // Don't prevent default or stop if user is in an input field
         const target = event.target as HTMLElement;
         const isInInputField =
@@ -48,9 +49,13 @@ export function TimelinePanel() {
           target.isContentEditable;
 
         if (!isInInputField) {
-          event.preventDefault();
-          console.log('⌨️ ESC pressed - stopping generation');
-          stopStreamingCallback();
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            console.log('⌨️ ESC pressed - stopping generation');
+            stopStreamingCallback();
+          }
+          // Note: Spacebar handling is primarily in ContinuousAI component
+          // This is just for documentation/consistency
         }
       }
     };
@@ -348,7 +353,7 @@ export function TimelinePanel() {
                         }
                       }}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white/60 hover:bg-red-50 text-slate-600 hover:text-red-600 transition-all duration-200 hover:scale-105 active:scale-95 border border-slate-200/60 hover:border-red-200/60 shadow-sm hover:shadow-md"
-                      title="Stop generating (ESC)"
+                      title="Stop generating (ESC or Spacebar)"
                     >
                       <StopCircle className="h-3 w-3" />
                       <span>Stop</span>

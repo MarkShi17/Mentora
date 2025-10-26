@@ -133,54 +133,55 @@ export function PromptBar() {
     }
   }, [streamingQA.currentText, streamingQA.isStreaming, streamingQA.audioState.isPlaying, updateMessage]);
 
+  // Create a stable stop callback using useCallback
+  const handleStopStreaming = useCallback(() => {
+    console.log('🛑 Stop from prompt bar - stopping generation');
+
+    // Get refs at time of callback execution
+    const thinkingMessageId = thinkingMessageIdRef.current;
+    const sessionId = currentSessionRef.current;
+
+    // Stop streaming
+    streamingQA.stopStreaming();
+
+    // Update the message to show it was interrupted (if it had content)
+    if (sessionId && thinkingMessageId) {
+      const currentText = streamingQA.currentText;
+      if (currentText && currentText.trim()) {
+        console.log('⚠️ Marking message as interrupted with partial content');
+        updateMessage(sessionId, thinkingMessageId, {
+          content: currentText,
+          interrupted: true,
+          interruptedAt: new Date().toISOString(),
+          isStreaming: false,
+          isPlayingAudio: false
+        });
+      } else {
+        console.log('🗑️ Removing empty thinking message');
+        removeMessage(sessionId, thinkingMessageId);
+      }
+      thinkingMessageIdRef.current = null;
+
+      appendTimelineEvent(sessionId, {
+        description: "Response stopped by user",
+        type: "response"
+      });
+    }
+
+    // Reset refs and sequence
+    currentSessionRef.current = null;
+    endSequence();
+    sequenceKeyRef.current = null;
+  }, [streamingQA, updateMessage, removeMessage, appendTimelineEvent, endSequence]);
+
   // Register stop streaming callback when streaming starts
   useEffect(() => {
     if (streamingQA.isStreaming) {
-      setStopStreamingCallback(() => {
-        console.log('🛑 Stop from prompt bar - stopping generation');
-
-        // Get current state before stopping
-        const partialText = streamingQA.currentText;
-        const thinkingMessageId = thinkingMessageIdRef.current;
-        const sessionId = currentSessionRef.current;
-
-        // Stop streaming
-        streamingQA.stopStreaming();
-        endSequence();
-        sequenceKeyRef.current = null;
-
-        // Update the message to show it was interrupted (if it had content)
-        if (sessionId && thinkingMessageId) {
-          if (partialText && partialText.trim()) {
-            console.log('⚠️ Marking message as interrupted with partial content');
-            updateMessage(sessionId, thinkingMessageId, {
-              content: partialText,
-              interrupted: true,
-              interruptedAt: new Date().toISOString(),
-              isStreaming: false,
-              isPlayingAudio: false
-            });
-          } else {
-            console.log('🗑️ Removing empty thinking message');
-            removeMessage(sessionId, thinkingMessageId);
-          }
-          thinkingMessageIdRef.current = null;
-
-          appendTimelineEvent(sessionId, {
-            description: "Response stopped by user",
-            type: "response"
-          });
-        }
-
-        // Reset refs
-        currentSessionRef.current = null;
-      });
+      setStopStreamingCallback(handleStopStreaming);
     } else {
-      // Clear the callback when streaming stops
       setStopStreamingCallback(null);
     }
-  }, [streamingQA.isStreaming, streamingQA.currentText, streamingQA.stopStreaming,
-      setStopStreamingCallback, updateMessage, removeMessage, appendTimelineEvent, endSequence]);
+  }, [streamingQA.isStreaming, handleStopStreaming, setStopStreamingCallback]);
 
   const handleTranscript = useCallback((transcript: string) => {
     setValue((prev) => `${prev} ${transcript}`.trim());
