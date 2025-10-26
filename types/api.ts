@@ -74,6 +74,9 @@ export type StreamEventType =
   | 'canvas_object'   // New canvas object generated
   | 'reference'       // Object reference detected
   | 'metadata'        // Response metadata
+  | 'brain_selected'  // Brain selected for question
+  | 'mcp_tool_start'  // MCP tool execution started
+  | 'mcp_tool_complete' // MCP tool execution completed
   | 'complete'        // Stream finished
   | 'error';          // Error occurred
 
@@ -141,12 +144,45 @@ export interface ErrorEvent extends BaseStreamEvent {
   };
 }
 
+export interface BrainSelectedEvent extends BaseStreamEvent {
+  type: 'brain_selected';
+  data: {
+    brainType: 'math' | 'biology' | 'code' | 'design' | 'general';
+    brainName: string;
+    confidence: number;
+    reasoning: string;
+  };
+}
+
+export interface MCPToolStartEvent extends BaseStreamEvent {
+  type: 'mcp_tool_start';
+  data: {
+    toolName: string;
+    serverId: string;
+    description: string;
+  };
+}
+
+export interface MCPToolCompleteEvent extends BaseStreamEvent {
+  type: 'mcp_tool_complete';
+  data: {
+    toolName: string;
+    serverId: string;
+    success: boolean;
+    error?: string;
+    duration: number;
+  };
+}
+
 export type StreamEvent =
   | TextChunkEvent
   | AudioChunkEvent
   | CanvasObjectEvent
   | ReferenceEvent
   | MetadataEvent
+  | BrainSelectedEvent
+  | MCPToolStartEvent
+  | MCPToolCompleteEvent
   | CompleteEvent
   | ErrorEvent;
 

@@ -6,6 +6,8 @@ export type Session = {
 
 export type MessageRole = "user" | "assistant";
 
+export type BrainType = 'math' | 'biology' | 'code' | 'design' | 'general';
+
 export type Message = {
   id: string;
   role: MessageRole;
@@ -13,6 +15,9 @@ export type Message = {
   timestamp: string;
   highlightIds?: string[];
   canvasObjectIds?: string[];  // IDs of canvas objects created during this message
+  brainType?: BrainType;
+  brainConfidence?: number;
+  mcpToolsUsed?: string[];
 };
 
 export type CanvasObjectType = "diagram" | "note" | "formula" | "image" | "text" | "code" | "graph" | "latex";
@@ -80,6 +85,9 @@ export type StreamEvent =
   | { type: 'audio_chunk'; data: { audio: string; text: string; sentenceIndex: number } }
   | { type: 'canvas_object'; data: { object: any; placement: ObjectPlacement } }
   | { type: 'reference'; data: ObjectReference }
+  | { type: 'brain_selected'; data: { brainType: BrainType; brainName: string; confidence: number; reasoning: string } }
+  | { type: 'mcp_tool_start'; data: { toolName: string; serverId: string; description: string } }
+  | { type: 'mcp_tool_complete'; data: { toolName: string; serverId: string; success: boolean; error?: string; duration: number } }
   | { type: 'complete'; data?: any }
   | { type: 'error'; data: { message: string } };
 

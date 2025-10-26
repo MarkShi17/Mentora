@@ -16,6 +16,9 @@ export interface Turn {
   objectsCreated?: string[];
   objectsReferenced?: string[];
   highlightedContext?: HighlightedContext;
+  brainType?: 'math' | 'biology' | 'code' | 'design' | 'general';
+  brainConfidence?: number;
+  mcpToolsUsed?: string[];
 }
 
 export interface Session {

@@ -5,6 +5,7 @@ import { ExternalLink, LocateFixed, MapPin, MousePointer2, Trash2 } from "lucide
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
 import { cn } from "@/lib/cn";
+import { BrainBadge } from "@/components/brain-badge";
 
 const BoxSelectIcon: ComponentType<{ className?: string }> = ({ className }) => (
   <svg
@@ -65,6 +66,9 @@ export function FloatingHeader() {
           {activeSession?.title ?? "Create a new lesson"}
         </h1>
       </div>
+
+      {/* Brain Badge */}
+      <BrainBadge />
 
       {/* Tool Buttons */}
       <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-2 py-2 shadow-lg backdrop-blur-md">

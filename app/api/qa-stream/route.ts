@@ -143,8 +143,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           type: 'brain_selected',
           timestamp: Date.now(),
           data: {
-            brain: brainResult.selectedBrain.type,
-            model: brainResult.selectedBrain.model,
+            brainType: brainResult.selectedBrain.type,
+            brainName: brainResult.selectedBrain.name,
             confidence: brainResult.confidence,
             reasoning: brainResult.reasoning
           }
@@ -212,6 +212,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           timestamp: Date.now(),
           objectsCreated: generatedObjects.map(obj => obj.id),
           objectsReferenced: generatedReferences.map(ref => ref.objectId),
+          brainType: brainResult.selectedBrain.type,
+          brainConfidence: brainResult.confidence,
+          mcpToolsUsed: brainResult.selectedBrain.mcpTools,
         });
 
         logger.info('✅ Streaming QA request completed', {

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { nanoid } from "@/lib/utils";
 import {
+  BrainType,
   CanvasObject,
   ConnectionAnchor,
   Message,
@@ -41,6 +42,21 @@ type VoiceInputState = {
   isPushToTalkActive: boolean;
 };
 
+type BrainState = {
+  brainType: BrainType | null;
+  brainName: string | null;
+  confidence: number | null;
+  reasoning: string | null;
+};
+
+type MCPToolStatus = {
+  toolName: string;
+  status: 'idle' | 'running' | 'complete' | 'error';
+  startTime?: number;
+  endTime?: number;
+  error?: string;
+};
+
 type SessionState = {
   sessions: Session[];
   activeSessionId: string | null;
@@ -63,6 +79,8 @@ type SessionState = {
   voiceInputState: VoiceInputState;
   stopStreamingCallback: (() => void) | null;
   rerunQuestionCallback: ((question: string) => void) | null;
+  activeBrain: Record<string, BrainState>;
+  mcpToolStatus: Record<string, MCPToolStatus[]>;
   setActiveSession: (sessionId: string) => void;
   createSession: (payload: { title: string }) => Promise<string>;
   updateSessionTitle: (sessionId: string, title: string) => void;
@@ -101,6 +119,10 @@ type SessionState = {
   deleteConnection: (sessionId: string, connectionId: string) => void;
   deleteConnectionsByObjectId: (sessionId: string, objectId: string) => void;
   getConnectionsForObject: (sessionId: string, objectId: string) => ObjectConnection[];
+  setBrainState: (sessionId: string, brain: BrainState) => void;
+  addMCPToolStatus: (sessionId: string, tool: MCPToolStatus) => void;
+  updateMCPToolStatus: (sessionId: string, toolName: string, updates: Partial<MCPToolStatus>) => void;
+  clearMCPToolStatus: (sessionId: string) => void;
 };
 
 const withImmer = immer<SessionState>;
@@ -138,6 +160,8 @@ export const useSessionStore = create<SessionState>()(
       },
       stopStreamingCallback: null,
       rerunQuestionCallback: null,
+      activeBrain: {},
+      mcpToolStatus: {},
     setActiveSession: (sessionId) => {
       set((state) => {
         if (!state.sessions.find((s) => s.id === sessionId)) {
@@ -200,6 +224,8 @@ export const useSessionStore = create<SessionState>()(
           state.timeline[newSession.id] = [];
           state.transcripts[newSession.id] = "";
           state.pins[newSession.id] = [];
+          state.activeBrain[newSession.id] = { brainType: null, brainName: null, confidence: null, reasoning: null };
+          state.mcpToolStatus[newSession.id] = [];
         });
         
         return newSession.id;
@@ -222,6 +248,8 @@ export const useSessionStore = create<SessionState>()(
           state.timeline[id] = [];
           state.transcripts[id] = "";
           state.pins[id] = [];
+          state.activeBrain[id] = { brainType: null, brainName: null, confidence: null, reasoning: null };
+          state.mcpToolStatus[id] = [];
         });
         return id;
       }
@@ -250,6 +278,8 @@ export const useSessionStore = create<SessionState>()(
         delete state.canvasViews[sessionId];
         delete state.selectionMethods[sessionId];
         delete state.lastSelectedObjectIds[sessionId];
+        delete state.activeBrain[sessionId];
+        delete state.mcpToolStatus[sessionId];
 
         // If we deleted the active session, switch to another session or set to null
         if (state.activeSessionId === sessionId) {
@@ -559,6 +589,35 @@ export const useSessionStore = create<SessionState>()(
       return connections.filter(
         (conn) => conn.sourceObjectId === objectId || conn.targetObjectId === objectId
       );
+    },
+    setBrainState: (sessionId, brain) => {
+      set((state) => {
+        state.activeBrain[sessionId] = brain;
+      });
+    },
+    addMCPToolStatus: (sessionId, tool) => {
+      set((state) => {
+        if (!state.mcpToolStatus[sessionId]) {
+          state.mcpToolStatus[sessionId] = [];
+        }
+        state.mcpToolStatus[sessionId].push(tool);
+      });
+    },
+    updateMCPToolStatus: (sessionId, toolName, updates) => {
+      set((state) => {
+        const tools = state.mcpToolStatus[sessionId];
+        if (!tools) return;
+
+        const tool = tools.find(t => t.toolName === toolName && t.status === 'running');
+        if (tool) {
+          Object.assign(tool, updates);
+        }
+      });
+    },
+    clearMCPToolStatus: (sessionId) => {
+      set((state) => {
+        state.mcpToolStatus[sessionId] = [];
+      });
     }
     };
   })

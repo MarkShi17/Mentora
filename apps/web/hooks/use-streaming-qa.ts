@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { useAudioQueue } from './use-audio-queue';
+import { useSessionStore } from '@/lib/session-store';
 import type { StreamEvent, CanvasObject, ObjectPlacement, ObjectReference } from '@/types';
 
 interface StreamingQAState {
@@ -27,6 +28,10 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
   const audioQueue = useAudioQueue();
   const eventSourceRef = useRef<EventSource | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const setBrainState = useSessionStore((state) => state.setBrainState);
+  const addMCPToolStatus = useSessionStore((state) => state.addMCPToolStatus);
+  const updateMCPToolStatus = useSessionStore((state) => state.updateMCPToolStatus);
 
   /**
    * Start streaming QA request
@@ -128,6 +133,43 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
 
             // Handle different event types
             switch (event.type) {
+              case 'brain_selected':
+                console.log('🧠 Brain selected:', event.data.brainName, `(${event.data.confidence.toFixed(2)} confidence)`);
+                console.log('   Reasoning:', event.data.reasoning);
+                setBrainState(sessionId, {
+                  brainType: event.data.brainType,
+                  brainName: event.data.brainName,
+                  confidence: event.data.confidence,
+                  reasoning: event.data.reasoning,
+                });
+                break;
+
+              case 'mcp_tool_start':
+                console.log('🔧 MCP tool started:', event.data.toolName);
+                console.log('   Description:', event.data.description);
+                addMCPToolStatus(sessionId, {
+                  toolName: event.data.toolName,
+                  status: 'running',
+                  startTime: Date.now(),
+                });
+                break;
+
+              case 'mcp_tool_complete':
+                console.log(
+                  event.data.success ? '✅ MCP tool completed:' : '❌ MCP tool failed:',
+                  event.data.toolName,
+                  `(${event.data.duration}ms)`
+                );
+                if (event.data.error) {
+                  console.error('   Error:', event.data.error);
+                }
+                updateMCPToolStatus(sessionId, event.data.toolName, {
+                  status: event.data.success ? 'complete' : 'error',
+                  endTime: Date.now(),
+                  error: event.data.error,
+                });
+                break;
+
               case 'text_chunk':
                 console.log('📝 Text chunk:', event.data.text);
                 setState(prev => ({
