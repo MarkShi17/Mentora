@@ -2,8 +2,9 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useRef } from "react";
-import { CanvasObject } from "@/types";
+import { CanvasObject, ConnectionAnchor } from "@/types";
 import { cn } from "@/lib/cn";
+import { getHoveredAnchor } from "@/lib/connection-utils";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -183,12 +184,14 @@ function renderObjectContent(object: CanvasObject) {
 type ObjectLayerProps = {
   objects: CanvasObject[];
   transform: { x: number; y: number; k: number };
-  onSelect: (id: string, event: React.MouseEvent) => void;
   onDragStart?: (id: string, event: React.PointerEvent) => void;
   onDragMove?: (id: string, event: React.PointerEvent) => void;
   onDragEnd?: (id: string, event: React.PointerEvent) => void;
   onContextMenu?: (id: string, event: React.MouseEvent) => void;
   onDimensionsMeasured?: (id: string, width: number, height: number) => void;
+  onConnectionStart?: (id: string, anchor: ConnectionAnchor, event: React.PointerEvent) => void;
+  onAnchorHover?: (id: string, anchor: ConnectionAnchor | null) => void;
+  hoveredAnchor?: { objectId: string; anchor: ConnectionAnchor } | null;
   isDragging?: boolean;
   dragState?: {
     objectId: string;
@@ -199,14 +202,6 @@ type ObjectLayerProps = {
     currentDelta: { x: number; y: number };
     wasSelectedAtStart: boolean;
   } | null;
-  resizeState?: {
-    objectId: string;
-    corner: string;
-    startWorld: { x: number; y: number };
-    startDimensions: { x: number; y: number; width: number; height: number };
-    currentDimensions: { x: number; y: number; width: number; height: number };
-    textScale?: number;
-  } | null;
 };
 
 // Component for individual canvas object with dimension measurement
@@ -215,25 +210,27 @@ function CanvasObjectItem({
   transform,
   isDragging,
   dragState,
-  resizeState,
-  onSelect,
   onDragStart,
   onDragMove,
   onDragEnd,
   onContextMenu,
-  onDimensionsMeasured
+  onDimensionsMeasured,
+  onConnectionStart,
+  onAnchorHover,
+  hoveredAnchor
 }: {
   object: CanvasObject;
   transform: { x: number; y: number; k: number };
   isDragging?: boolean;
   dragState?: ObjectLayerProps['dragState'];
-  resizeState?: ObjectLayerProps['resizeState'];
-  onSelect: (id: string, event: React.MouseEvent) => void;
   onDragStart?: (id: string, event: React.PointerEvent) => void;
   onDragMove?: (id: string, event: React.PointerEvent) => void;
   onDragEnd?: (id: string, event: React.PointerEvent) => void;
   onContextMenu?: (id: string, event: React.MouseEvent) => void;
   onDimensionsMeasured?: (id: string, width: number, height: number) => void;
+  onConnectionStart?: (id: string, anchor: ConnectionAnchor, event: React.PointerEvent) => void;
+  onAnchorHover?: (id: string, anchor: ConnectionAnchor | null) => void;
+  hoveredAnchor?: { objectId: string; anchor: ConnectionAnchor } | null;
 }) {
   const objectRef = useRef<HTMLDivElement>(null);
 
@@ -264,21 +261,12 @@ function CanvasObjectItem({
     ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
     : undefined;
 
-  // Check if this object is being resized
-  const isBeingResized = resizeState?.objectId === object.id;
-  const dimensions = isBeingResized && resizeState
-    ? {
-        x: resizeState.currentDimensions.x,
-        y: resizeState.currentDimensions.y,
-        width: resizeState.currentDimensions.width,
-        height: resizeState.currentDimensions.height
-      }
-    : {
-        x: object.x,
-        y: object.y,
-        width: object.width,
-        height: object.height
-      };
+  const dimensions = {
+    x: object.x,
+    y: object.y,
+    width: object.width,
+    height: object.height
+  };
 
   // Use auto sizing if dimensions not yet measured, otherwise use measured/resized dimensions
   const objectWidth = typeof dimensions.width === 'number' && dimensions.width > 0 ? dimensions.width : 'auto';
@@ -289,6 +277,7 @@ function CanvasObjectItem({
       ref={objectRef}
       key={object.id}
       data-canvas-object="true"
+      data-object-id={object.id}
       className={cn(
         "pointer-events-auto absolute transition-shadow duration-200",
         isDragging ? "cursor-grabbing" : "cursor-grab",
@@ -301,7 +290,7 @@ function CanvasObjectItem({
         height: objectHeight,
         zIndex: object.zIndex || 0,
         transform: dragTransform,
-        transition: isBeingResized ? 'none' : 'box-shadow 0.2s ease'
+        transition: 'box-shadow 0.2s ease'
       }}
       onPointerDown={(event) => {
         event.stopPropagation();
@@ -320,13 +309,9 @@ function CanvasObjectItem({
       }}
       onPointerUp={(event) => {
         event.stopPropagation();
-        event.preventDefault();
         if (onDragEnd) {
           onDragEnd(object.id, event);
         }
-      }}
-      onClick={(event) => {
-        event.stopPropagation();
       }}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -337,10 +322,7 @@ function CanvasObjectItem({
       }}
     >
       <div
-        className={cn(
-          "flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl",
-          object.selected ? "border-2 border-sky-400" : "border border-slate-200"
-        )}
+        className="flex flex-col bg-white/95 backdrop-blur rounded-lg shadow-xl border border-slate-200 relative"
       >
         <div className="px-4 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
           <div>
@@ -367,6 +349,71 @@ function CanvasObjectItem({
             </p>
           </div>
         ) : null}
+        
+        {/* Connection anchors - positioned at the outer border of the component */}
+        {onConnectionStart && (
+          <>
+            {/* North anchor - at the top border */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              style={{
+                left: '50%',
+                top: '0px'
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onConnectionStart(object.id, 'north', e);
+              }}
+              onPointerEnter={() => onAnchorHover?.(object.id, 'north')}
+              onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+            
+            {/* East anchor - at the right border */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              style={{
+                left: '100%',
+                top: '50%'
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onConnectionStart(object.id, 'east', e);
+              }}
+              onPointerEnter={() => onAnchorHover?.(object.id, 'east')}
+              onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+            
+            {/* South anchor - at the bottom border */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              style={{
+                left: '50%',
+                top: '100%'
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onConnectionStart(object.id, 'south', e);
+              }}
+              onPointerEnter={() => onAnchorHover?.(object.id, 'south')}
+              onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+            
+            {/* West anchor - at the left border */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors"
+              style={{
+                left: '0px',
+                top: '50%'
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onConnectionStart(object.id, 'west', e);
+              }}
+              onPointerEnter={() => onAnchorHover?.(object.id, 'west')}
+              onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -375,15 +422,16 @@ function CanvasObjectItem({
 export function ObjectLayer({
   objects,
   transform,
-  onSelect,
   onDragStart,
   onDragMove,
   onDragEnd,
   onContextMenu,
   onDimensionsMeasured,
+  onConnectionStart,
+  onAnchorHover,
+  hoveredAnchor,
   isDragging,
-  dragState,
-  resizeState
+  dragState
 }: ObjectLayerProps) {
   const stageStyle: CSSProperties = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
@@ -406,13 +454,14 @@ export function ObjectLayer({
             transform={transform}
             isDragging={isDragging}
             dragState={dragState}
-            resizeState={resizeState}
-            onSelect={onSelect}
             onDragStart={onDragStart}
             onDragMove={onDragMove}
             onDragEnd={onDragEnd}
             onContextMenu={onContextMenu}
             onDimensionsMeasured={onDimensionsMeasured}
+            onConnectionStart={onConnectionStart}
+            onAnchorHover={onAnchorHover}
+            hoveredAnchor={hoveredAnchor}
           />
         ))}
       </div>

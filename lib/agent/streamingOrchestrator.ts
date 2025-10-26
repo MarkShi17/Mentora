@@ -102,7 +102,8 @@ export class StreamingOrchestrator {
       text: string;
       id: string;
     } | null,
-    selectedBrain?: Brain
+    selectedBrain?: Brain,
+    images?: Array<{ base64: string; mimeType: string }>
   ): AsyncGenerator<StreamEvent, void, unknown> {
     logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     logger.info('🎬 STREAMING ORCHESTRATOR STARTED');
@@ -154,14 +155,33 @@ export class StreamingOrchestrator {
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system and user prompts with user settings
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed);
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, images && images.length > 0);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
-      // MCP tool execution loop
+      // MCP tool execution loop - Build user message with optional images
+      const userContent: Anthropic.MessageParam['content'] = images && images.length > 0
+        ? [
+            // Add images first for vision analysis
+            ...images.map(img => ({
+              type: 'image' as const,
+              source: {
+                type: 'base64' as const,
+                media_type: img.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                data: img.base64.split(',')[1] || img.base64 // Remove data:image/... prefix if present
+              }
+            })),
+            // Then add the text prompt
+            {
+              type: 'text' as const,
+              text: userPrompt
+            }
+          ]
+        : userPrompt; // Just text if no images
+
       let messages: Anthropic.MessageParam[] = [
         {
           role: 'user',
-          content: userPrompt
+          content: userContent
         }
       ];
 
@@ -567,14 +587,7 @@ export class StreamingOrchestrator {
       // Check if this was an abort/cancellation
       if (error instanceof Error && error.name === 'AbortError') {
         logger.info('Stream cancelled by client', { turnId });
-        yield {
-          type: 'interrupted',
-          timestamp: Date.now(),
-          data: {
-            message: 'Response generation was stopped',
-            code: 'USER_CANCELLED'
-          }
-        };
+        // Don't yield an error event for user cancellation - just exit gracefully
       } else {
         logger.error('Streaming error:', error);
         yield {
@@ -611,7 +624,8 @@ export class StreamingOrchestrator {
     cachedIntroPlayed?: {
       text: string;
       id: string;
-    } | null
+    } | null,
+    hasImages?: boolean
   ): string {
     const teachingStyle =
       mode === 'guided'
@@ -654,11 +668,22 @@ DO NOT repeat this greeting or acknowledgment. Start your [NARRATION] by going D
 Skip phrases like "Let me help", "I can explain", "Sure", etc. Jump straight into teaching.\n`
       : '';
 
+    const imageAnalysisInfo = hasImages
+      ? `\nIMAGE ANALYSIS:
+- The student has uploaded one or more images with their question
+- Carefully analyze the image(s) to understand what they're asking about
+- Extract any text, equations, diagrams, or problems shown in the image(s)
+- Reference specific elements from the image in your explanation
+- If the image contains a homework problem, math equation, diagram, or text, explain it thoroughly
+- Recreate important equations or diagrams as canvas objects so the student can reference them
+- If the image shows code, reproduce relevant parts as code blocks on the canvas\n`
+      : '';
+
     return `You are Mentora, an AI tutor working on an infinite canvas workspace. You are an always-on, contextually aware AI that continuously listens and builds understanding from all conversations.
 ${userName ? `\nSTUDENT NAME: ${userName} - Address them by name occasionally to personalize the interaction.\n` : ''}
 EXPLANATION LEVEL: ${explanationLevel}
 ${levelGuidance}
-${cachedIntroInfo}
+${cachedIntroInfo}${imageAnalysisInfo}
 CANVAS STATE:
 ${context.canvasState}
 

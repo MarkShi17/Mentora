@@ -20,7 +20,6 @@ type DragState = {
 };
 
 export function TimelinePanel() {
-  const [isExpanded, setIsExpanded] = useState(false); // Start collapsed
   const [position, setPosition] = useState({ right: 16, top: 16 }); // 16px = 1rem (4 in Tailwind)
   const [dragState, setDragState] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
@@ -35,6 +34,8 @@ export function TimelinePanel() {
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
   const stopStreamingCallback = useSessionStore((state) => state.stopStreamingCallback);
   const rerunQuestionCallback = useSessionStore((state) => state.rerunQuestionCallback);
+  const isExpanded = useSessionStore((state) => state.timelineOpen);
+  const setTimelineOpen = useSessionStore((state) => state.setTimelineOpen);
 
   // Global ESC key handler for stopping generation
   useEffect(() => {
@@ -62,7 +63,7 @@ export function TimelinePanel() {
   // Automatically expand the panel when the first message is added (only once)
   useEffect(() => {
     if (dialogue.length === 1 && !isExpanded) {
-      setIsExpanded(true);
+      setTimelineOpen(true);
     }
   }, [dialogue.length]);
 
@@ -157,7 +158,7 @@ export function TimelinePanel() {
   if (COLLAPSE_STYLE === "icon" && !isExpanded) {
     return (
       <button
-        onClick={() => setIsExpanded(true)}
+        onClick={() => setTimelineOpen(true)}
         className="pointer-events-auto absolute z-20 rounded-2xl glass-white p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] backdrop-blur-2xl transition-all hover:shadow-[0_12px_40px_rgba(0,0,0,0.16)] hover:scale-110 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group border border-white/50"
         style={{
           right: `${position.right}px`,
@@ -178,7 +179,7 @@ export function TimelinePanel() {
   if (COLLAPSE_STYLE === "tab" && !isExpanded) {
     return (
       <button
-        onClick={() => setIsExpanded(true)}
+        onClick={() => setTimelineOpen(true)}
         className="pointer-events-auto absolute z-20 -translate-y-1/2 rounded-l-lg border border-r-0 border-slate-200 bg-white/95 px-2 py-8 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:px-3 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: 0,
@@ -199,7 +200,7 @@ export function TimelinePanel() {
   if (COLLAPSE_STYLE === "bubble" && !isExpanded) {
     return (
       <button
-        onClick={() => setIsExpanded(true)}
+        onClick={() => setTimelineOpen(true)}
         className="pointer-events-auto absolute z-20 flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 shadow-lg backdrop-blur-md transition-all hover:bg-slate-50 hover:scale-105 active:scale-95 animate-in fade-in-0 slide-in-from-right-5 zoom-in-95 duration-300 group"
         style={{
           right: `${position.right}px`,
@@ -250,7 +251,7 @@ export function TimelinePanel() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setIsExpanded(false)}
+            onClick={() => setTimelineOpen(false)}
             className="h-8 w-8 rounded-xl transition-all hover:scale-110 active:scale-95 hover:bg-white/60 group text-slate-600 hover:text-slate-900"
           >
             {COLLAPSE_STYLE === "tab" ? (

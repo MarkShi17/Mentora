@@ -4,11 +4,17 @@ import { Session, SessionPreview } from './session';
 // POST /api/qa Request/Response
 export type TeachingMode = 'guided' | 'direct';
 
+export interface ImageInput {
+  base64: string;  // Base64-encoded image data (with data:image/... prefix)
+  mimeType: string;  // image/png, image/jpeg, etc.
+}
+
 export interface QARequest {
   sessionId: string;
   question: string;
   highlightedObjects?: string[];
   mode?: TeachingMode;
+  images?: ImageInput[];  // Image attachments for vision analysis
   context?: {
     recentConversation?: string[];
     topics?: string[];

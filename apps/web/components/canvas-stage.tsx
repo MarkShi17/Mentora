@@ -5,13 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { select, zoom, zoomIdentity } from "d3";
 import { ObjectLayer } from "@/components/object-layer";
 import { PinLayer } from "@/components/pin-layer";
-import { SelectionLayer } from "@/components/selection-layer";
-import { ObjectContextMenu } from "@/components/object-context-menu";
 import { ConnectionLayer } from "@/components/connection-layer";
+// ObjectContextMenu removed
 import { Button } from "@/components/ui/button";
 import { useSessionStore } from "@/lib/session-store";
 import type { CanvasObject, Pin, ConnectionAnchor } from "@/types";
 import { getHoveredAnchor } from "@/lib/connection-utils";
+import { useClipboardPaste } from "@/hooks/use-clipboard-paste";
+import { processImageFile } from "@/lib/image-upload";
 
 const GRID_SIZE = 40;
 const MIN_SCALE = 0.25;
@@ -47,20 +48,12 @@ type DragState = {
   wasSelectedAtStart: boolean;
 };
 
-type ResizeState = {
-  objectId: string;
-  corner: string; // nw, ne, sw, se
-  startWorld: { x: number; y: number };
-  startDimensions: { x: number; y: number; width: number; height: number };
-  currentDimensions: { x: number; y: number; width: number; height: number };
-  textScale?: number; // Scale factor for text (0.7 to 1.0)
-};
-
 type ConnectionDragState = {
   sourceObjectId: string;
   sourceAnchor: ConnectionAnchor;
   currentWorld: { x: number; y: number };
 };
+
 
 const IDENTITY: TransformState = { x: 0, y: 0, k: 1 };
 
@@ -90,17 +83,6 @@ const canvasObjects = useSessionStore(
   (state) => (state.activeSessionId ? state.canvasObjects[state.activeSessionId] ?? [] : [])
 );
 const canvasMode = useSessionStore((state) => state.canvasMode);
-const toggleObjectSelection = useSessionStore((state) => state.toggleObjectSelection);
-const clearObjectSelection = useSessionStore((state) => state.clearObjectSelection);
-const setSelectedObjects = useSessionStore((state) => state.setSelectedObjects);
-const setSelectionMethod = useSessionStore((state) => state.setSelectionMethod);
-const setLastSelectedObject = useSessionStore((state) => state.setLastSelectedObject);
-const selectionMethod = useSessionStore((state) =>
-  state.activeSessionId ? state.selectionMethods[state.activeSessionId] : undefined
-);
-const lastSelectedObjectId = useSessionStore((state) =>
-  state.activeSessionId ? state.lastSelectedObjectIds[state.activeSessionId] : null
-);
 const setCanvasView = useSessionStore((state) => state.setCanvasView);
 const focusTarget = useSessionStore((state) => state.focusTarget);
 const clearFocus = useSessionStore((state) => state.clearFocus);
@@ -151,7 +133,15 @@ const previousSelectionRef = useRef<string[] | null>(null);
 const [pinDraft, setPinDraft] = useState<PinDraft | null>(null);
 const pinInputRef = useRef<HTMLInputElement | null>(null);
 const initialPinCenteredRef = useRef<string | null>(null);
-const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  // Connection dragging state
+  const [connectionDragState, setConnectionDragState] = useState<ConnectionDragState | null>(null);
+  const connectionDragStateRef = useRef<ConnectionDragState | null>(null);
+  useEffect(() => {
+    connectionDragStateRef.current = connectionDragState;
+  }, [connectionDragState]);
+
+  // Hovered anchor state
+  const [hoveredAnchor, setHoveredAnchor] = useState<{ objectId: string; anchor: ConnectionAnchor } | null>(null);
 
   const [lasso, setLasso] = useState<LassoState | null>(null);
   const lassoRef = useRef<LassoState | null>(null);
@@ -166,22 +156,118 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     dragStateRef.current = dragState;
   }, [dragState]);
 
-  // Object resizing state
-  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
-  const resizeStateRef = useRef<ResizeState | null>(null);
-  useEffect(() => {
-    resizeStateRef.current = resizeState;
-  }, [resizeState]);
+  // Handle clipboard paste for images
+  const handleImagePaste = useCallback(async (file: File) => {
+    if (!activeSessionId) return;
 
-  // Connection dragging state
-  const [connectionDragState, setConnectionDragState] = useState<ConnectionDragState | null>(null);
-  const connectionDragStateRef = useRef<ConnectionDragState | null>(null);
-  useEffect(() => {
-    connectionDragStateRef.current = connectionDragState;
-  }, [connectionDragState]);
+    try {
+      console.log('📋 Processing pasted image for canvas');
+      const imageData = await processImageFile(file);
 
-  // Hovered anchor state
-  const [hoveredAnchor, setHoveredAnchor] = useState<{ objectId: string; anchor: ConnectionAnchor } | null>(null);
+      // Get viewport center in world coordinates
+      const container = containerRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      // Convert screen coordinates to world coordinates
+      const currentTransform = transformRef.current;
+      const worldX = (centerX - currentTransform.x) / currentTransform.k;
+      const worldY = (centerY - currentTransform.y) / currentTransform.k;
+
+      // Create canvas object for the pasted image
+      const imageObject: CanvasObject = {
+        id: crypto.randomUUID(),
+        type: 'image',
+        label: file.name || 'Pasted Image',
+        x: worldX - 150, // Center the 300px wide image
+        y: worldY - 150, // Center the 300px tall image
+        width: 300,
+        height: 300,
+        color: '#6b7280',
+        selected: false,
+        zIndex: 1,
+        data: {
+          content: imageData.base64 // Store base64 data URL
+        },
+        metadata: {
+          mimeType: imageData.mimeType,
+          size: imageData.size,
+          originalWidth: imageData.width,
+          originalHeight: imageData.height
+        }
+      };
+
+      // Add to canvas
+      updateCanvasObject(activeSessionId, imageObject);
+      console.log('✅ Pasted image added to canvas at viewport center');
+
+    } catch (error) {
+      console.error('Failed to paste image:', error);
+      alert(error instanceof Error ? error.message : 'Failed to paste image');
+    }
+  }, [activeSessionId, updateCanvasObject]);
+
+  // Enable clipboard paste hook
+  useClipboardPaste({
+    onImagePaste: handleImagePaste,
+    enabled: true
+  });
+
+  // Keyboard shortcuts: Delete selected objects with backspace/delete, Undo with Ctrl/Cmd+Z, Connect mode with 'C'
+  const undoCanvasAction = useSessionStore((state) => state.undoCanvasAction);
+  const redoCanvasAction = useSessionStore((state) => state.redoCanvasAction);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check if user is typing in an input field
+      const target = event.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      const sessionId = activeSessionIdRef.current;
+      if (!sessionId) return;
+
+      // Ctrl/Cmd+Z: Undo
+      if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        console.log('↩️ Undo triggered');
+        undoCanvasAction(sessionId);
+        return;
+      }
+
+      // Ctrl/Cmd+Shift+Z: Redo
+      if ((event.ctrlKey || event.metaKey) && event.key === 'z' && event.shiftKey) {
+        event.preventDefault();
+        console.log('↪️ Redo triggered');
+        redoCanvasAction(sessionId);
+        return;
+      }
+
+      // Delete/Backspace: Delete selected objects
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+
+        const selectedObjects = canvasObjectsRef.current.filter(obj => obj.selected);
+        if (selectedObjects.length > 0) {
+          const selectedIds = selectedObjects.map(obj => obj.id);
+          console.log('🗑️ Deleting selected objects:', selectedIds);
+
+          // Delete objects
+          deleteCanvasObjects(sessionId, selectedIds);
+        }
+      }
+
+      // Connection mode removed
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deleteCanvasObjects, undoCanvasAction, redoCanvasAction]);
+
 
   useEffect(() => {
     if (pinDraft && pinInputRef.current) {
@@ -234,11 +320,9 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         })
         .map((object) => object.id);
 
-      setSelectedObjects(sessionId, ids);
-      setSelectionMethod(sessionId, "lasso");
       return ids;
     },
-    [setSelectedObjects, setSelectionMethod]
+    []
   );
 
   useEffect(() => {
@@ -262,11 +346,6 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     const zoomBehavior = zoom<HTMLDivElement, unknown>()
       .scaleExtent([MIN_SCALE, MAX_SCALE])
       .filter((event) => {
-        // Don't allow zoom/pan if we're currently resizing
-        if (resizeStateRef.current) {
-          return false;
-        }
-
         if (event.ctrlKey && event.type === "wheel") {
           return true;
         }
@@ -464,82 +543,9 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     };
   }, []);
 
-  const handleCanvasClick = useCallback(() => {
-    // Don't handle if we're resizing
-    if (resizeStateRef.current) {
-      return;
-    }
 
-    // Close menu on any canvas click
-    setMenuPosition(null);
 
-    if (canvasMode !== "pan") {
-      return;
-    }
-    if (!activeSessionId) {
-      return;
-    }
-    clearObjectSelection(activeSessionId);
-  }, [activeSessionId, canvasMode, clearObjectSelection]);
-
-  const handleSelect = useCallback(
-    (objectId: string, event: React.MouseEvent) => {
-      // Close menu on object selection
-      setMenuPosition(null);
-
-      if (!activeSessionId) {
-        return;
-      }
-      // Bring object to front when selected
-      bringToFront(activeSessionId, objectId);
-
-      // Check for Cmd (Mac) or Ctrl (Windows/Linux) for multi-select
-      const isMultiSelect = event.ctrlKey || event.metaKey;
-      toggleObjectSelection(activeSessionId, objectId, isMultiSelect);
-      setSelectionMethod(activeSessionId, "click");
-      setLastSelectedObject(activeSessionId, objectId);
-    },
-    [activeSessionId, toggleObjectSelection, setSelectionMethod, setLastSelectedObject, bringToFront]
-  );
-
-  const handleObjectContextMenu = useCallback(
-    (objectId: string, event: React.MouseEvent) => {
-      if (!activeSessionId) {
-        return;
-      }
-      // Set menu position at mouse position
-      setMenuPosition({ x: event.clientX, y: event.clientY });
-    },
-    [activeSessionId]
-  );
-
-  const handleCloseMenu = useCallback(() => {
-    setMenuPosition(null);
-  }, []);
-
-  const handleDeleteObjects = useCallback(
-    (objectIds: string[]) => {
-      if (!activeSessionId) {
-        return;
-      }
-      deleteCanvasObjects(activeSessionId, objectIds);
-      setMenuPosition(null);
-    },
-    [activeSessionId, deleteCanvasObjects]
-  );
-
-  const handleDeleteConnections = useCallback(
-    (objectIds: string[]) => {
-      if (!activeSessionId) {
-        return;
-      }
-      objectIds.forEach(objectId => {
-        deleteConnectionsByObjectId(activeSessionId, objectId);
-      });
-      setMenuPosition(null);
-    },
-    [activeSessionId, deleteConnectionsByObjectId]
-  );
+  // Connection functionality removed
 
   const handlePinFocus = useCallback(
     (pin: Pin) => {
@@ -548,16 +554,6 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     [requestFocus]
   );
 
-  const handleAnchorHover = useCallback(
-    (objectId: string, anchor: ConnectionAnchor | null) => {
-      if (anchor) {
-        setHoveredAnchor({ objectId, anchor });
-      } else {
-        setHoveredAnchor(null);
-      }
-    },
-    []
-  );
 
   const getScreenPoint = useCallback(
     (event: React.PointerEvent) => {
@@ -598,13 +594,8 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
 
   const handleObjectDragStart = useCallback(
     (objectId: string, event: React.PointerEvent) => {
-      // Don't start dragging if we're currently resizing
-      if (resizeStateRef.current) {
-        return;
-      }
 
-      // Close menu on drag start
-      setMenuPosition(null);
+      // Context menu removed
 
       if (!activeSessionId || canvasMode !== "pan") {
         return;
@@ -775,8 +766,6 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       // Check if multi-select at drag end (should match drag start)
       const isMultiSelectEnd = event.ctrlKey || event.metaKey;
 
-      // Get current selection method to preserve it (especially "lasso")
-      const currentSelectionMethod = selectionMethod;
 
       // Handle based on whether it was a click or drag
       if (wasClick) {
@@ -799,11 +788,6 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
           updateCanvasObjects(activeSessionId, updatedObjects);
         }
 
-        // Only change to "click" if it wasn't "lasso" - preserve lasso selection
-        if (currentSelectionMethod !== "lasso") {
-          setSelectionMethod(activeSessionId, "click");
-        }
-        setLastSelectedObject(activeSessionId, objectId);
       } else {
         // It was a drag - update positions for ALL objects in the drag group
         const draggedObjectIds = drag.selectedObjectIds || [objectId];
@@ -834,11 +818,6 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
 
         updateCanvasObjects(activeSessionId, updatedObjects);
 
-        // Only change to "click" if it wasn't "lasso" - preserve lasso selection
-        if (currentSelectionMethod !== "lasso") {
-          setSelectionMethod(activeSessionId, "click");
-        }
-        setLastSelectedObject(activeSessionId, objectId);
       }
 
       // Release pointer capture
@@ -850,339 +829,182 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       dragStateRef.current = null;
       setDragState(null);
     },
-    [activeSessionId, updateCanvasObject, updateCanvasObjects, setSelectionMethod, setLastSelectedObject, getScreenPoint, screenToWorld, selectionMethod]
+    [activeSessionId, updateCanvasObject, updateCanvasObjects, getScreenPoint, screenToWorld]
   );
 
-  // Calculate intelligent minimum dimensions based on content
-  // Returns smaller minimums - text will scale down if needed
-  const calculateMinDimensions = useCallback((object: CanvasObject): { minWidth: number; minHeight: number } => {
-    const HEADER_HEIGHT = 50; // Space for type label + object title
-    const PADDING = 24; // Total padding (12px each side)
-    const BASE_MIN_WIDTH = 80; // Absolute minimum width (smaller!)
-    const BASE_MIN_HEIGHT = 60; // Absolute minimum height (smaller!)
 
-    let minWidth = BASE_MIN_WIDTH;
-    let minHeight = BASE_MIN_HEIGHT;
 
-    if (!object.data) {
-      return { minWidth, minHeight };
-    }
 
-    switch (object.type) {
-      case 'text':
-      case 'note': {
-        const content = object.data.content || '';
-        const lines = content.split('\n');
-        const longestLine = Math.max(...lines.map(line => line.length), 0);
-        // Reduced: ~5px per character (will scale text if needed)
-        minWidth = Math.min(BASE_MIN_WIDTH + (longestLine * 5), 280);
-        // Reduced: ~18px per line (will scale down if needed)
-        minHeight = HEADER_HEIGHT + (lines.length * 18) + PADDING;
-        break;
+
+
+  const startPinPlacement = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+
+      // Context menu removed
+
+      if (canvasMode !== "pin" || pinDraft) {
+        return;
       }
-
-      case 'code': {
-        const code = object.data.code || '';
-        const lines = code.split('\n');
-        const longestLine = Math.max(...lines.map(line => line.length), 0);
-        // Reduced: ~4px per character
-        minWidth = Math.min(BASE_MIN_WIDTH + (longestLine * 4), 300);
-        // Reduced: ~16px per line
-        minHeight = HEADER_HEIGHT + (lines.length * 16) + PADDING;
-        break;
+      if (event.button !== 0) {
+        return;
       }
-
-      case 'latex':
-      case 'formula': {
-        // LaTeX formulas - smaller minimum
-        const content = object.data.content || object.data.rendered || '';
-        const estimatedWidth = Math.max(100, content.length * 6);
-        minWidth = Math.min(estimatedWidth, 250);
-        minHeight = 90; // Reduced from 120
-        break;
+      event.preventDefault();
+      if (!activeSessionIdRef.current) {
+        setCanvasMode("pan");
+        return;
       }
+      const screenPoint = getScreenPoint(event as any);
+      const worldPoint = screenToWorld(screenPoint);
+      setPinDraft({
+        screen: screenPoint,
+        world: worldPoint,
+        label: ""
+      });
+    },
+    [canvasMode, pinDraft, getScreenPoint, screenToWorld, setCanvasMode]
+  );
 
-      case 'graph':
-      case 'diagram': {
-        // Visual content - analyze SVG if available
-        const svg = object.data.svg || '';
-        // Estimate complexity by SVG length and viewBox if present
-        const hasContent = svg.length > 100;
-        const isComplex = svg.length > 500;
+  const startLasso = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
 
-        if (isComplex) {
-          // Complex diagram needs more space
-          minWidth = 180;
-          minHeight = 140;
-        } else if (hasContent) {
-          // Simple diagram
-          minWidth = 140;
-          minHeight = 110;
-        } else {
-          // Placeholder or empty
-          minWidth = 100;
-          minHeight = 80;
-        }
-        break;
+      // Context menu removed
+
+      if (canvasMode !== "lasso") {
+        return;
       }
+      event.preventDefault();
+      const screenPoint = getScreenPoint(event as any);
+      const worldPoint = screenToWorld(screenPoint);
+      const pointerId = event.pointerId;
+      event.currentTarget.setPointerCapture(pointerId);
+      previousSelectionRef.current = canvasObjectsRef.current
+        .filter((object) => object.selected)
+        .map((object) => object.id);
+      const nextState: LassoState = {
+        pointerId,
+        originScreen: screenPoint,
+        currentScreen: screenPoint,
+        originWorld: worldPoint,
+        currentWorld: worldPoint
+      };
+      lassoRef.current = nextState;
+      setLasso(nextState);
+    },
+    [canvasMode, getScreenPoint, screenToWorld]
+  );
 
-      case 'image': {
-        minWidth = 100; // Reduced from 150
-        minHeight: 80; // Reduced from 120
-        break;
+  const updateLasso = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (canvasMode !== "lasso") {
+        return;
       }
+      const current = lassoRef.current;
+      if (!current) {
+        return;
+      }
+      event.preventDefault();
+      const screenPoint = getScreenPoint(event as any);
+      const worldPoint = screenToWorld(screenPoint);
+      const nextState: LassoState = {
+        ...current,
+        currentScreen: screenPoint,
+        currentWorld: worldPoint
+      };
+      lassoRef.current = nextState;
+      setLasso(nextState);
+      selectObjectsInBox(nextState.originWorld, worldPoint);
+    },
+    [canvasMode, getScreenPoint, screenToWorld, selectObjectsInBox]
+  );
 
-      default:
-        minWidth = BASE_MIN_WIDTH;
-        minHeight = BASE_MIN_HEIGHT;
-    }
-
-    // Ensure we never go below absolute minimums
-    return {
-      minWidth: Math.max(minWidth, BASE_MIN_WIDTH),
-      minHeight: Math.max(minHeight, BASE_MIN_HEIGHT)
-    };
+  const handlePinLabelChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const { value } = event.target;
+    setPinDraft((draft) => {
+      if (!draft) {
+        return draft;
+      }
+      return { ...draft, label: value };
+    });
   }, []);
 
-  const handleResizeStart = useCallback(
-    (objectId: string, corner: string, event: React.PointerEvent) => {
-      if (!activeSessionId || canvasMode !== "pan") {
+  const commitPinDraft = useCallback(() => {
+    if (!pinDraft || !activeSessionId) {
+      setPinDraft(null);
+      setCanvasMode("pan");
+      return;
+    }
+    const newPin = addPin(activeSessionId, {
+      x: pinDraft.world.x,
+      y: pinDraft.world.y,
+      label: pinDraft.label.trim() || undefined
+    });
+    if (newPin) {
+      requestFocus({ id: newPin.id, x: newPin.x, y: newPin.y });
+    }
+    setPinDraft(null);
+    setCanvasMode("pan");
+  }, [pinDraft, activeSessionId, addPin, requestFocus, setCanvasMode]);
+
+  const cancelPinDraft = useCallback(() => {
+    setPinDraft(null);
+    setCanvasMode("pan");
+  }, [setCanvasMode]);
+
+  const finishLasso = useCallback(
+    (commit: boolean) => {
+      const current = lassoRef.current;
+      if (!current) {
         return;
       }
-      event.stopPropagation();
+      if (commit) {
+        const selectedIds = selectObjectsInBox(current.originWorld, current.currentWorld);
+        previousSelectionRef.current = null;
 
-      // Get the object
-      const state = useSessionStore.getState();
-      const objects = state.canvasObjects[activeSessionId] || [];
-      const object = objects.find(obj => obj.id === objectId);
-
-      if (!object) {
-        return;
-      }
-
-      const screenPoint = getScreenPoint(event);
-      const worldPoint = screenToWorld(screenPoint);
-
-      // Set resize state
-      const nextResizeState: ResizeState = {
-        objectId,
-        corner,
-        startWorld: worldPoint,
-        startDimensions: {
-          x: object.x,
-          y: object.y,
-          width: object.width,
-          height: object.height
-        },
-        currentDimensions: {
-          x: object.x,
-          y: object.y,
-          width: object.width,
-          height: object.height
+        // Update selection state
+        if (selectedIds.length > 0) {
+          const state = useSessionStore.getState();
+          const objects = state.canvasObjects[activeSessionId] || [];
+          const updatedObjects = objects.map(obj => ({
+            ...obj,
+            selected: selectedIds.includes(obj.id)
+          }));
+          updateCanvasObjects(activeSessionId, updatedObjects);
+          setCanvasMode("pan");
         }
-      };
-      resizeStateRef.current = nextResizeState;
-      setResizeState(nextResizeState);
-
-      // Capture pointer on the container
-      if (containerRef.current) {
-        containerRef.current.setPointerCapture(event.pointerId);
       }
+      lassoRef.current = null;
+      setLasso(null);
     },
-    [activeSessionId, canvasMode, getScreenPoint, screenToWorld]
+    [selectObjectsInBox, setCanvasMode, activeSessionId, updateCanvasObjects]
   );
 
-  const handleResizeMove = useCallback(
-    (event: React.PointerEvent) => {
-      const resize = resizeStateRef.current;
-      if (!resize || !activeSessionId) {
+  const handleLassoPointerUp = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (canvasMode !== "lasso") {
         return;
       }
-
-      event.stopPropagation();
-
-      const screenPoint = getScreenPoint(event);
-      const worldPoint = screenToWorld(screenPoint);
-
-      // Calculate delta in world coordinates
-      const deltaX = worldPoint.x - resize.startWorld.x;
-      const deltaY = worldPoint.y - resize.startWorld.y;
-
-      // Get the object to calculate content-aware minimum dimensions
-      const state = useSessionStore.getState();
-      const objects = state.canvasObjects[activeSessionId] || [];
-      const object = objects.find(obj => obj.id === resize.objectId);
-
-      if (!object) {
-        return;
+      const current = lassoRef.current;
+      if (current) {
+        event.preventDefault();
+        event.currentTarget.releasePointerCapture(current.pointerId);
       }
-
-      // Calculate intelligent minimum dimensions based on content
-      const { minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT } = calculateMinDimensions(object);
-
-      const { corner, startDimensions } = resize;
-      let newX = startDimensions.x;
-      let newY = startDimensions.y;
-      let newWidth = startDimensions.width;
-      let newHeight = startDimensions.height;
-
-      // Calculate ideal dimensions (text scales starting at 2x minimum for earlier response)
-      const IDEAL_WIDTH = MIN_WIDTH * 2.0; // Text scaling starts at 2x minimum
-      const IDEAL_HEIGHT = MIN_HEIGHT * 2.0;
-
-      // Calculate maximum dimensions (prevent infinite expansion)
-      const MAX_WIDTH = IDEAL_WIDTH * 3.0; // Allow up to 6x minimum (3x ideal)
-      const MAX_HEIGHT = IDEAL_HEIGHT * 3.0;
-
-      // Calculate new dimensions based on corner with min/max constraints
-      if (corner === 'nw') {
-        newX = startDimensions.x + deltaX;
-        newY = startDimensions.y + deltaY;
-        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startDimensions.width - deltaX));
-        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startDimensions.height - deltaY));
-        // Adjust position if we hit minimum size
-        if (startDimensions.width - deltaX < MIN_WIDTH) {
-          newX = startDimensions.x + startDimensions.width - MIN_WIDTH;
-        }
-        if (startDimensions.height - deltaY < MIN_HEIGHT) {
-          newY = startDimensions.y + startDimensions.height - MIN_HEIGHT;
-        }
-        // Adjust position if we hit maximum size
-        if (startDimensions.width - deltaX > MAX_WIDTH) {
-          newX = startDimensions.x + startDimensions.width - MAX_WIDTH;
-        }
-        if (startDimensions.height - deltaY > MAX_HEIGHT) {
-          newY = startDimensions.y + startDimensions.height - MAX_HEIGHT;
-        }
-      } else if (corner === 'ne') {
-        newY = startDimensions.y + deltaY;
-        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startDimensions.width + deltaX));
-        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startDimensions.height - deltaY));
-        if (startDimensions.height - deltaY < MIN_HEIGHT) {
-          newY = startDimensions.y + startDimensions.height - MIN_HEIGHT;
-        }
-        if (startDimensions.height - deltaY > MAX_HEIGHT) {
-          newY = startDimensions.y + startDimensions.height - MAX_HEIGHT;
-        }
-      } else if (corner === 'sw') {
-        newX = startDimensions.x + deltaX;
-        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startDimensions.width - deltaX));
-        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startDimensions.height + deltaY));
-        if (startDimensions.width - deltaX < MIN_WIDTH) {
-          newX = startDimensions.x + startDimensions.width - MIN_WIDTH;
-        }
-        if (startDimensions.width - deltaX > MAX_WIDTH) {
-          newX = startDimensions.x + startDimensions.width - MAX_WIDTH;
-        }
-      } else if (corner === 'se') {
-        newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startDimensions.width + deltaX));
-        newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startDimensions.height + deltaY));
-      }
-
-      // Calculate text scale based on how much smaller than ideal
-      // Scale from 1.0 (at IDEAL size) down to 0.7 (at MIN size)
-      let textScale = 1.0;
-
-      // Scale text for text-based objects and diagrams/graphs (which have labels)
-      if (object.type === 'text' || object.type === 'note' || object.type === 'code' ||
-          object.type === 'diagram' || object.type === 'graph') {
-        const widthRatio = newWidth / IDEAL_WIDTH;
-        const heightRatio = newHeight / IDEAL_HEIGHT;
-        const sizeRatio = Math.min(widthRatio, heightRatio);
-
-        if (sizeRatio < 1.0) {
-          // Object is smaller than ideal - scale content down
-          // Linear interpolation: 1.0 at IDEAL, 0.7 at MIN (30% reduction max)
-          const minRatio = MIN_WIDTH / IDEAL_WIDTH; // How small can we get
-          textScale = 0.7 + (0.3 * ((sizeRatio - minRatio) / (1.0 - minRatio)));
-          textScale = Math.max(0.7, Math.min(1.0, textScale)); // Clamp to [0.7, 1.0]
-        }
-      }
-
-      // Update resize state
-      const nextResizeState: ResizeState = {
-        ...resize,
-        currentDimensions: {
-          x: newX,
-          y: newY,
-          width: newWidth,
-          height: newHeight
-        },
-        textScale
-      };
-      resizeStateRef.current = nextResizeState;
-      setResizeState(nextResizeState);
+      finishLasso(true);
     },
-    [activeSessionId, getScreenPoint, screenToWorld, calculateMinDimensions]
+    [canvasMode, finishLasso]
   );
 
-  const handleResizeEnd = useCallback(
-    (event: React.PointerEvent) => {
-      const resize = resizeStateRef.current;
-      if (!resize || !activeSessionId) {
+  const handleLassoPointerCancel = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (canvasMode !== "lasso") {
         return;
       }
-
-      event.stopPropagation();
-
-      // Get fresh state from store
-      const state = useSessionStore.getState();
-      const objects = state.canvasObjects[activeSessionId] || [];
-      const object = objects.find(obj => obj.id === resize.objectId);
-
-      if (!object) {
-        console.error('[ResizeEnd] Object not found in store:', resize.objectId);
-        resizeStateRef.current = null;
-        setResizeState(null);
-        return;
+      const current = lassoRef.current;
+      if (current) {
+        event.currentTarget.releasePointerCapture(current.pointerId);
       }
-
-      // Calculate final text scale for the resized dimensions
-      const { minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT } = calculateMinDimensions(object);
-      const IDEAL_WIDTH = MIN_WIDTH * 2.0; // Text scales starting at 2x minimum (earlier!)
-      const IDEAL_HEIGHT = MIN_HEIGHT * 2.0;
-
-      let finalTextScale = 1.0;
-      if (object.type === 'text' || object.type === 'note' || object.type === 'code' ||
-          object.type === 'diagram' || object.type === 'graph') {
-        const widthRatio = resize.currentDimensions.width / IDEAL_WIDTH;
-        const heightRatio = resize.currentDimensions.height / IDEAL_HEIGHT;
-        const sizeRatio = Math.min(widthRatio, heightRatio);
-
-        if (sizeRatio < 1.0) {
-          const minRatio = MIN_WIDTH / IDEAL_WIDTH;
-          finalTextScale = 0.7 + (0.3 * ((sizeRatio - minRatio) / (1.0 - minRatio)));
-          finalTextScale = Math.max(0.7, Math.min(1.0, finalTextScale));
-        }
-      }
-
-      // Update object with new dimensions, text scale, and keep it selected
-      updateCanvasObject(activeSessionId, {
-        ...object,
-        x: resize.currentDimensions.x,
-        y: resize.currentDimensions.y,
-        width: resize.currentDimensions.width,
-        height: resize.currentDimensions.height,
-        selected: true, // Explicitly preserve selection after resize
-        metadata: {
-          ...object.metadata,
-          textScale: finalTextScale
-        }
-      });
-
-      // Release pointer capture
-      if (containerRef.current && containerRef.current.hasPointerCapture(event.pointerId)) {
-        containerRef.current.releasePointerCapture(event.pointerId);
-      }
-
-      // Delay clearing resize state to prevent click handlers from firing
-      // This ensures the selection stays intact
-      setTimeout(() => {
-        resizeStateRef.current = null;
-        setResizeState(null);
-      }, 10);
+      finishLasso(false);
     },
-    [activeSessionId, updateCanvasObject]
+    [canvasMode, finishLasso]
   );
 
   // Connection handlers
@@ -1327,182 +1149,15 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     [activeSessionId, canvasObjects, createConnection, connections]
   );
 
-  const startPinPlacement = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      // Don't handle if we're resizing or connecting
-      if (resizeStateRef.current || connectionDragStateRef.current) {
-        return;
-      }
-
-      // Close menu on pin placement
-      setMenuPosition(null);
-
-      if (canvasMode !== "pin" || pinDraft) {
-        return;
-      }
-      if (event.button !== 0) {
-        return;
-      }
-      event.preventDefault();
-      if (!activeSessionIdRef.current) {
-        setCanvasMode("pan");
-        return;
-      }
-      const screenPoint = getScreenPoint(event as any);
-      const worldPoint = screenToWorld(screenPoint);
-      setPinDraft({
-        screen: screenPoint,
-        world: worldPoint,
-        label: ""
-      });
-    },
-    [canvasMode, pinDraft, getScreenPoint, screenToWorld, setCanvasMode]
-  );
-
-  const startLasso = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      // Don't handle if we're resizing
-      if (resizeStateRef.current) {
-        return;
-      }
-
-      // Close menu on lasso start
-      setMenuPosition(null);
-
-      if (canvasMode !== "lasso") {
-        return;
-      }
-      event.preventDefault();
-      const screenPoint = getScreenPoint(event as any);
-      const worldPoint = screenToWorld(screenPoint);
-      const pointerId = event.pointerId;
-      event.currentTarget.setPointerCapture(pointerId);
-      previousSelectionRef.current = canvasObjectsRef.current
-        .filter((object) => object.selected)
-        .map((object) => object.id);
-      const nextState: LassoState = {
-        pointerId,
-        originScreen: screenPoint,
-        currentScreen: screenPoint,
-        originWorld: worldPoint,
-        currentWorld: worldPoint
-      };
-      lassoRef.current = nextState;
-      setLasso(nextState);
-    },
-    [canvasMode, getScreenPoint, screenToWorld]
-  );
-
-  const updateLasso = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (canvasMode !== "lasso") {
-        return;
-      }
-      const current = lassoRef.current;
-      if (!current) {
-        return;
-      }
-      event.preventDefault();
-      const screenPoint = getScreenPoint(event as any);
-      const worldPoint = screenToWorld(screenPoint);
-      const nextState: LassoState = {
-        ...current,
-        currentScreen: screenPoint,
-        currentWorld: worldPoint
-      };
-      lassoRef.current = nextState;
-      setLasso(nextState);
-      selectObjectsInBox(nextState.originWorld, worldPoint);
-    },
-    [canvasMode, getScreenPoint, screenToWorld, selectObjectsInBox]
-  );
-
-  const handlePinLabelChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const { value } = event.target;
-    setPinDraft((draft) => {
-      if (!draft) {
-        return draft;
-      }
-      return { ...draft, label: value };
-    });
-  }, []);
-
-  const commitPinDraft = useCallback(() => {
-    if (!pinDraft || !activeSessionId) {
-      setPinDraft(null);
-      setCanvasMode("pan");
-      return;
-    }
-    const newPin = addPin(activeSessionId, {
-      x: pinDraft.world.x,
-      y: pinDraft.world.y,
-      label: pinDraft.label.trim() || undefined
-    });
-    if (newPin) {
-      requestFocus({ id: newPin.id, x: newPin.x, y: newPin.y });
-    }
-    setPinDraft(null);
-    setCanvasMode("pan");
-  }, [pinDraft, activeSessionId, addPin, requestFocus, setCanvasMode]);
-
-  const cancelPinDraft = useCallback(() => {
-    setPinDraft(null);
-    setCanvasMode("pan");
-  }, [setCanvasMode]);
-
-  const finishLasso = useCallback(
-    (commit: boolean) => {
-      const current = lassoRef.current;
-      if (!current) {
-        return;
-      }
-      if (commit) {
-        const selectedIds = selectObjectsInBox(current.originWorld, current.currentWorld);
-        previousSelectionRef.current = null;
-
-        // If at least one object was selected, switch back to pan mode (grab cursor)
-        if (selectedIds.length > 0) {
-          setCanvasMode("pan");
-        }
+  const handleAnchorHover = useCallback(
+    (objectId: string, anchor: ConnectionAnchor | null) => {
+      if (anchor) {
+        setHoveredAnchor({ objectId, anchor });
       } else {
-        const sessionId = activeSessionIdRef.current;
-        if (sessionId && previousSelectionRef.current) {
-          setSelectedObjects(sessionId, previousSelectionRef.current);
-        }
+        setHoveredAnchor(null);
       }
-      lassoRef.current = null;
-      setLasso(null);
     },
-    [selectObjectsInBox, setSelectedObjects, setCanvasMode]
-  );
-
-  const handleLassoPointerUp = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (canvasMode !== "lasso") {
-        return;
-      }
-      const current = lassoRef.current;
-      if (current) {
-        event.preventDefault();
-        event.currentTarget.releasePointerCapture(current.pointerId);
-      }
-      finishLasso(true);
-    },
-    [canvasMode, finishLasso]
-  );
-
-  const handleLassoPointerCancel = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (canvasMode !== "lasso") {
-        return;
-      }
-      const current = lassoRef.current;
-      if (current) {
-        event.currentTarget.releasePointerCapture(current.pointerId);
-      }
-      finishLasso(false);
-    },
-    [canvasMode, finishLasso]
+    []
   );
 
   const lassoRect = useMemo(() => {
@@ -1530,26 +1185,21 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
     };
   }, [transform.x, transform.y, transform.k]);
 
-  const canvasCursor = resizeState ? "default" : (canvasMode === "pan" ? "grab" : "crosshair");
+  const canvasCursor = canvasMode === "pan" ? "grab" : "crosshair";
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-white">
       <div
         className="absolute inset-0"
         ref={containerRef}
-        onClick={handleCanvasClick}
         onPointerDown={startPinPlacement}
         onPointerMove={(e) => {
-          if (resizeState) {
-            handleResizeMove(e);
-          } else if (connectionDragState) {
+          if (connectionDragState) {
             handleConnectionMove(e);
           }
         }}
         onPointerUp={(e) => {
-          if (resizeState) {
-            handleResizeEnd(e);
-          } else if (connectionDragState) {
+          if (connectionDragState) {
             handleConnectionEnd(e);
           }
         }}
@@ -1558,7 +1208,20 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
         <div className="absolute inset-0 transition-colors" style={backgroundStyle} />
         {isInitialized && (
           <>
-            {/* ConnectionLayer renders first so it appears UNDER the objects */}
+            <ObjectLayer
+              objects={canvasObjects}
+              transform={transform}
+              onDragStart={handleObjectDragStart}
+              onDragMove={handleObjectDragMove}
+              onDragEnd={handleObjectDragEnd}
+              onContextMenu={undefined}
+              onDimensionsMeasured={handleDimensionsMeasured}
+              isDragging={!!dragState}
+              dragState={dragState}
+              onConnectionStart={handleConnectionStart}
+              onAnchorHover={handleAnchorHover}
+              hoveredAnchor={hoveredAnchor}
+            />
             <ConnectionLayer
               connections={connections}
               objects={canvasObjects}
@@ -1570,19 +1233,6 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
                 // Handle connection click (e.g., for deletion)
                 console.log('Connection clicked:', connectionId);
               }}
-            />
-            <ObjectLayer
-              objects={canvasObjects}
-              transform={transform}
-              onSelect={handleSelect}
-              onDragStart={handleObjectDragStart}
-              onDragMove={handleObjectDragMove}
-              onDragEnd={handleObjectDragEnd}
-              onContextMenu={handleObjectContextMenu}
-              onDimensionsMeasured={handleDimensionsMeasured}
-              isDragging={!!dragState}
-              dragState={dragState}
-              resizeState={resizeState}
             />
             <PinLayer
               pins={pins}
@@ -1624,10 +1274,10 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
                   />
                 </label>
                 <div className="flex justify-end gap-2">
-                  <Button type="button" variant="ghost" size="sm" onClick={cancelPinDraft}>
+                  <Button type="button" onClick={cancelPinDraft}>
                     Cancel
                   </Button>
-                  <Button type="submit" variant="secondary" size="sm">
+                  <Button type="submit">
                     Save
                   </Button>
                 </div>
@@ -1635,23 +1285,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
             </div>
           </div>
         ) : null}
-        <SelectionLayer
-          objects={canvasObjects}
-          transform={transform}
-          selectionMethod={selectionMethod}
-          lastSelectedObjectId={lastSelectedObjectId}
-          onDelete={handleDeleteObjects}
-          onDeleteConnections={handleDeleteConnections}
-          connections={connections}
-          dragState={dragState}
-          onResizeStart={handleResizeStart}
-          resizeState={resizeState}
-          onConnectionStart={handleConnectionStart}
-          connectionDragState={connectionDragState}
-          hoveredAnchor={hoveredAnchor}
-          onAnchorHover={handleAnchorHover}
-        />
-        {canvasMode === "lasso" ? (
+        {canvasMode === "lasso" && !dragState ? (
           <div
             className="absolute inset-0 z-20 select-none"
             style={{ pointerEvents: "auto", cursor: "crosshair" }}
@@ -1675,14 +1309,7 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
           </div>
         ) : null}
       </div>
-      {menuPosition && (
-        <ObjectContextMenu
-          position={menuPosition}
-          onClose={handleCloseMenu}
-          selectedObjectIds={canvasObjects.filter((obj) => obj.selected).map((obj) => obj.id)}
-          onDelete={handleDeleteObjects}
-        />
-      )}
+      {/* Context menu removed */}
     </div>
   );
 }
