@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useRef } from "react";
-import { CanvasObject, ConnectionAnchor } from "@/types";
+import { CanvasObject, ConnectionAnchor, ObjectConnection } from "@/types";
 import { cn } from "@/lib/cn";
 import { getHoveredAnchor } from "@/lib/connection-utils";
 import ReactMarkdown from 'react-markdown';
@@ -16,7 +16,7 @@ import { CodeBlock } from "@/components/code-block";
 
 // Removed getObjectSizeClass - now using backend-calculated sizes directly
 
-function renderObjectContent(object: CanvasObject) {
+function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
   if (!object.data) return null;
 
   switch (object.type) {
@@ -36,7 +36,14 @@ function renderObjectContent(object: CanvasObject) {
       }
       
       return (
-        <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed">
+        <div 
+          className="prose prose-sm max-w-none text-slate-800 leading-relaxed"
+          style={{
+            fontSize: `${scaleFactor}em`,
+            lineHeight: 1.5,
+            overflow: 'hidden'
+          }}
+        >
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
@@ -70,28 +77,69 @@ function renderObjectContent(object: CanvasObject) {
     case 'diagram':
       return (
         <div
-          className="bg-white rounded"
-          dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
-        />
+          className="bg-white rounded overflow-hidden"
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            style={{
+              transform: `scale(${scaleFactor})`,
+              transformOrigin: 'center',
+              maxWidth: '100%',
+              maxHeight: '100%'
+            }}
+            dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
+          />
+        </div>
       );
     
     case 'code':
       return (
-        <CodeBlock
-          code={object.data.code || ''}
-          language={object.data.language || 'text'}
-          theme="light"
-          showLineNumbers={true}
-          showCopyButton={true}
-        />
+        <div
+          className="overflow-hidden"
+          style={{
+            width: '100%',
+            height: '100%',
+            fontSize: `${scaleFactor}em`
+          }}
+        >
+          <CodeBlock
+            code={object.data.code || ''}
+            language={object.data.language || 'text'}
+            theme="light"
+            showLineNumbers={true}
+            showCopyButton={true}
+          />
+        </div>
       );
     
     case 'graph':
       return (
         <div
-          className="bg-white rounded"
-          dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
-        />
+          className="bg-white rounded overflow-hidden"
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            style={{
+              transform: `scale(${scaleFactor})`,
+              transformOrigin: 'center',
+              maxWidth: '100%',
+              maxHeight: '100%'
+            }}
+            dangerouslySetInnerHTML={{ __html: object.data.svg || '' }}
+          />
+        </div>
       );
     
     case 'latex':
@@ -121,18 +169,34 @@ function renderObjectContent(object: CanvasObject) {
         });
 
         return (
-          <div className="p-4 text-slate-900 flex items-center justify-center h-full">
+          <div 
+            className="p-4 text-slate-900 flex items-center justify-center h-full overflow-hidden"
+            style={{
+              fontSize: `${scaleFactor}em`
+            }}
+          >
             <div className="katex-wrapper" dangerouslySetInnerHTML={{ __html: html }} />
           </div>
         );
       } catch (error) {
         // If KaTeX fails, fall back to rendered image
         return (
-          <div className="text-slate-900">
+          <div 
+            className="text-slate-900 overflow-hidden flex items-center justify-center h-full"
+            style={{
+              width: '100%',
+              height: '100%'
+            }}
+          >
             <img
               src={object.data.rendered}
               alt="LaTeX equation"
-              className=""
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                transform: `scale(${scaleFactor})`,
+                transformOrigin: 'center'
+              }}
             />
           </div>
         );
@@ -140,11 +204,25 @@ function renderObjectContent(object: CanvasObject) {
     
     case 'image':
       return (
-        <img 
-          src={object.data.url || object.data.content} 
-          alt={object.data.alt || 'Generated image'} 
-          className="rounded"
-        />
+        <div
+          className="overflow-hidden flex items-center justify-center h-full"
+          style={{
+            width: '100%',
+            height: '100%'
+          }}
+        >
+          <img 
+            src={object.data.url || object.data.content} 
+            alt={object.data.alt || 'Generated image'} 
+            className="rounded"
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              transform: `scale(${scaleFactor})`,
+              transformOrigin: 'center'
+            }}
+          />
+        </div>
       );
 
     case 'video':
@@ -159,13 +237,24 @@ function renderObjectContent(object: CanvasObject) {
         : `${videoUrl}${videoUrl?.includes('?') ? '&' : '?'}t=${object.metadata?.createdAt || Date.now()}`;
 
       return (
-        <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto flex items-center justify-center">
+        <div 
+          className="bg-white rounded-lg p-4 shadow-lg h-full overflow-hidden flex items-center justify-center"
+          style={{
+            width: '100%',
+            height: '100%'
+          }}
+        >
           {isGif ? (
             <img
               src={cacheBustedUrl}
               alt={object.data.alt || 'Animation'}
-              className="max-w-full max-h-full rounded"
-              style={{ maxHeight: '100%', maxWidth: '100%' }}
+              className="rounded"
+              style={{ 
+                maxHeight: '100%', 
+                maxWidth: '100%',
+                transform: `scale(${scaleFactor})`,
+                transformOrigin: 'center'
+              }}
               onPointerDown={(e) => e.stopPropagation()}
               onPointerMove={(e) => e.stopPropagation()}
             />
@@ -175,8 +264,13 @@ function renderObjectContent(object: CanvasObject) {
               controls
               loop
               autoPlay
-              className="max-w-full max-h-full rounded"
-              style={{ maxHeight: '100%', maxWidth: '100%' }}
+              className="rounded"
+              style={{ 
+                maxHeight: '100%', 
+                maxWidth: '100%',
+                transform: `scale(${scaleFactor})`,
+                transformOrigin: 'center'
+              }}
               onPointerDown={(e) => e.stopPropagation()}
               onPointerMove={(e) => e.stopPropagation()}
             >
@@ -196,18 +290,27 @@ function renderObjectContent(object: CanvasObject) {
   }
 }
 
+type ResizeDirection = 'nw' | 'ne' | 'sw' | 'se';
+
 type ObjectLayerProps = {
   objects: CanvasObject[];
   transform: { x: number; y: number; k: number };
   onDragStart?: (id: string, event: React.PointerEvent) => void;
   onDragMove?: (id: string, event: React.PointerEvent) => void;
   onDragEnd?: (id: string, event: React.PointerEvent) => void;
+  onResizeStart?: (id: string, direction: ResizeDirection, event: React.PointerEvent) => void;
+  onResizeMove?: (id: string, event: React.PointerEvent) => void;
+  onResizeEnd?: (id: string, event: React.PointerEvent) => void;
   onContextMenu?: (id: string, event: React.MouseEvent) => void;
   onDimensionsMeasured?: (id: string, width: number, height: number) => void;
   onConnectionStart?: (id: string, anchor: ConnectionAnchor, event: React.PointerEvent) => void;
   onAnchorHover?: (id: string, anchor: ConnectionAnchor | null) => void;
   hoveredAnchor?: { objectId: string; anchor: ConnectionAnchor } | null;
+  connections?: ObjectConnection[];
+  getConnectionsByAnchor?: (sessionId: string, objectId: string, anchor: ConnectionAnchor) => ObjectConnection[];
+  activeSessionId?: string | null;
   isDragging?: boolean;
+  isResizing?: boolean;
   isConnectionMode?: boolean; // New prop to show/hide anchors
   dragState?: {
     objectId: string;
@@ -218,6 +321,15 @@ type ObjectLayerProps = {
     currentDelta: { x: number; y: number };
     wasSelectedAtStart: boolean;
   } | null;
+  resizeState?: {
+    objectId: string;
+    direction: ResizeDirection;
+    startWorld: { x: number; y: number };
+    startScreen: { x: number; y: number };
+    startSize: { width: number; height: number };
+    startPosition: { x: number; y: number };
+    currentDelta: { x: number; y: number };
+  } | null;
 };
 
 // Component for individual canvas object with dimension measurement
@@ -225,32 +337,55 @@ function CanvasObjectItem({
   object,
   transform,
   isDragging,
+  isResizing,
   dragState,
+  resizeState,
   onDragStart,
   onDragMove,
   onDragEnd,
+  onResizeStart,
+  onResizeMove,
+  onResizeEnd,
   onContextMenu,
   onDimensionsMeasured,
   onConnectionStart,
   onAnchorHover,
   hoveredAnchor,
+  connections,
+  getConnectionsByAnchor,
+  activeSessionId,
   isConnectionMode
 }: {
   object: CanvasObject;
   transform: { x: number; y: number; k: number };
   isDragging?: boolean;
+  isResizing?: boolean;
   isConnectionMode?: boolean;
   dragState?: ObjectLayerProps['dragState'];
+  resizeState?: ObjectLayerProps['resizeState'];
   onDragStart?: (id: string, event: React.PointerEvent) => void;
   onDragMove?: (id: string, event: React.PointerEvent) => void;
   onDragEnd?: (id: string, event: React.PointerEvent) => void;
+  onResizeStart?: (id: string, direction: ResizeDirection, event: React.PointerEvent) => void;
+  onResizeMove?: (id: string, event: React.PointerEvent) => void;
+  onResizeEnd?: (id: string, event: React.PointerEvent) => void;
   onContextMenu?: (id: string, event: React.MouseEvent) => void;
   onDimensionsMeasured?: (id: string, width: number, height: number) => void;
   onConnectionStart?: (id: string, anchor: ConnectionAnchor, event: React.PointerEvent) => void;
   onAnchorHover?: (id: string, anchor: ConnectionAnchor | null) => void;
   hoveredAnchor?: { objectId: string; anchor: ConnectionAnchor } | null;
+  connections?: ObjectConnection[];
+  getConnectionsByAnchor?: (sessionId: string, objectId: string, anchor: ConnectionAnchor) => ObjectConnection[];
+  activeSessionId?: string | null;
 }) {
   const objectRef = useRef<HTMLDivElement>(null);
+
+  // Helper function to check if an anchor has connections
+  const hasConnections = (anchor: ConnectionAnchor): boolean => {
+    if (!activeSessionId || !getConnectionsByAnchor) return false;
+    const connections = getConnectionsByAnchor(activeSessionId, object.id, anchor);
+    return connections.length > 0;
+  };
 
   // Measure actual DOM dimensions and report back
   useEffect(() => {
@@ -311,8 +446,9 @@ function CanvasObjectItem({
       }}
       onPointerDown={(event) => {
         event.stopPropagation();
-        event.preventDefault();
-        if (onDragStart) {
+        // Don't prevent default to allow resize handles to work
+        // Only start drag if we're not in resize mode
+        if (onDragStart && !isResizing) {
           onDragStart(object.id, event);
         }
       }}
@@ -359,7 +495,21 @@ function CanvasObjectItem({
           {object.generationState === 'generating' || object.placeholder ? (
             <ObjectLoadingState type={object.type} />
           ) : (
-            renderObjectContent(object)
+            (() => {
+              // Calculate scale factor based on current size vs default size
+              // Default sizes are typically around 300x200 for most components
+              const defaultWidth = 300;
+              const defaultHeight = 200;
+              const currentWidth = typeof objectWidth === 'number' ? objectWidth : defaultWidth;
+              const currentHeight = typeof objectHeight === 'number' ? objectHeight : defaultHeight;
+              
+              // Calculate scale factor as the minimum of width and height scaling to ensure content fits
+              const widthScale = currentWidth / defaultWidth;
+              const heightScale = currentHeight / defaultHeight;
+              const scaleFactor = Math.max(0.3, Math.min(3, Math.min(widthScale, heightScale)));
+              
+              return renderObjectContent(object, scaleFactor);
+            })()
           )}
         </div>
         {object.metadata?.description ? (
@@ -370,12 +520,17 @@ function CanvasObjectItem({
           </div>
         ) : null}
         
-        {/* Connection anchors - only show when in connection mode */}
-        {onConnectionStart && isConnectionMode && (
+        {/* Connection anchors - only show when component is selected or in connection mode */}
+        {onConnectionStart && (isConnectionMode || object.selected) && (
           <>
             {/* North anchor - at the top border */}
             <div
-              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95"
+              className={cn(
+                "absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 cursor-pointer transition-colors hover:scale-110 active:scale-95",
+                hasConnections('north')
+                  ? "border-green-500 bg-green-100 hover:border-green-600 hover:bg-green-200"
+                  : "border-slate-400 bg-white hover:border-blue-500 hover:bg-blue-50"
+              )}
               style={{
                 left: '50%',
                 top: '0px'
@@ -390,7 +545,12 @@ function CanvasObjectItem({
             
             {/* East anchor - at the right border */}
             <div
-              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95"
+              className={cn(
+                "absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 cursor-pointer transition-colors hover:scale-110 active:scale-95",
+                hasConnections('east')
+                  ? "border-green-500 bg-green-100 hover:border-green-600 hover:bg-green-200"
+                  : "border-slate-400 bg-white hover:border-blue-500 hover:bg-blue-50"
+              )}
               style={{
                 left: '100%',
                 top: '50%'
@@ -405,7 +565,12 @@ function CanvasObjectItem({
             
             {/* South anchor - at the bottom border */}
             <div
-              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95"
+              className={cn(
+                "absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 cursor-pointer transition-colors hover:scale-110 active:scale-95",
+                hasConnections('south')
+                  ? "border-green-500 bg-green-100 hover:border-green-600 hover:bg-green-200"
+                  : "border-slate-400 bg-white hover:border-blue-500 hover:bg-blue-50"
+              )}
               style={{
                 left: '50%',
                 top: '100%'
@@ -420,7 +585,12 @@ function CanvasObjectItem({
             
             {/* West anchor - at the left border */}
             <div
-              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-400 bg-white cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95"
+              className={cn(
+                "absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 cursor-pointer transition-colors hover:scale-110 active:scale-95",
+                hasConnections('west')
+                  ? "border-green-500 bg-green-100 hover:border-green-600 hover:bg-green-200"
+                  : "border-slate-400 bg-white hover:border-blue-500 hover:bg-blue-50"
+              )}
               style={{
                 left: '0px',
                 top: '50%'
@@ -431,6 +601,79 @@ function CanvasObjectItem({
               }}
               onPointerEnter={() => onAnchorHover?.(object.id, 'west')}
               onPointerLeave={() => onAnchorHover?.(object.id, null)}
+            />
+          </>
+        )}
+
+        {/* Resize handles - only show when component is selected */}
+        {object.selected && onResizeStart && (
+          <>
+            {/* Northwest resize handle */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-500 bg-white cursor-nw-resize hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95 pointer-events-auto"
+              style={{
+                left: '0px',
+                top: '0px',
+                zIndex: 10
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (onResizeStart) {
+                  onResizeStart(object.id, 'nw', e);
+                }
+              }}
+            />
+            
+            {/* Northeast resize handle */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-500 bg-white cursor-ne-resize hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95 pointer-events-auto"
+              style={{
+                left: '100%',
+                top: '0px',
+                zIndex: 10
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (onResizeStart) {
+                  onResizeStart(object.id, 'ne', e);
+                }
+              }}
+            />
+            
+            {/* Southwest resize handle */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-500 bg-white cursor-sw-resize hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95 pointer-events-auto"
+              style={{
+                left: '0px',
+                top: '100%',
+                zIndex: 10
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (onResizeStart) {
+                  onResizeStart(object.id, 'sw', e);
+                }
+              }}
+            />
+            
+            {/* Southeast resize handle */}
+            <div
+              className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate-500 bg-white cursor-se-resize hover:border-blue-500 hover:bg-blue-50 transition-colors hover:scale-110 active:scale-95 pointer-events-auto"
+              style={{
+                left: '100%',
+                top: '100%',
+                zIndex: 10
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                if (onResizeStart) {
+                  onResizeStart(object.id, 'se', e);
+                }
+              }}
             />
           </>
         )}
@@ -445,14 +688,22 @@ export function ObjectLayer({
   onDragStart,
   onDragMove,
   onDragEnd,
+  onResizeStart,
+  onResizeMove,
+  onResizeEnd,
   onContextMenu,
   onDimensionsMeasured,
   onConnectionStart,
   onAnchorHover,
   hoveredAnchor,
+  connections,
+  getConnectionsByAnchor,
+  activeSessionId,
   isDragging,
+  isResizing,
   isConnectionMode,
-  dragState
+  dragState,
+  resizeState
 }: ObjectLayerProps) {
   const stageStyle: CSSProperties = {
     transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
@@ -474,16 +725,24 @@ export function ObjectLayer({
             object={object}
             transform={transform}
             isDragging={isDragging}
+            isResizing={isResizing}
             isConnectionMode={isConnectionMode}
             dragState={dragState}
+            resizeState={resizeState}
             onDragStart={onDragStart}
             onDragMove={onDragMove}
             onDragEnd={onDragEnd}
+            onResizeStart={onResizeStart}
+            onResizeMove={onResizeMove}
+            onResizeEnd={onResizeEnd}
             onContextMenu={onContextMenu}
             onDimensionsMeasured={onDimensionsMeasured}
             onConnectionStart={onConnectionStart}
             onAnchorHover={onAnchorHover}
             hoveredAnchor={hoveredAnchor}
+            connections={connections}
+            getConnectionsByAnchor={getConnectionsByAnchor}
+            activeSessionId={activeSessionId}
           />
         ))}
       </div>

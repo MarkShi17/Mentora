@@ -49,11 +49,11 @@ Ask questions naturally and get instant spoken explanations with dynamic visual 
           },
         },
 
-        // Physics Formula (Center Left)
+        // Acceleration Video (Center Left)
         {
-          id: objectIds.formula = `obj-${nanoid(8)}`,
-          type: 'latex',
-          label: 'Example Formula',
+          id: objectIds.acceleration = `obj-${nanoid(8)}`,
+          type: 'video',
+          label: 'What is Acceleration?',
           x: 550, // Centered
           y: 200,
           width: 300,
@@ -62,10 +62,13 @@ Ask questions naturally and get instant spoken explanations with dynamic visual 
           selected: false,
           zIndex: 2,
           data: {
-            latex: 'a = \\frac{\\Delta v}{\\Delta t} = \\frac{v_f - v_i}{t}',
+            type: 'video',
+            url: '/acceleration.gif', // Pre-loaded Manim animation
+            alt: 'Manim animation explaining acceleration concept'
           },
           metadata: {
-            description: 'Acceleration formula example',
+            description: 'Interactive Manim video explaining acceleration concept',
+            createdAt: Date.now()
           },
         },
 
@@ -116,6 +119,7 @@ Dynamic diagrams, equations, and animations.`,
 Click the microphone button to begin your conversation with Mentora.
 
 **Example questions to try:**
+- "What is acceleration?"
 - "Explain the water cycle"
 - "Show me how binary search works" 
 - "What is photosynthesis?"
