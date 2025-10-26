@@ -663,12 +663,42 @@ export class StreamingOrchestrator {
       }
 
       // Separate objects into priority (latex, graph, text/markdown) and regular for early rendering
-      const priorityObjects = agentResponse.objects.filter(obj =>
-        obj.type === 'latex' || obj.type === 'graph' || obj.type === 'text'
-      );
-      const regularObjects = agentResponse.objects.filter(obj =>
-        obj.type !== 'latex' && obj.type !== 'graph' && obj.type !== 'text'
-      );
+      // For Code Brain: include 'code' and 'image'/'diagram' in priority, and enforce specific order
+      const isCodeBrain = selectedBrain?.type === 'code';
+
+      let priorityObjects, regularObjects;
+
+      if (isCodeBrain) {
+        // Code Brain: priority includes code, image, diagram, text
+        // Order: code → image/diagram → text
+        priorityObjects = agentResponse.objects.filter(obj =>
+          obj.type === 'code' || obj.type === 'image' || obj.type === 'diagram' || obj.type === 'text'
+        );
+        regularObjects = agentResponse.objects.filter(obj =>
+          obj.type !== 'code' && obj.type !== 'image' && obj.type !== 'diagram' && obj.type !== 'text'
+        );
+
+        // Reorder priority objects for Code Brain: code → image/diagram → text
+        const codeObjects = priorityObjects.filter(o => o.type === 'code');
+        const imageObjects = priorityObjects.filter(o => o.type === 'image' || o.type === 'diagram');
+        const textObjects = priorityObjects.filter(o => o.type === 'text');
+        priorityObjects = [...codeObjects, ...imageObjects, ...textObjects];
+
+        logger.info('🧠 Code Brain: Reordered objects', {
+          order: 'code → image/diagram → text',
+          codeCount: codeObjects.length,
+          imageCount: imageObjects.length,
+          textCount: textObjects.length
+        });
+      } else {
+        // Other brains: original priority logic
+        priorityObjects = agentResponse.objects.filter(obj =>
+          obj.type === 'latex' || obj.type === 'graph' || obj.type === 'text'
+        );
+        regularObjects = agentResponse.objects.filter(obj =>
+          obj.type !== 'latex' && obj.type !== 'graph' && obj.type !== 'text'
+        );
+      }
 
       // Emit priority objects BEFORE TTS starts for immediate visual feedback
       if (priorityObjects.length > 0) {
@@ -1280,7 +1310,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     }
     const narration = narrationParts.join(' ');
 
-    // Extract objects
+    // Extract objects (using [\s\S] to match any character including newlines for multiline code)
     const objects = [];
     // Updated regex: capture metadata from INSIDE [OBJECT_META ...], not after it
     const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META\s+([^\]]+)\])?\s*\[OBJECT_END\]/gs);

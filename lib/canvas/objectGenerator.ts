@@ -187,6 +187,12 @@ export class ObjectGenerator {
     turnId: string,
     referenceName?: string
   ): DiagramObject {
+    // Validate that description has meaningful content
+    const trimmedDescription = description.trim();
+    if (!trimmedDescription || trimmedDescription.length < 10) {
+      throw new Error('Cannot create diagram with empty or minimal description. Description must be at least 10 characters.');
+    }
+
     const svg = this.generateSimpleDiagram(description);
 
     return {

@@ -295,7 +295,8 @@ export async function ingestConversation(
       subject,
       turnId,
       question: question.substring(0, 200),
-      objectIds,
+      objectIds: JSON.stringify(objectIds), // Convert array to JSON string
+      objectCount: objectIds.length,
       timestamp: Date.now()
     }]
   });
