@@ -229,7 +229,7 @@ export function ContinuousAI() {
       thinkingMessageIdRef.current = null;
       endSequence();
       sequenceKeyRef.current = null;
-    }, [addMessage, updateMessage, appendTimelineEvent, endSequence, setLastAIMessage, settings.voice, streamingQA.audioState.isPlaying]),
+    }, [addMessage, updateMessage, appendTimelineEvent, endSequence, setLastAIMessage, settings.voice]),
     onError: useCallback(() => {
       endSequence();
       sequenceKeyRef.current = null;
