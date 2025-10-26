@@ -135,7 +135,7 @@ EMBEDDING_MODEL=text-embedding-3-small
 
 # Search parameters
 RAG_TOP_K=5                      # Number of results to retrieve
-RAG_MIN_RELEVANCE_SCORE=0.7      # Minimum similarity score (0-1)
+RAG_MIN_RELEVANCE_SCORE=0.4      # Minimum similarity score (0-1)
 
 # Auto-ingestion
 RAG_AUTO_INGEST=true             # Automatically save conversations
@@ -146,7 +146,7 @@ RAG_AUTO_INGEST=true             # Automatically save conversations
 **Get more context** (may include less relevant results):
 ```bash
 RAG_TOP_K=10
-RAG_MIN_RELEVANCE_SCORE=0.5
+RAG_MIN_RELEVANCE_SCORE=0.3
 ```
 
 **Get only highly relevant context** (fewer but more precise results):
