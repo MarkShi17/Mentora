@@ -158,7 +158,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         const generatedReferences: any[] = [];
         let fullText = '';
 
-        // Stream response
+        // Stream response with MCP tools
         const responseStream = streamingOrchestrator.streamResponse(
           body.question,
           session,
@@ -167,7 +167,8 @@ export async function POST(request: NextRequest): Promise<Response> {
           assistantTurnId,
           voice,
           body.context,
-          { userName, explanationLevel } // Pass user settings
+          { userName, explanationLevel }, // Pass user settings
+          brainResult.selectedBrain // Pass selected brain for MCP tool filtering
         );
 
         for await (const event of responseStream) {

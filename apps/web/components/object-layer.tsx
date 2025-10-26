@@ -138,6 +138,14 @@ function renderObjectContent(object: CanvasObject) {
             loop
             className="max-w-full max-h-full rounded"
             style={{ maxHeight: '100%', maxWidth: '100%' }}
+            onPointerDown={(e) => {
+              // Prevent drag start when clicking on video controls
+              e.stopPropagation();
+            }}
+            onPointerMove={(e) => {
+              // Prevent drag move when hovering over video
+              e.stopPropagation();
+            }}
           >
             <track kind="captions" />
             Your browser does not support the video tag.
@@ -258,9 +266,10 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               if (resizeState) {
                 return;
               }
-              event.stopPropagation();
-              event.preventDefault();
-              if (onDragMove) {
+              // Only call drag move if we're actually dragging
+              if (isDragging && onDragMove) {
+                event.stopPropagation();
+                event.preventDefault();
                 onDragMove(object.id, event);
               }
             }}
