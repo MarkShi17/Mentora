@@ -370,15 +370,20 @@ const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null
       }
     } else {
       // Calculate center transform
-      // Account for floating header (80px) and prompt bar (80px)
+      // Account for floating header (80px), prompt bar (80px)
       const headerHeight = 80;
       const promptHeight = 80;
+      const sidebarWidth = 80; // Sidebar width when expanded
       const visualHeight = stage.height - headerHeight - promptHeight;
+      const availableWidth = stage.width - sidebarWidth;
 
+      // Center between the left sidebar and right edge (not the middle of the screen)
+      // Formula: sidebarWidth + (availableWidth / 2)
+      // This places the center at the midpoint of the canvas area between sidebar and right edge
       const centerTransform: TransformState = {
-        x: stage.width / 2,
-        y: headerHeight + (visualHeight / 2),
-        k: 1
+        x: sidebarWidth + (availableWidth / 2),
+        y: headerHeight + (visualHeight / 2) - 80, // Shift up 80px to account for prompt bar visual weight
+        k: 0.6
       };
 
       transformRef.current = centerTransform;
