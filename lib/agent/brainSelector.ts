@@ -56,6 +56,10 @@ Examples that MUST select code brain:
 - "implement Fibonacci algorithm" → code (algorithm)
 - "what is a binary tree" → code (data structure)
 
+Examples that MUST select math brain:
+- "explain the sum of the first n positive integers"
+- "explain the pythagorean theorem"
+
 Respond with a JSON object containing:
 - selectedBrainType: One of "math", "biology", "code", "design", or "general"
 - confidence: A score from 0-1 indicating how confident you are in this selection

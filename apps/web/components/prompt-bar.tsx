@@ -2,9 +2,13 @@
 
 import { useCallback, useState, useEffect, useRef } from "react";
 import { VoiceToggle } from "@/components/voice-toggle";
+import { ImageUploadButton } from "@/components/image-upload-button";
+import { ImagePreview } from "@/components/image-preview";
 import { useSessionStore } from "@/lib/session-store";
 import { useStreamingQA } from "@/hooks/use-streaming-qa";
 import { useSequentialConnections } from "@/hooks/use-sequential-connections";
+import { processImageFile } from "@/lib/image-upload";
+import type { ImageAttachment } from "@/types";
 
 // Helper function to get color for object type
 function getColorForType(type: string): string {
@@ -20,6 +24,8 @@ function getColorForType(type: string): string {
 
 export function PromptBar() {
   const [value, setValue] = useState("");
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
   const thinkingMessageIdRef = useRef<string | null>(null);
   const currentSessionRef = useRef<string | null>(null);
   const sequenceKeyRef = useRef<string | null>(null);
@@ -35,6 +41,9 @@ export function PromptBar() {
   const setRerunQuestionCallback = useSessionStore((state) => state.setRerunQuestionCallback);
   const updateMessage = useSessionStore((state) => state.updateMessage);
   const removeMessage = useSessionStore((state) => state.removeMessage);
+  const setTimelineOpen = useSessionStore((state) => state.setTimelineOpen);
+  const markSessionAsHavingFirstInput = useSessionStore((state) => state.markSessionAsHavingFirstInput);
+  const sessionsWithFirstInput = useSessionStore((state) => state.sessionsWithFirstInput);
   const { startSequence, addObjectToSequence, endSequence } = useSequentialConnections();
 
   // Streaming QA hook - always enabled
@@ -197,6 +206,32 @@ export function PromptBar() {
     setValue((prev) => `${prev} ${transcript}`.trim());
   }, []);
 
+  const handleImageSelect = useCallback(async (file: File) => {
+    try {
+      const imageData = await processImageFile(file);
+      const attachment: ImageAttachment = {
+        id: crypto.randomUUID(),
+        type: 'image',
+        base64: imageData.base64,
+        mimeType: imageData.mimeType,
+        size: imageData.size,
+        width: imageData.width,
+        height: imageData.height
+      };
+
+      setSelectedImages(prev => [...prev, file]);
+      setImageAttachments(prev => [...prev, attachment]);
+    } catch (error) {
+      console.error('Failed to process image:', error);
+      alert(error instanceof Error ? error.message : 'Failed to process image');
+    }
+  }, []);
+
+  const handleRemoveImage = useCallback((index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+    setImageAttachments(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
   const submitPromptWithText = useCallback(async (text: string) => {
     const prompt = text.trim();
     if (!prompt) {
@@ -226,12 +261,20 @@ export function PromptBar() {
     const state = useSessionStore.getState();
     addMessage(sessionId, {
       role: "user",
-      content: prompt
+      content: prompt,
+      attachments: imageAttachments.length > 0 ? imageAttachments : undefined
     });
     appendTimelineEvent(sessionId, {
       description: "Learner submitted a question.",
       type: "prompt"
     });
+
+    // Check if this is the first user input for this session and auto-open timeline
+    if (!sessionsWithFirstInput[sessionId]) {
+      console.log('🎯 First user input detected - opening timeline');
+      markSessionAsHavingFirstInput(sessionId);
+      setTimelineOpen(true);
+    }
 
     // Add "thinking..." placeholder message with streaming flag
     const thinkingMessageId = addMessage(sessionId, {
@@ -249,10 +292,22 @@ export function PromptBar() {
     // Always use streaming mode
     try {
       sequenceKeyRef.current = startSequence(sessionId);
+
+      // Prepare image data for API
+      const images = imageAttachments.map(img => ({
+        base64: img.base64!,
+        mimeType: img.mimeType
+      }));
+
       await streamingQA.startStreaming(sessionId, prompt, {
         highlightedObjects: selectedObjects,
-        mode: "guided"
+        mode: "guided",
+        images: images.length > 0 ? images : undefined
       });
+
+      // Clear images after submission
+      setSelectedImages([]);
+      setImageAttachments([]);
 
       // Note: Message update happens in onComplete callback
     } catch (error) {
@@ -279,7 +334,7 @@ export function PromptBar() {
         type: "response"
       });
     }
-  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, addMessage, startSequence, streamingQA, endSequence]);
+  }, [activeSessionId, sessions.length, createSession, appendTimelineEvent, addMessage, startSequence, streamingQA, endSequence, imageAttachments]);
 
   const submitPromptMessage = useCallback(async () => {
     if (!value.trim()) {
@@ -356,25 +411,45 @@ export function PromptBar() {
   );
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="pointer-events-auto absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex w-full max-w-2xl items-center gap-4 rounded-3xl glass-white px-6 py-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] backdrop-blur-2xl border border-white/50 hover:shadow-[0_12px_40px_rgba(0,0,0,0.16)] transition-all duration-300"
-    >
-      <input
-        type="text"
-        placeholder={voiceInputState.isPushToTalkActive ? "Listening..." : "Ask Mentora or hold spacebar to speak..."}
-        value={voiceInputState.isPushToTalkActive ? voiceInputState.spacebarTranscript : value}
-        onChange={(event) => setValue(event.target.value)}
-        disabled={streamingQA.isStreaming || voiceInputState.isPushToTalkActive}
-        className="flex-1 bg-transparent text-sm font-medium text-slate-900 placeholder:text-slate-500/70 focus:outline-none disabled:opacity-60 transition-opacity"
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            void submitPromptMessage();
-          }
-        }}
-      />
-      <VoiceToggle onTranscript={handleTranscript} onAutoSubmit={submitPromptMessage} />
-    </form>
+    <div className="pointer-events-auto absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex flex-col w-full max-w-2xl gap-2">
+      {/* Image previews */}
+      {selectedImages.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-2">
+          {selectedImages.map((file, index) => (
+            <ImagePreview
+              key={index}
+              file={file}
+              onRemove={() => handleRemoveImage(index)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Main prompt bar */}
+      <form
+        onSubmit={handleSubmit}
+        className="flex w-full items-center gap-4 rounded-3xl glass-white px-6 py-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.12)] backdrop-blur-2xl border border-white/50 hover:shadow-[0_12px_40px_rgba(0,0,0,0.16)] transition-all duration-300"
+      >
+        <ImageUploadButton
+          onImageSelect={handleImageSelect}
+          disabled={streamingQA.isStreaming || voiceInputState.isPushToTalkActive}
+        />
+        <input
+          type="text"
+          placeholder={voiceInputState.isPushToTalkActive ? "Listening..." : "Ask Mentora or hold spacebar to speak..."}
+          value={voiceInputState.isPushToTalkActive ? voiceInputState.spacebarTranscript : value}
+          onChange={(event) => setValue(event.target.value)}
+          disabled={streamingQA.isStreaming || voiceInputState.isPushToTalkActive}
+          className="flex-1 bg-transparent text-sm font-medium text-slate-900 placeholder:text-slate-500/70 focus:outline-none disabled:opacity-60 transition-opacity"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void submitPromptMessage();
+            }
+          }}
+        />
+        <VoiceToggle onTranscript={handleTranscript} onAutoSubmit={submitPromptMessage} />
+      </form>
+    </div>
   );
 }

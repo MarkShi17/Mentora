@@ -44,6 +44,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
     options?: {
       highlightedObjects?: string[];
       mode?: 'guided' | 'direct';
+      images?: Array<{ base64: string; mimeType: string }>;
       context?: {
         recentConversation?: string[];
         topics?: string[];
@@ -88,6 +89,7 @@ export function useStreamingQA(callbacks?: StreamingQACallbacks) {
           question,
           highlightedObjects: options?.highlightedObjects || [],
           mode: options?.mode || 'guided',
+          images: options?.images,
           context: options?.context,
           stream: true,
           // Include user settings
