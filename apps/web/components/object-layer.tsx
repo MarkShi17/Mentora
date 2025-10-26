@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { CodeBlock } from "@/components/code-block";
 
 // Removed getObjectSizeClass - now using backend-calculated sizes directly
 
@@ -60,9 +61,13 @@ function renderObjectContent(object: CanvasObject) {
     
     case 'code':
       return (
-        <pre className="text-sm text-slate-800 bg-slate-100 p-4 rounded-lg overflow-auto leading-relaxed h-full">
-          <code>{object.data.code || ''}</code>
-        </pre>
+        <CodeBlock
+          code={object.data.code || ''}
+          language={object.data.language || 'text'}
+          theme="light"
+          showLineNumbers={true}
+          showCopyButton={true}
+        />
       );
     
     case 'graph':
@@ -76,56 +81,70 @@ function renderObjectContent(object: CanvasObject) {
       );
     
     case 'latex':
-      // Support both inline and display math from react-markdown
-      let latexContent = object.data.content || object.data.latex || '';
+      // Access the LaTeX source from the correct field
+      const latexSource = object.data.latex || object.data.content || '';
 
-      // Auto-wrap raw LaTeX with delimiters if not already wrapped
-      if (latexContent && !latexContent.includes('$')) {
-        // Wrap with display mode delimiters for centered equations
-        latexContent = `$$${latexContent}$$`;
-      }
-
-      const isDisplayMode = latexContent.startsWith('$$') || object.metadata?.displayMode;
-
-      // If we have LaTeX source, render with KaTeX
-      if (latexContent) {
+      // If no LaTeX source, fall back to rendered image
+      if (!latexSource) {
         return (
-          <div className={cn(
-            "p-4 text-slate-900",
-            isDisplayMode ? "flex items-center justify-center" : "flex items-start"
-          )}>
-            <ReactMarkdown
-              remarkPlugins={[remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-            >
-              {latexContent}
-            </ReactMarkdown>
+          <div className="flex items-center justify-center p-4 h-full">
+            <img
+              src={object.data.rendered}
+              alt="LaTeX equation"
+              className="max-w-full max-h-full object-contain"
+            />
           </div>
         );
       }
 
-      // Fallback to image rendering for backwards compatibility
+      // Wrap with display mode delimiters for KaTeX if not already wrapped
+      let displayContent = latexSource;
+      if (!displayContent.includes('$')) {
+        // Use display mode ($$...$$) for centered equations
+        displayContent = `$$${displayContent}$$`;
+      }
+
+      // Render with KaTeX via ReactMarkdown
       return (
-        <div className="flex items-center justify-center p-4 h-full">
-          <img
-            src={object.data.rendered}
-            alt="LaTeX equation"
-            className="max-w-full max-h-full object-contain"
-          />
+        <div className="p-4 text-slate-900 flex items-center justify-center h-full">
+          <div className="katex-wrapper">
+            <ReactMarkdown
+              remarkPlugins={[remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+            >
+              {displayContent}
+            </ReactMarkdown>
+          </div>
         </div>
       );
     
     case 'image':
       return (
         <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto flex items-center justify-center">
-          <img 
-            src={object.data.url || object.data.content} 
-            alt={object.data.alt || 'Generated image'} 
+          <img
+            src={object.data.url || object.data.content}
+            alt={object.data.alt || 'Generated image'}
             className="max-w-full max-h-full object-contain rounded"
           />
         </div>
       );
-    
+
+    case 'video':
+      return (
+        <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto flex items-center justify-center">
+          <video
+            src={object.data.url}
+            controls
+            loop
+            className="max-w-full max-h-full rounded"
+            style={{ maxHeight: '100%', maxWidth: '100%' }}
+          >
+            <track kind="captions" />
+            Your browser does not support the video tag.
+          </video>
+        </div>
+      );
+
     default:
       return (
         <p className="text-sm text-slate-800">
