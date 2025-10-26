@@ -154,7 +154,7 @@ export class StreamingOrchestrator {
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system and user prompts with user settings
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed);
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
       // Get model from selected brain
@@ -262,11 +262,20 @@ export class StreamingOrchestrator {
                 toolName: toolUse.name,
                 serverId,
                 success: mcpResult.success,
-                contentLength: mcpResult.content?.length || 0
+                contentLength: mcpResult.content?.length || 0,
+                error: mcpResult.error,
+                isError: mcpResult.isError,
+                fullContent: mcpResult.content
               });
 
               if (!mcpResult.success) {
-                throw new Error(mcpResult.error || 'MCP tool call failed');
+                const errorMsg = mcpResult.error || 'MCP tool call failed';
+                logger.error('MCP tool returned failure', {
+                  toolName: toolUse.name,
+                  errorMessage: errorMsg,
+                  mcpResult
+                });
+                throw new Error(errorMsg);
               }
 
               // Convert MCP result to canvas objects if it's a visualization tool
@@ -621,7 +630,8 @@ export class StreamingOrchestrator {
     cachedIntroPlayed?: {
       text: string;
       id: string;
-    } | null
+    } | null,
+    selectedBrain?: Brain
   ): string {
     const teachingStyle =
       mode === 'guided'

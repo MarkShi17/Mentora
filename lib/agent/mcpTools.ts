@@ -13,17 +13,7 @@ import { Tool } from '@anthropic-ai/sdk/resources/messages.mjs';
 export const MCP_TOOLS_FOR_CLAUDE: Tool[] = [
   {
     name: 'render_animation',
-    description: `Render beautiful mathematical animations using Manim (Mathematical Animation Engine).
-
-PREFERRED for mathematical visualizations! Use this tool when you need to:
-- Create animated mathematical concepts (Pythagorean theorem, geometry, calculus, algebra)
-- Show step-by-step mathematical transformations with smooth animations
-- Visualize function behavior over time with dynamic graphs
-- Create animated proofs or demonstrations with moving shapes and equations
-- Illustrate mathematical relationships dynamically with colors and transitions
-- Generate professional-quality mathematical videos and GIFs
-
-This tool creates stunning, animated visualizations that are perfect for teaching mathematical concepts. The code must define a Scene class that inherits from Manim's Scene.`,
+    description: `Create animated mathematical visualizations using Manim. PREFERRED for math: animated proofs, function transformations, geometric concepts, calculus demonstrations. Code must define a Scene class.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -57,20 +47,7 @@ class MainScene(Scene):
   },
   {
     name: 'execute_python',
-    description: `Execute Python code to generate static visualizations, data analysis, and scientific plots.
-
-Use this tool when you need to:
-- Create static matplotlib/seaborn visualizations (plots, charts, graphs)
-- Generate scientific diagrams (biology, chemistry, physics)
-- Perform data analysis and create visual results
-- Create custom static diagrams and plots
-- Demonstrate algorithm visualizations with static images
-
-Note: For mathematical concepts and animated visualizations, prefer the render_animation tool instead.
-
-Available libraries: numpy, pandas, matplotlib, seaborn, plotly, scipy
-
-The tool will return base64-encoded PNG images of any matplotlib plots created.`,
+    description: `Execute Python for custom static plots, data analysis, or scientific diagrams when specialized tools don't fit. Libraries: numpy, pandas, matplotlib, seaborn, scipy. Returns PNG images.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -89,23 +66,7 @@ The tool will return base64-encoded PNG images of any matplotlib plots created.`
   },
   {
     name: 'render_biology_diagram',
-    description: `Generate **curated template diagrams** for standard biology concepts using pre-built matplotlib templates.
-
-Use this tool ONLY when you need one of these specific templates:
-- Cell structure (organelles and basic layout)
-- DNA transcription/translation (basic central dogma)
-- Photosynthesis (chloroplast overview)
-- Mitosis phases (standard phase diagram)
-- CRISPR mechanism (basic overview)
-- Cell cycle (G1/S/G2/M phases)
-- Gene expression (DNA→RNA→protein)
-
-**When NOT to use:**
-- For custom biological pathways or sequences (use create_mermaid_diagram instead)
-- For 3D molecular structures (use visualize_molecule instead)
-- For data plots or custom diagrams (use execute_python instead)
-
-Arguments allow selecting the template, providing a custom title, annotations, and highlight labels.`,
+    description: `Generate pre-built biology template diagrams: cell_structure, dna_transcription, photosynthesis, mitosis_phases, crispr_mechanism, cell_cycle, gene_expression. Use for standard biology processes. For custom pathways use generate, for 3D structures use visualize_molecule.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -142,9 +103,7 @@ Arguments allow selecting the template, providing a custom title, annotations, a
   },
   {
     name: 'search_biorender',
-    description: `Search BioRender's library of 30,000+ professionally designed biology illustrations and icons.
-
-Use this tool to discover ready-made diagrams or assets that match a given topic, process, or structure. Provide a focused query and optionally filter by BioRender category.`,
+    description: `Search BioRender's 30,000+ professional biology illustrations. Find diagrams matching topics, processes, or structures. Filter by category if needed.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -162,9 +121,7 @@ Use this tool to discover ready-made diagrams or assets that match a given topic
   },
   {
     name: 'get_biorender_figure',
-    description: `Retrieve a specific BioRender illustration by its figure identifier.
-
-Use this after searching BioRender to pull down the curated, publication-quality diagram for display in the lesson.`,
+    description: `Retrieve a specific BioRender illustration by figure ID. Use after search_biorender to get publication-quality diagrams.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -182,24 +139,8 @@ Use this after searching BioRender to pull down the curated, publication-quality
     },
   },
   {
-    name: 'create_mermaid_diagram',
-    description: `Create **custom process flowcharts and pathway diagrams** using Mermaid syntax.
-
-**PREFERRED for biological pathways and multi-step processes:**
-- CRISPR/Cas9 editing workflow (guide RNA → target DNA → cleavage → repair)
-- Cell signaling pathways (receptor → cascade → response)
-- Metabolic pathways (glycolysis, Krebs cycle steps)
-- Cell cycle checkpoints and state transitions
-- Gene regulation networks
-- Immune response sequences
-- Any multi-step biological process with decision points
-
-**Advantages over templates:**
-- Fully customizable to match the specific question
-- Can show branching, feedback loops, and decision points
-- Ideal for explaining "how" and "when" in biological processes
-
-Provide valid Mermaid code (flowchart, sequence, or state diagram) to generate SVG outputs for the canvas.`,
+    name: 'generate',
+    description: `Create custom flowchart diagrams using Mermaid syntax. PREFERRED for biological pathways, metabolic processes, signaling cascades, regulatory networks. Shows branching, feedback loops, decision points. Provide Mermaid code (flowchart/sequence/state).`,
     input_schema: {
       type: 'object',
       properties: {
@@ -227,21 +168,7 @@ flowchart LR
   },
   {
     name: 'visualize_molecule',
-    description: `Render **3D molecular structures** using PyMOL for high-quality protein and nucleic acid visualization.
-
-**PREFERRED for molecular-level biology:**
-- Protein structures (Cas9, hemoglobin, antibodies, enzymes)
-- Protein-DNA/RNA complexes (CRISPR-Cas9 bound to DNA)
-- Active sites and binding pockets
-- Enzyme-substrate interactions
-- Structural biology and molecular mechanisms
-
-**When to use:**
-- Questions about protein structure, shape, or molecular interactions
-- Explaining "how" proteins work at the molecular level
-- Showing specific residues or domains (can highlight)
-
-Requires PDB ID (e.g., "4OO8" for Cas9). Supports multiple styles: cartoon, surface, sticks, spheres, electrostatic.`,
+    description: `Render 3D molecular structures using PyMOL. PREFERRED for protein/DNA structures: Cas9, enzymes, antibodies, protein-DNA complexes, active sites. Requires PDB ID. Styles: cartoon, surface, sticks, spheres, electrostatic. Can highlight specific residues.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -269,7 +196,7 @@ Requires PDB ID (e.g., "4OO8" for Cas9). Supports multiple styles: cartoon, surf
   },
   {
     name: 'fetch_protein',
-    description: `Lookup a protein by name via UniProt to retrieve metadata, accession IDs, and related structure information before visualization.`,
+    description: `Lookup protein by name via UniProt. Get metadata, accession IDs, PDB structures. Use before visualize_molecule.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -286,17 +213,8 @@ Requires PDB ID (e.g., "4OO8" for Cas9). Supports multiple styles: cartoon, surf
     },
   },
   {
-    name: 'sequential_thinking',
-    description: `Use structured sequential thinking to break down complex problems into steps.
-
-Use this tool when you need to:
-- Solve complex multi-step problems
-- Break down difficult concepts into manageable pieces
-- Work through proofs or derivations step-by-step
-- Analyze problems that require careful reasoning
-- Show your thinking process explicitly
-
-This tool helps you think through problems systematically before explaining them to the student.`,
+    name: 'sequentialthinking',
+    description: `Break down complex problems into sequential thinking steps. Use for multi-step problem solving, proofs, derivations, or careful reasoning before explaining to student.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -333,10 +251,10 @@ export const TOOL_TO_SERVER_MAP: Record<string, string> = {
   render_biology_diagram: 'python',
   search_biorender: 'biorender',
   get_biorender_figure: 'biorender',
-  create_mermaid_diagram: 'mermaid',
+  generate: 'mermaid',
   visualize_molecule: 'chatmol',
   fetch_protein: 'chatmol',
-  sequential_thinking: 'sequential-thinking',
+  sequentialthinking: 'sequential-thinking',
 };
 
 /**
@@ -348,7 +266,7 @@ export function isVisualizationTool(toolName: string): boolean {
     toolName === 'render_animation' ||
     toolName === 'render_biology_diagram' ||
     toolName === 'get_biorender_figure' ||
-    toolName === 'create_mermaid_diagram' ||
+    toolName === 'generate' ||
     toolName === 'visualize_molecule'
   );
 }
@@ -357,5 +275,5 @@ export function isVisualizationTool(toolName: string): boolean {
  * Check if a tool is a thinking tool that enhances reasoning
  */
 export function isThinkingTool(toolName: string): boolean {
-  return toolName === 'sequential_thinking';
+  return toolName === 'sequentialthinking';
 }

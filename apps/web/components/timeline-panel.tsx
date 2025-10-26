@@ -24,6 +24,7 @@ export function TimelinePanel() {
   const [position, setPosition] = useState({ right: 16, top: 16 }); // 16px = 1rem (4 in Tailwind)
   const [dragState, setDragState] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
+  const hasAutoOpenedRef = useRef(false);
 
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const messages = useSessionStore((state) => state.messages);
@@ -35,6 +36,18 @@ export function TimelinePanel() {
   const updateCanvasObject = useSessionStore((state) => state.updateCanvasObject);
   const stopStreamingCallback = useSessionStore((state) => state.stopStreamingCallback);
   const rerunQuestionCallback = useSessionStore((state) => state.rerunQuestionCallback);
+  const setLayoutOffset = useSessionStore((state) => state.setLayoutOffset);
+
+  useEffect(() => {
+    const baseWidth = 384;
+    const margin = position.right;
+    const effective = isExpanded ? baseWidth + Math.max(0, margin) : 0;
+    setLayoutOffset('right', effective);
+  }, [isExpanded, position.right, setLayoutOffset]);
+
+  useEffect(() => () => {
+    setLayoutOffset('right', 0);
+  }, [setLayoutOffset]);
 
   // Global ESC and Spacebar handler for stopping generation
   useEffect(() => {
@@ -64,12 +77,18 @@ export function TimelinePanel() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [stopStreamingCallback]);
 
-  // Automatically expand the panel when the first message is added (only once)
+  // Reset auto-open tracking when switching sessions
   useEffect(() => {
-    if (dialogue.length === 1 && !isExpanded) {
+    hasAutoOpenedRef.current = false;
+  }, [activeSessionId]);
+
+  // Automatically expand the panel when the first message is added (only once per session)
+  useEffect(() => {
+    if (dialogue.length >= 1 && !hasAutoOpenedRef.current && !isExpanded) {
       setIsExpanded(true);
+      hasAutoOpenedRef.current = true;
     }
-  }, [dialogue.length]);
+  }, [dialogue.length, isExpanded]);
 
   const handleObjectClick = useCallback((objectId: string) => {
     if (!activeSessionId) return;

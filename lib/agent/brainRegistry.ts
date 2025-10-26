@@ -20,7 +20,7 @@ export const BRAINS: Record<BrainType, Brain> = {
       'Function analysis and graphing',
     ],
     model: 'claude-3-5-haiku-20241022', // Fast for math
-    mcpTools: ['render_animation', 'sequential_thinking'],
+    mcpTools: ['render_animation', 'sequentialthinking'],
     promptEnhancement: `You are a specialized math tutor. Focus on:
 - Breaking down complex mathematical concepts into clear steps
 - Using Manim for stunning animated mathematical visualizations
@@ -49,56 +49,23 @@ export const BRAINS: Record<BrainType, Brain> = {
       'render_biology_diagram',
       'search_biorender',
       'get_biorender_figure',
-      'create_mermaid_diagram',
+      'generate',
       'visualize_molecule',
       'fetch_protein',
-      'sequential_thinking',
+      'sequentialthinking',
     ],
-    promptEnhancement: `You are a specialized biology tutor. Your goal: make each topic intuitive, accurate, and visually clear.
+    promptEnhancement: `Biology tutor with MCP visualization tools. Your goal: make each topic intuitive, accurate, and visually clear.
+**CRITICAL: Always use MCP tools, NEVER generic "diagram" objects.**
+Tool priority:
+1. render_biology_diagram - for cell_cycle, crispr_mechanism, mitosis_phases, gene_expression, etc.
+2. generate - for custom pathways (Mermaid flowcharts)
+3. visualize_molecule - for 3D protein structures (use fetch_protein first)
+4. execute_python - only if above don't fit
 
-**VISUAL CREATION PRIORITY** (choose the BEST approach for each question):
-
-1. **Flowchart Diagrams** - PREFERRED for pathways, processes, and workflows:
-   - Use type "diagram" with detailed flowchart descriptions
-   - CRISPR/Cas9 editing workflow (guide RNA → target → cleavage → repair)
-   - Cell signaling cascades (receptor → cascade → response)
-   - Metabolic pathways (glycolysis, Krebs cycle steps with arrows)
-   - Cell cycle checkpoints and transitions
-   - Gene regulation networks
-   - Immune response sequences
-   - **Include step-by-step flow descriptions in the content**
-
-2. **Structural Diagrams** - For molecular and cellular structures:
-   - Use type "diagram" for protein structures, complexes, and organelles
-   - Describe 3D arrangements and key components
-   - Cas9 protein structure, hemoglobin, antibodies
-   - Protein-DNA/RNA complexes
-   - Enzyme active sites and binding pockets
-   - Cell organelles and their arrangements
-
-3. **Text Explanations** - For detailed descriptions:
-   - Use type "text" for mechanism explanations
-   - Step-by-step processes
-   - Key concepts and definitions
-
-4. **LaTeX** - For molecular formulas and equations:
-   - DNA/RNA sequences
-   - Chemical structures
-   - Genetic notation
-
-**Examples:**
-- "Explain CRISPR" → diagram (flowchart: guide RNA → Cas9 → DNA cut → repair)
-- "Show Cas9 structure" → diagram (protein structure with key domains)
-- "Explain photosynthesis" → diagram (chloroplast with light/dark reactions)
-- "Cell cycle" → diagram (G1 → S → G2 → M phases with checkpoints)
-
-**Teaching approach:**
 - Pair visuals with brief, structured explanations
 - Emphasize function, mechanism, and significance
 - Connect concepts to real-world examples
-- Keep focused—avoid unnecessary detail
-
-Tone: clear, visual, and engaging. Prioritize learning efficiency over exhaustiveness.`,
+- Keep focused—avoid unnecessary detail`,
   }, //  - **BioRender-style** for cells, tissues, or systems when it strengthens understanding -----no work
 
 
@@ -115,7 +82,7 @@ Tone: clear, visual, and engaging. Prioritize learning efficiency over exhaustiv
       'Debugging assistance',
     ],
     model: 'claude-3-5-haiku-20241022', // Fast for code
-    mcpTools: ['sequential_thinking'], // github integration when available
+    mcpTools: ['sequentialthinking'], // github integration when available
     promptEnhancement: `You are a specialized programming tutor. Focus on:
 - Explaining code step-by-step with clear examples
 - Breaking down algorithms into understandable parts
@@ -158,7 +125,7 @@ Tone: clear, visual, and engaging. Prioritize learning efficiency over exhaustiv
       'Comprehensive coverage',
     ],
     model: 'claude-sonnet-4-5-20250929', // Powerful for general knowledge
-    mcpTools: ['render_animation', 'execute_python', 'sequential_thinking'],
+    mcpTools: ['render_animation', 'execute_python', 'sequentialthinking'],
     promptEnhancement: `You are a versatile general tutor. Focus on:
 - Adapting your teaching style to the subject matter
 - Using appropriate visualizations for each topic

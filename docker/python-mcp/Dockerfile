@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Install Python packages for scientific computing and visualization
-RUN pip install --no-cache-dir -r requirements.txt
+# Use increased timeout and retries for large packages (numpy, scipy, etc.)
+RUN pip install --no-cache-dir --timeout=600 --retries=5 -r requirements.txt
 
 # Copy server code
 COPY server.py .
