@@ -35,8 +35,8 @@ function renderObjectContent(object: CanvasObject, scaleFactor: number = 1) {
         }
       }
 
-      // Use stored fontSize from object data, default to 14px for better readability
-      const baseFontSize = object.data.fontSize || 14;
+      // Use stored fontSize from object data, default to 18px for better readability
+      const baseFontSize = object.data.fontSize || 18;
 
       return (
         <div

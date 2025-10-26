@@ -164,8 +164,8 @@ export function ContinuousAI() {
           updateMessage(sessionId, thinkingMessageId, {
             content: finalText,
             canvasObjectIds: objectIds.length > 0 ? objectIds : undefined,
-            isStreaming: false
-            // Don't set isPlayingAudio here - audio might still be playing!
+            isStreaming: false,
+            isPlayingAudio: streamingQA.audioState.isPlaying  // Explicitly set based on current audio state
           });
           console.log('✅ Updated thinking message with final response');
 

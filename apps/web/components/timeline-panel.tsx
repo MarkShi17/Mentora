@@ -307,7 +307,7 @@ export function TimelinePanel() {
                   </button>
                 )}
               </div>
-              {(message.content === "Thinking..." || message.isStreaming || message.isPlayingAudio) && !message.interrupted ? (
+              {(message.content === "Thinking..." || message.isStreaming || message.isPlayingAudio || message.audioComplete) && !message.interrupted ? (
                 <div className="mt-2">
                   {/* Show content if available (streaming or after thinking) */}
                   {message.content && message.content !== "Thinking..." && (

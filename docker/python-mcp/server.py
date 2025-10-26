@@ -581,13 +581,13 @@ class PythonMCPServer:
                             edgecolor=cut_color, linewidth=2), zorder=11)
 
         # Key mechanism steps - simplified and well-spaced
-        ax.text(0.8, 0.6, "How It Works:", fontsize=14, color="#1e293b", weight='bold')
-        ax.text(0.8, 0.7,
+        ax.text(0.8, 1.6, "How It Works:", fontsize=14, color="#1e293b", weight='bold')
+        ax.text(0.8, 1.3,
                 "1. Guide RNA directs Cas9 to target DNA sequence\n"
                 "2. PAM sequence (NGG) enables Cas9 binding\n"
                 "3. Cas9 cuts both DNA strands precisely",
                 fontsize=12, color="#334155", verticalalignment='top',
-                linespacing=1.6)
+                linespacing=1.8)
 
         # Axes setup with more space
         ax.set_xlim(0, 10)

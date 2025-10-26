@@ -559,7 +559,7 @@ export class StreamingOrchestrator {
                   size: obj.size
                 }))
               },
-              { width: 400, height: 200 }
+              { width: 900, height: 400 }
             );
 
             const canvasObject = objectGenerator.generateObject(
@@ -695,7 +695,7 @@ export class StreamingOrchestrator {
                   size: obj.size
                 }))
               },
-              { width: 400, height: 200 }
+              { width: 900, height: 400 }
             );
 
             const canvasObject = objectGenerator.generateObject(
@@ -1448,8 +1448,8 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         // Add padding to account for component chrome (header ~50px + padding 32px)
         const HEADER_HEIGHT = 50;
         const PADDING = 32;
-        const imageWidth = (content.width || 1600) + PADDING;
-        const imageHeight = (content.height || 1200) + HEADER_HEIGHT + PADDING;
+        const imageWidth = (content.width || 600) + PADDING;
+        const imageHeight = (content.height || 450) + HEADER_HEIGHT + PADDING;
 
         const position = layoutEngine.calculatePosition(
           {
