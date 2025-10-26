@@ -150,10 +150,10 @@ export class StreamingOrchestrator {
         tools: availableTools.map(t => t.name)
       });
 
-      // Build context from session
-      const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
+      // Build context from session (now async due to RAG)
+      const sessionContext = await contextBuilder.buildContext(session, highlightedObjectIds);
 
-      // Generate system and user prompts with user settings
+      // Generate system and user prompts with user settings (include RAG context)
       const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
       const userPrompt = this.buildUserPrompt(question, sessionContext, userSettings);
 
@@ -255,7 +255,18 @@ export class StreamingOrchestrator {
               preToolComponents = agentResponse.objects;
               logger.info('📦 Found components in pre-tool response', {
                 componentCount: preToolComponents.length,
-                types: preToolComponents.map(c => c.type)
+                types: preToolComponents.map(c => c.type),
+                brainType: selectedBrain?.type,
+                narrationTextLength: narrationText.length,
+                narrationPreview: narrationText.substring(0, 300)
+              });
+            } else {
+              logger.warn('⚠️ No objects found in pre-tool response', {
+                brainType: selectedBrain?.type,
+                hasNarrationText: narrationText.length > 0,
+                narrationTextLength: narrationText.length,
+                hasMarkers: narrationText.includes('[OBJECT_START'),
+                narrationPreview: narrationText.substring(0, 300)
               });
             }
 
@@ -565,47 +576,56 @@ export class StreamingOrchestrator {
         });
 
         for (const request of preToolComponents) {
-          const position = layoutEngine.calculatePosition(
-            {
-              existingObjects: streamingContext.existingObjects.map(obj => ({
-                id: obj.id,
-                position: obj.position,
-                size: obj.size
-              }))
-            },
-            { width: 400, height: 200 }
-          );
+          try {
+            const position = layoutEngine.calculatePosition(
+              {
+                existingObjects: streamingContext.existingObjects.map(obj => ({
+                  id: obj.id,
+                  position: obj.position,
+                  size: obj.size
+                }))
+              },
+              { width: 400, height: 200 }
+            );
 
-          const canvasObject = objectGenerator.generateObject(
-            {
+            const canvasObject = objectGenerator.generateObject(
+              {
+                type: request.type,
+                content: request.content,
+                referenceName: request.referenceName,
+                metadata: request.metadata
+              },
+              position,
+              turnId
+            );
+
+            streamingContext.existingObjects.push(canvasObject);
+
+            const placement: ObjectPlacement = {
+              objectId: canvasObject.id,
+              position: canvasObject.position,
+              animateIn: 'fade',
+              timing: toolGeneratedObjects.length * 300
+            };
+
+            yield {
+              type: 'canvas_object',
+              timestamp: Date.now(),
+              data: { object: canvasObject, placement }
+            };
+
+            logger.info('✅ Pre-tool component created as canvas object', {
+              type: canvasObject.type,
+              label: canvasObject.label
+            });
+          } catch (error) {
+            // Skip empty text objects or other generation errors
+            logger.warn('⚠️ Skipping object due to generation error', {
               type: request.type,
-              content: request.content,
-              referenceName: request.referenceName,
-              metadata: request.metadata
-            },
-            position,
-            turnId
-          );
-
-          streamingContext.existingObjects.push(canvasObject);
-
-          const placement: ObjectPlacement = {
-            objectId: canvasObject.id,
-            position: canvasObject.position,
-            animateIn: 'fade',
-            timing: toolGeneratedObjects.length * 300
-          };
-
-          yield {
-            type: 'canvas_object',
-            timestamp: Date.now(),
-            data: { object: canvasObject, placement }
-          };
-
-          logger.info('✅ Pre-tool component created as canvas object', {
-            type: canvasObject.type,
-            label: canvasObject.label
-          });
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            continue;
+          }
         }
       }
 
@@ -626,16 +646,59 @@ export class StreamingOrchestrator {
         narrationLength: agentResponse.narration.length,
         objectsCount: agentResponse.objects.length,
         objectTypes: agentResponse.objects.map(o => o.type),
-        referencesCount: agentResponse.references.length
+        referencesCount: agentResponse.references.length,
+        brainType: selectedBrain?.type,
+        hasMarkerFormat: finalResponseText.includes('[OBJECT_START'),
+        hasNarrationMarker: finalResponseText.includes('[NARRATION]')
       });
 
-      // Separate objects into priority (latex, graph) and regular for early rendering
-      const priorityObjects = agentResponse.objects.filter(obj =>
-        obj.type === 'latex' || obj.type === 'graph'
-      );
-      const regularObjects = agentResponse.objects.filter(obj =>
-        obj.type !== 'latex' && obj.type !== 'graph'
-      );
+      // CRITICAL WARNING for Math brain
+      if (selectedBrain?.type === 'math' && agentResponse.objects.length < 2) {
+        logger.warn('⚠️ MATH BRAIN VIOLATION: Insufficient objects generated', {
+          objectsGenerated: agentResponse.objects.length,
+          minimumRequired: 2,
+          toolsUsed: toolGeneratedObjects.length,
+          responsePreview: finalResponseText.substring(0, 500)
+        });
+      }
+
+      // Separate objects into priority (latex, graph, text/markdown) and regular for early rendering
+      // For Code Brain: include 'code' and 'image'/'diagram' in priority, and enforce specific order
+      const isCodeBrain = selectedBrain?.type === 'code';
+
+      let priorityObjects, regularObjects;
+
+      if (isCodeBrain) {
+        // Code Brain: priority includes code, image, diagram, text
+        // Order: code → image/diagram → text
+        priorityObjects = agentResponse.objects.filter(obj =>
+          obj.type === 'code' || obj.type === 'image' || obj.type === 'diagram' || obj.type === 'text'
+        );
+        regularObjects = agentResponse.objects.filter(obj =>
+          obj.type !== 'code' && obj.type !== 'image' && obj.type !== 'diagram' && obj.type !== 'text'
+        );
+
+        // Reorder priority objects for Code Brain: code → image/diagram → text
+        const codeObjects = priorityObjects.filter(o => o.type === 'code');
+        const imageObjects = priorityObjects.filter(o => o.type === 'image' || o.type === 'diagram');
+        const textObjects = priorityObjects.filter(o => o.type === 'text');
+        priorityObjects = [...codeObjects, ...imageObjects, ...textObjects];
+
+        logger.info('🧠 Code Brain: Reordered objects', {
+          order: 'code → image/diagram → text',
+          codeCount: codeObjects.length,
+          imageCount: imageObjects.length,
+          textCount: textObjects.length
+        });
+      } else {
+        // Other brains: original priority logic
+        priorityObjects = agentResponse.objects.filter(obj =>
+          obj.type === 'latex' || obj.type === 'graph' || obj.type === 'text'
+        );
+        regularObjects = agentResponse.objects.filter(obj =>
+          obj.type !== 'latex' && obj.type !== 'graph' && obj.type !== 'text'
+        );
+      }
 
       // Emit priority objects BEFORE TTS starts for immediate visual feedback
       if (priorityObjects.length > 0) {
@@ -645,44 +708,53 @@ export class StreamingOrchestrator {
         });
 
         for (const request of priorityObjects) {
-          const position = layoutEngine.calculatePosition(
-            {
-              existingObjects: streamingContext.existingObjects.map(obj => ({
-                id: obj.id,
-                position: obj.position,
-                size: obj.size
-              }))
-            },
-            { width: 400, height: 200 }
-          );
+          try {
+            const position = layoutEngine.calculatePosition(
+              {
+                existingObjects: streamingContext.existingObjects.map(obj => ({
+                  id: obj.id,
+                  position: obj.position,
+                  size: obj.size
+                }))
+              },
+              { width: 400, height: 200 }
+            );
 
-          const canvasObject = objectGenerator.generateObject(
-            {
+            const canvasObject = objectGenerator.generateObject(
+              {
+                type: request.type,
+                content: request.content,
+                referenceName: request.referenceName,
+                metadata: request.metadata
+              },
+              position,
+              turnId
+            );
+
+            streamingContext.existingObjects.push(canvasObject);
+
+            const placement: ObjectPlacement = {
+              objectId: canvasObject.id,
+              position: canvasObject.position,
+              animateIn: 'fade',
+              timing: totalObjects * 300
+            };
+
+            yield {
+              type: 'canvas_object',
+              timestamp: Date.now(),
+              data: { object: canvasObject, placement }
+            };
+
+            totalObjects++;
+          } catch (error) {
+            // Skip empty text objects or other generation errors
+            logger.warn('⚠️ Skipping priority object due to generation error', {
               type: request.type,
-              content: request.content,
-              referenceName: request.referenceName,
-              metadata: request.metadata
-            },
-            position,
-            turnId
-          );
-
-          streamingContext.existingObjects.push(canvasObject);
-
-          const placement: ObjectPlacement = {
-            objectId: canvasObject.id,
-            position: canvasObject.position,
-            animateIn: 'fade',
-            timing: totalObjects * 300
-          };
-
-          yield {
-            type: 'canvas_object',
-            timestamp: Date.now(),
-            data: { object: canvasObject, placement }
-          };
-
-          totalObjects++;
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            continue;
+          }
         }
       }
 
@@ -764,13 +836,25 @@ export class StreamingOrchestrator {
       }
 
       // Generate additional canvas objects from Claude's response (if any)
-      // ONLY if no MCP visualization tools were used (to avoid spurious diagrams)
-      if (agentResponse.objects && agentResponse.objects.length > 0 && toolGeneratedObjects.length === 0) {
-        logger.info('Generating canvas objects from Claude response', {
-          objectCount: agentResponse.objects.length
+      // Priority objects (latex, text, graph) are already rendered above
+      // For regular objects: render code objects always, but skip diagrams if visualization tools were used
+      if (agentResponse.objects && agentResponse.objects.length > 0 && regularObjects.length > 0) {
+        logger.info('Processing regular canvas objects from Claude response', {
+          totalObjectCount: agentResponse.objects.length,
+          regularObjectCount: regularObjects.length,
+          toolsUsed: toolGeneratedObjects.length > 0
         });
 
         for (const request of regularObjects) {
+          // Skip diagrams if visualization tools were used (to avoid spurious/redundant diagrams)
+          // But always render code objects even when tools were used
+          if (request.type === 'diagram' && toolGeneratedObjects.length > 0) {
+            logger.info('Skipping diagram object (visualization tool already used)', {
+              type: request.type
+            });
+            continue;
+          }
+
           const position = layoutEngine.calculatePosition(
             {
               existingObjects: streamingContext.existingObjects.map(obj => ({
@@ -851,6 +935,38 @@ export class StreamingOrchestrator {
           totalReferences
         }
       };
+
+      // Auto-ingest to ChromaDB if RAG is enabled
+      if (process.env.ENABLE_RAG === 'true' && process.env.RAG_AUTO_INGEST !== 'false') {
+        try {
+          const { safeAutoIngest } = await import('@/lib/rag/safeRagService');
+
+          // Get all new objects created in this turn
+          const newObjects = streamingContext.existingObjects.filter(
+            obj => obj.metadata?.turnId === turnId
+          );
+
+          logger.info('🔄 Auto-ingesting to ChromaDB', {
+            objectCount: newObjects.length,
+            turnId,
+            sessionId: session.id
+          });
+
+          // Ingest in background (don't block streaming)
+          await safeAutoIngest(
+            session.id,
+            turnId,
+            newObjects,
+            question,
+            finalResponseText,
+            session.subject || 'general'
+          );
+
+          logger.info('✅ ChromaDB ingestion complete', { turnId });
+        } catch (error) {
+          logger.warn('RAG module not available or ingestion failed', { error });
+        }
+      }
 
       logger.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       logger.info('✅ STREAMING COMPLETE');
@@ -968,7 +1084,7 @@ ${cachedIntroInfo}
 CANVAS STATE:
 ${context.canvasState}
 
-${context.highlightedObjects ? `STUDENT HIGHLIGHTED:\n${context.highlightedObjects}\n` : ''}${contextualInfo}
+${context.highlightedObjects ? `STUDENT HIGHLIGHTED:\n${context.highlightedObjects}\n` : ''}${context.ragContext ? `${context.ragContext}\n` : ''}${contextualInfo}
 
 CONTEXTUAL AWARENESS:
 - You have been listening to the user's ongoing conversation and building context
@@ -1051,6 +1167,43 @@ CRITICAL STREAMING PATTERN FOR TOOL USE:
 - NOT: tool_use only without narration first
 - This ensures the user hears your explanation immediately while tools execute in the background
 - Example: Start with [NARRATION], explain the concept, THEN use sequential_thinking to deepen analysis
+
+${selectedBrain?.type === 'math' ? `
+⚠️ CRITICAL FOR MATH BRAIN - COMPONENT REQUIREMENT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**WHEN USING render_animation TOOL:**
+You MUST include BOTH:
+1. [NARRATION] text (as usual)
+2. [OBJECT_START] markers for 2+ LaTeX objects (REQUIRED - DO NOT SKIP)
+3. render_animation tool call
+
+Example structure:
+[NARRATION]: The derivative measures instantaneous rate of change.
+[OBJECT_START type="latex" id="eq_1"]
+[OBJECT_CONTENT]: f'(x) = \\lim_{h \\to 0} \\frac{f(x+h) - f(x)}{h}
+[OBJECT_META referenceName="derivative definition"]
+[OBJECT_END]
+[NARRATION]: For f(x)=x², we apply the definition.
+[OBJECT_START type="latex" id="eq_2"]
+[OBJECT_CONTENT]: f(x) = x^2, \\quad f'(x) = 2x
+[OBJECT_META referenceName="example"]
+[OBJECT_END]
+[NARRATION]: The animation shows how the slope changes. Can you see why?
+(ALSO call render_animation tool)
+
+**VALIDATION - YOU MUST HAVE ALL THREE:**
+✓ [NARRATION] sections with text
+✓ 2+ [OBJECT_START]...[OBJECT_END] blocks with LaTeX
+✓ render_animation tool call
+= TOTAL: 3+ components ✓
+
+**COMMON MISTAKE TO AVOID:**
+❌ WRONG: [NARRATION] + render_animation ONLY (missing LaTeX markers!)
+✅ CORRECT: [NARRATION] + [OBJECT_START]×2+ + render_animation
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : ''}
 
 Subject: ${session.subject}
 
@@ -1157,9 +1310,10 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     }
     const narration = narrationParts.join(' ');
 
-    // Extract objects
+    // Extract objects (using [\s\S] to match any character including newlines for multiline code)
     const objects = [];
-    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META[^\]]*\]:\s*([^\[]*?))?\[OBJECT_END\]/gs);
+    // Updated regex: capture metadata from INSIDE [OBJECT_META ...], not after it
+    const objectMatches = responseText.matchAll(/\[OBJECT_START\s+type="(\w+)"\s+id="([^"]+)"\].*?\[OBJECT_CONTENT\]:\s*([^\[]*?)(?:\[OBJECT_META\s+([^\]]+)\])?\s*\[OBJECT_END\]/gs);
     for (const match of objectMatches) {
       const [_, type, id, content, meta] = match;
       if (type && content) {
@@ -1309,7 +1463,12 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
       }
 
       // Handle image content (from Python MCP matplotlib)
-      if (content.type === 'image' && content.data && content.mimeType) {
+      // Require minimum 100 bytes to filter out blank/empty images (typical blank PNG is 40-80 bytes)
+      if (content.type === 'image' && content.data && content.data.trim().length > 100 && content.mimeType) {
+        // Use dimensions from MCP response if available, otherwise default to 600x400
+        const imageWidth = content.width || 600;
+        const imageHeight = content.height || 400;
+
         const position = layoutEngine.calculatePosition(
           {
             existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
@@ -1318,7 +1477,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
               size: obj.size,
             })),
           },
-          { width: 600, height: 400 }
+          { width: imageWidth, height: imageHeight }
         );
 
         const imageObject: CanvasObject = {
@@ -1331,7 +1490,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
             alt: label,
           },
           position,
-          size: { width: 600, height: 400 },
+          size: { width: imageWidth, height: imageHeight },
           zIndex: 1,
           metadata: {
             createdAt: Date.now(),
@@ -1359,6 +1518,18 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
         const isImage = resource.mimeType?.startsWith('image/');
 
         if (isVideo || isImage) {
+          // Use proper dimensions based on content type
+          // Videos (Manim): Default 1280×720 (medium quality default)
+          // Images: Use content dimensions if available, otherwise larger default
+          let resourceWidth = 1280;
+          let resourceHeight = 720;
+
+          if (isImage) {
+            // For images, prefer 1600×1200 default (4:3 aspect ratio for graphs)
+            resourceWidth = content.width || 1600;
+            resourceHeight = content.height || 1200;
+          }
+
           const position = layoutEngine.calculatePosition(
             {
               existingObjects: [...existingObjects, ...currentToolResults, ...objects].map(obj => ({
@@ -1367,7 +1538,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 size: obj.size,
               })),
             },
-            { width: 600, height: 400 }
+            { width: resourceWidth, height: resourceHeight }
           );
 
           // CRITICAL: Always prefer base64 data URLs to prevent stale file:// URI caching
@@ -1401,7 +1572,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 alt: label,
               },
               position,
-              size: { width: 600, height: 400 },
+              size: { width: resourceWidth, height: resourceHeight },
               zIndex: 1,
               metadata: {
                 createdAt: Date.now(),
@@ -1426,7 +1597,7 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
                 alt: label,
               },
               position,
-              size: { width: 600, height: 400 },
+              size: { width: resourceWidth, height: resourceHeight },
               zIndex: 1,
               metadata: {
                 createdAt: Date.now(),

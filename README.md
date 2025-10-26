@@ -17,6 +17,7 @@ Complete full-stack AI-powered tutoring platform with voice interaction and infi
 - **Context-Aware**: References highlighted objects and maintains spatial awareness
 - **TTS & Transcription**: OpenAI Whisper for speech-to-text and TTS-1 for text-to-speech
 - **Socratic Teaching**: Guides students with questions rather than direct answers (configurable)
+- **Multi-Modal RAG** (NEW): ChromaDB-powered knowledge retrieval from past sessions and canvas objects
 
 ## Tech Stack
 
@@ -25,7 +26,8 @@ Complete full-stack AI-powered tutoring platform with voice interaction and infi
 - **LLM**: Claude Sonnet 4.5 (Anthropic)
 - **Transcription**: OpenAI Whisper API
 - **TTS**: OpenAI TTS-1
-- **Storage**: In-memory (Map)
+- **Storage**: In-memory (Map) + ChromaDB for RAG
+- **Vector DB**: ChromaDB for multi-modal embeddings
 - **Docker**: Multi-stage builds for dev and production
 
 ## Prerequisites
@@ -53,11 +55,23 @@ cp .env.example .env
 Edit `.env` and add your API keys:
 
 ```env
+# Required API Keys
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
+
+# Basic Configuration
 NODE_ENV=development
 LOG_LEVEL=info
+
+# Optional: Enable RAG (Retrieval-Augmented Generation)
+ENABLE_RAG=true
+CHROMADB_URL=http://chromadb:8000
+RAG_AUTO_INGEST=true
 ```
+
+For full RAG configuration, see [RAG_SETUP.md](./RAG_SETUP.md).
+
+**Note**: If you encounter ChromaDB import errors, see [CHROMADB_INSTALL.md](./CHROMADB_INSTALL.md) for the fix.
 
 ### 3. Run Full Stack Application
 
