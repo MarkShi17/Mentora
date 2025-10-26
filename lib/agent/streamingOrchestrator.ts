@@ -154,7 +154,7 @@ export class StreamingOrchestrator {
       const sessionContext = contextBuilder.buildContext(session, highlightedObjectIds);
 
       // Generate system and user prompts with user settings
-      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed);
+      const systemPrompt = this.buildSystemPrompt(session, sessionContext, mode, context, userSettings, cachedIntroPlayed, selectedBrain);
       const userPrompt = this.buildUserPrompt(question, sessionContext);
 
       // Get model from selected brain
@@ -193,7 +193,7 @@ export class StreamingOrchestrator {
 
         const response = await this.anthropic.messages.create({
           model: 'claude-sonnet-4-5-20250929',
-          max_tokens: 4096,
+          max_tokens: selectedBrain?.type === 'math' ? 2048 : 4096, // Reduce tokens for Math brain to enforce conciseness
           system: systemPrompt,
           tools: availableTools.length > 0 ? availableTools : undefined,
           messages
@@ -394,6 +394,12 @@ export class StreamingOrchestrator {
         hasFinalResponse: !!finalResponseText
       });
 
+      // DEBUG: Log the raw response text to see what Claude returned
+      logger.info('📄 Raw Claude response (first 500 chars):', {
+        responseLength: finalResponseText.length,
+        responsePreview: finalResponseText.substring(0, 500)
+      });
+
       // Now stream the final response with TTS
       const sentenceParser = new SentenceParser();
       let totalObjects = toolGeneratedObjects.length; // Start with MCP objects
@@ -401,6 +407,72 @@ export class StreamingOrchestrator {
 
       // Parse the final response to get narration and additional objects
       const agentResponse = this.parseResponse(finalResponseText);
+
+      // DEBUG: Log parsed response details
+      logger.info('🔍 Parsed response details:', {
+        hasNarration: !!agentResponse.narration,
+        narrationLength: agentResponse.narration?.length || 0,
+        objectsCount: agentResponse.objects?.length || 0,
+        objectTypes: agentResponse.objects?.map(obj => obj.type) || [],
+        referencesCount: agentResponse.references?.length || 0
+      });
+
+      // Separate objects into priority (latex, graph) and regular for early rendering
+      const priorityObjects = agentResponse.objects.filter(obj =>
+        obj.type === 'latex' || obj.type === 'graph'
+      );
+      const regularObjects = agentResponse.objects.filter(obj =>
+        obj.type !== 'latex' && obj.type !== 'graph'
+      );
+
+      // Emit priority objects BEFORE TTS starts for immediate visual feedback
+      if (priorityObjects.length > 0) {
+        logger.info('🎯 Emitting priority objects before TTS', {
+          priorityObjectCount: priorityObjects.length,
+          types: priorityObjects.map(obj => obj.type)
+        });
+
+        for (const request of priorityObjects) {
+          const position = layoutEngine.calculatePosition(
+            {
+              existingObjects: streamingContext.existingObjects.map(obj => ({
+                id: obj.id,
+                position: obj.position,
+                size: obj.size
+              }))
+            },
+            { width: 400, height: 200 }
+          );
+
+          const canvasObject = objectGenerator.generateObject(
+            {
+              type: request.type,
+              content: request.content,
+              referenceName: request.referenceName,
+              metadata: request.metadata
+            },
+            position,
+            turnId
+          );
+
+          streamingContext.existingObjects.push(canvasObject);
+
+          const placement: ObjectPlacement = {
+            objectId: canvasObject.id,
+            position: canvasObject.position,
+            animateIn: 'fade',
+            timing: totalObjects * 300
+          };
+
+          yield {
+            type: 'canvas_object',
+            timestamp: Date.now(),
+            data: { object: canvasObject, placement }
+          };
+
+          totalObjects++;
+        }
+      }
 
       // Stream narration sentence-by-sentence with TTS
       if (agentResponse.narration && agentResponse.narration.trim().length > 0) {
@@ -479,13 +551,13 @@ export class StreamingOrchestrator {
         }
       }
 
-      // Generate additional canvas objects from Claude's response (if any)
-      if (agentResponse.objects && agentResponse.objects.length > 0) {
-        logger.info('Generating canvas objects from Claude response', {
-          objectCount: agentResponse.objects.length
+      // Generate remaining canvas objects (non-priority) from Claude's response
+      if (regularObjects && regularObjects.length > 0) {
+        logger.info('Generating regular canvas objects from Claude response', {
+          objectCount: regularObjects.length
         });
 
-        for (const request of agentResponse.objects) {
+        for (const request of regularObjects) {
           const position = layoutEngine.calculatePosition(
             {
               existingObjects: streamingContext.existingObjects.map(obj => ({
@@ -586,6 +658,13 @@ export class StreamingOrchestrator {
           }
         };
       } else {
+        // Log the full error details
+        console.error('❌ STREAMING ERROR DETAILS:', {
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : 'Unknown',
+          stack: error instanceof Error ? error.stack : undefined,
+          fullError: error
+        });
         logger.error('Streaming error:', error);
         yield {
           type: 'error',
@@ -621,7 +700,8 @@ export class StreamingOrchestrator {
     cachedIntroPlayed?: {
       text: string;
       id: string;
-    } | null
+    } | null,
+    selectedBrain?: Brain
   ): string {
     const teachingStyle =
       mode === 'guided'
@@ -975,7 +1055,25 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
             { width: 600, height: 400 }
           );
 
-          const url = resource.text ? `data:${resource.mimeType};base64,${resource.text}` : resource.uri;
+          // CRITICAL: Always prefer base64 data URLs to prevent stale file:// URI caching
+          let url: string;
+          if (resource.text && resource.text.length > 0) {
+            // Use base64 data URL - this ensures fresh content every time
+            url = `data:${resource.mimeType};base64,${resource.text}`;
+            logger.info('Using base64 data URL for video', {
+              toolName,
+              base64Length: resource.text.length,
+              mimeType: resource.mimeType
+            });
+          } else {
+            // Fallback to URI - log warning as this may cause caching issues
+            url = resource.uri;
+            logger.warn('⚠️ Using file:// URI for video - may cause caching!', {
+              toolName,
+              uri: resource.uri,
+              reason: 'base64 data missing from MCP response'
+            });
+          }
 
           if (isVideo) {
             const videoObject: CanvasObject = {
@@ -997,6 +1095,7 @@ ${selectedBrain?.promptEnhancement ? `\n\nSPECIALIZED BRAIN INSTRUCTIONS:\n${sel
                 toolName,
                 mimeType: resource.mimeType,
                 uri: resource.uri,
+                usedBase64: !!resource.text,  // Track if we used base64
               },
             };
             objects.push(videoObject);

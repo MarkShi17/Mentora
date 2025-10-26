@@ -29,6 +29,7 @@ export interface Session {
   updatedAt: number;
   turns: Turn[];
   canvasObjects: CanvasObject[];
+  selectedBrain?: 'math' | 'biology' | 'code' | 'design' | 'general'; // Brain locked for entire conversation
 }
 
 export interface SessionPreview {

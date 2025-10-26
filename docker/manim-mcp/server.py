@@ -22,6 +22,10 @@ class ManimMCPServer:
     def __init__(self):
         self.media_dir = Path("/app/media")
         self.media_dir.mkdir(exist_ok=True)
+        self.max_videos = 3  # Keep only 3 most recent videos
+
+        # Clean up old videos on startup (fresh session)
+        self.cleanup_old_videos()
 
         self.tools = [
             {
@@ -58,6 +62,45 @@ class ManimMCPServer:
             }
         ]
 
+    def cleanup_old_videos(self):
+        """
+        Clean up old videos, keeping only the 3 most recent ones.
+        Called on startup and after each render.
+        """
+        try:
+            videos_dir = self.media_dir / "videos"
+            if not videos_dir.exists():
+                return
+
+            # Find all video files (mp4, gif, png)
+            video_files = []
+            for ext in ['mp4', 'gif', 'png']:
+                video_files.extend(videos_dir.rglob(f"*.{ext}"))
+
+            if len(video_files) <= self.max_videos:
+                return
+
+            # Sort by modification time (newest first)
+            video_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+            # Keep only the 3 most recent, delete the rest
+            files_to_delete = video_files[self.max_videos:]
+            deleted_count = 0
+
+            for video_file in files_to_delete:
+                try:
+                    video_file.unlink()
+                    deleted_count += 1
+                    print(f"🗑️  Deleted old video: {video_file.name}", file=sys.stderr)
+                except Exception as e:
+                    print(f"Failed to delete {video_file}: {e}", file=sys.stderr)
+
+            if deleted_count > 0:
+                print(f"✅ Cleaned up {deleted_count} old video(s), kept {self.max_videos} most recent", file=sys.stderr)
+
+        except Exception as e:
+            print(f"Error during cleanup: {e}", file=sys.stderr)
+
     async def list_tools(self) -> Dict[str, Any]:
         """List available tools"""
         return {"tools": self.tools}
@@ -72,6 +115,12 @@ class ManimMCPServer:
     ) -> Dict[str, Any]:
         """Render a Manim animation"""
         try:
+            # Generate unique identifier for this render to prevent file collisions
+            import uuid
+            import time
+            unique_id = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+            unique_scene_name = f"{scene_name}_{unique_id}"
+
             # Create temporary file for scene code
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
                 scene_file = f.name
@@ -80,7 +129,9 @@ class ManimMCPServer:
                 if 'from manim import' not in code and 'import manim' not in code:
                     f.write("from manim import *\n\n")
 
-                f.write(code)
+                # Replace scene class name with unique version to prevent file collisions
+                modified_code = code.replace(f"class {scene_name}", f"class {unique_scene_name}")
+                f.write(modified_code)
 
             # Map quality to Manim flags
             quality_map = {
@@ -90,12 +141,12 @@ class ManimMCPServer:
                 "production": "-qp"
             }
 
-            # Build manim command
+            # Build manim command with unique scene name
             cmd = [
                 "manim",
                 quality_map.get(quality, "-qm"),
                 scene_file,
-                scene_name
+                unique_scene_name
             ]
 
             if format == "gif":
@@ -136,9 +187,9 @@ class ManimMCPServer:
             # But the actual structure can vary, so we search more broadly
             scene_base = Path(scene_file).stem
             possible_paths = [
-                output_dir / scene_base / quality / f"{scene_name}.{format}",
-                output_dir / scene_base / f"{scene_name}.{format}",
-                self.media_dir / "videos" / f"{scene_name}.{format}",
+                output_dir / scene_base / quality / f"{unique_scene_name}.{format}",
+                output_dir / scene_base / f"{unique_scene_name}.{format}",
+                self.media_dir / "videos" / f"{unique_scene_name}.{format}",
             ]
 
             output_file = None
@@ -147,9 +198,9 @@ class ManimMCPServer:
                     output_file = path
                     break
 
-            # If still not found, search recursively for any file matching the pattern
+            # If still not found, search recursively for any file matching the unique scene pattern
             if not output_file:
-                for path in output_dir.rglob(f"*{scene_name}*.{format}"):
+                for path in output_dir.rglob(f"*{unique_scene_name}*.{format}"):
                     output_file = path
                     break
 
@@ -185,6 +236,9 @@ class ManimMCPServer:
 
             # Clean up temp file
             os.unlink(scene_file)
+
+            # Clean up old videos to keep only the 3 most recent
+            self.cleanup_old_videos()
 
             return {
                 "content": [
@@ -275,9 +329,9 @@ class ManimMCPServer:
 
 async def stdio_server():
     """Run server in stdio mode"""
+    print("🎬 Initializing Manim MCP Server (stdio mode)...", file=sys.stderr)
     server = ManimMCPServer()
-
-    print("Manim MCP Server started (stdio mode)", file=sys.stderr)
+    print("✅ Manim MCP Server ready (stdio mode)", file=sys.stderr)
 
     while True:
         try:
@@ -303,7 +357,9 @@ async def http_server():
     """Run server in HTTP mode"""
     from aiohttp import web
 
+    print("🎬 Initializing Manim MCP Server (HTTP mode)...", file=sys.stderr)
     server = ManimMCPServer()
+    print("✅ Manim MCP Server initialized", file=sys.stderr)
 
     async def handle_request_http(request):
         """Handle HTTP MCP request"""
