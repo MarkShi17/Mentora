@@ -130,7 +130,7 @@ export class MentorAgent {
           model: 'claude-sonnet-4-5-20250929',
           max_tokens: 4096,
           system: systemPrompt,
-          tools: MCP_TOOLS_FOR_CLAUDE,
+          tools: this.getToolsForBrain(brainResult.selectedBrain),
           messages,
         });
 
@@ -451,7 +451,7 @@ You must respond with a JSON object in the following format:
     {
       "type": "latex|graph|code|text|diagram",
       "content": "The actual content (LaTeX string, equation, code, etc.)",
-      "referenceName": "equation 1" or "graph A" (optional),
+      "referenceName": "Equation 1" or "Graph A" (optional, use Title Case - capitalize first letter of each word),
       "metadata": {
         "language": "python" (for code),
         "equation": "y = x^2" (for graphs),
@@ -483,6 +483,20 @@ Be canvas-aware and create appropriate visuals for the subject area.`;
     prompt += 'Generate your response as a JSON object following the specified format.';
 
     return prompt;
+  }
+
+  /**
+   * Get tools appropriate for the selected brain
+   */
+  private getToolsForBrain(brain: { type: string; name: string; description: string; mcpTools?: string[] }): typeof MCP_TOOLS_FOR_CLAUDE {
+    if (!brain.mcpTools || brain.mcpTools.length === 0) {
+      return MCP_TOOLS_FOR_CLAUDE; // Fallback to all tools for brains without specific tools
+    }
+
+    // Filter tools to only those appropriate for this brain
+    return MCP_TOOLS_FOR_CLAUDE.filter(tool =>
+      brain.mcpTools!.includes(tool.name)
+    );
   }
 
   private parseResponse(responseText: string): AgentResponse {

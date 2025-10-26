@@ -114,26 +114,14 @@ export function SelectionLayer({
     if (!onResizeStart) return null;
 
     const dims = getDimensions(obj);
-
-    // The component div has dimensions (x, y, width, height) which define its content box.
-    // The CSS border-2 (2px) is rendered OUTSIDE this content box.
-    // To position handles on the outer corners of the visible border:
-    // - Subtract border width from position (move outward)
-    // - Add border width to dimensions (expand total size)
-    const borderWidth = 2;
-    const outerX = dims.x - borderWidth;
-    const outerY = dims.y - borderWidth;
-    const outerWidth = dims.width + (borderWidth * 2);
-    const outerHeight = dims.height + (borderWidth * 2);
-
     const handleSize = 10 / transform.k;
     const handleOffset = handleSize / 2;
 
     const corners = [
-      { name: 'nw', x: outerX - handleOffset, y: outerY - handleOffset, cursor: 'nw-resize' },
-      { name: 'ne', x: outerX + outerWidth - handleOffset, y: outerY - handleOffset, cursor: 'ne-resize' },
-      { name: 'sw', x: outerX - handleOffset, y: outerY + outerHeight - handleOffset, cursor: 'sw-resize' },
-      { name: 'se', x: outerX + outerWidth - handleOffset, y: outerY + outerHeight - handleOffset, cursor: 'se-resize' }
+      { name: 'nw', x: dims.x - handleOffset, y: dims.y - handleOffset, cursor: 'nw-resize' },
+      { name: 'ne', x: dims.x + dims.width - handleOffset, y: dims.y - handleOffset, cursor: 'ne-resize' },
+      { name: 'sw', x: dims.x - handleOffset, y: dims.y + dims.height - handleOffset, cursor: 'sw-resize' },
+      { name: 'se', x: dims.x + dims.width - handleOffset, y: dims.y + dims.height - handleOffset, cursor: 'se-resize' }
     ];
 
     return corners.map(corner => (
@@ -175,20 +163,12 @@ export function SelectionLayer({
     if (!onConnectionStart) return null;
 
     const dims = getDimensions(obj);
-
-    // Position anchors on the visible outer border by accounting for CSS border-2
-    const borderWidth = 2;
-    const outerX = dims.x - borderWidth;
-    const outerY = dims.y - borderWidth;
-    const outerWidth = dims.width + (borderWidth * 2);
-    const outerHeight = dims.height + (borderWidth * 2);
-
+    
     const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];
 
     return anchors.map(anchor => {
-      // getAnchorPosition calculates midpoints based on provided dimensions
       const pos = getAnchorPosition(
-        { ...obj, x: outerX, y: outerY, width: outerWidth, height: outerHeight },
+        { ...obj, x: dims.x, y: dims.y, width: dims.width, height: dims.height },
         anchor
       );
 
@@ -233,18 +213,11 @@ export function SelectionLayer({
           {objects.map(obj => {
             const dims = getDimensions(obj);
 
-            // Same border calculation as normal anchor rendering
-            const borderWidth = 2;
-            const outerX = dims.x - borderWidth;
-            const outerY = dims.y - borderWidth;
-            const outerWidth = dims.width + (borderWidth * 2);
-            const outerHeight = dims.height + (borderWidth * 2);
-
             const anchors: AnchorType[] = ['north', 'east', 'south', 'west'];
 
             return anchors.map(anchor => {
               const pos = getAnchorPosition(
-                { ...obj, x: outerX, y: outerY, width: outerWidth, height: outerHeight },
+                { ...obj, x: dims.x, y: dims.y, width: dims.width, height: dims.height },
                 anchor
               );
 

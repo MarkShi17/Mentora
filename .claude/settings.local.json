@@ -27,6 +27,15 @@
       "Read(//tmp/**)",
       "Bash(docker system prune:*)",
       "Bash(npm ci:*)"
+      "Bash(npx tsc:*)",
+      "Bash(brew search:*)",
+      "Bash(brew install:*)",
+      "WebFetch(domain:help.biorender.com)",
+      "WebFetch(domain:support.claude.com)",
+      "Bash(brew unlink:*)",
+      "Bash(ping:*)",
+      "Bash(nslookup:*)",
+      "Bash(docker restart:*)"
     ],
     "deny": [],
     "ask": []

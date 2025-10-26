@@ -20,7 +20,7 @@ type DragState = {
 };
 
 export function TimelinePanel() {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false); // Start collapsed
   const [position, setPosition] = useState({ right: 16, top: 16 }); // 16px = 1rem (4 in Tailwind)
   const [dragState, setDragState] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
@@ -63,6 +63,13 @@ export function TimelinePanel() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [stopStreamingCallback]);
+
+  // Automatically expand the panel when the first message is added (only once)
+  useEffect(() => {
+    if (dialogue.length === 1 && !isExpanded) {
+      setIsExpanded(true);
+    }
+  }, [dialogue.length]);
 
   const handleObjectClick = useCallback((objectId: string) => {
     if (!activeSessionId) return;

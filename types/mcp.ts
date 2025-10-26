@@ -136,10 +136,54 @@ export interface PythonExecutionInput {
  * Biology Diagram Tool Input
  */
 export interface BiologyDiagramInput {
-  diagram_type: 'cell_structure' | 'dna_transcription' | 'photosynthesis';
+  diagram_type:
+    | 'cell_structure'
+    | 'dna_transcription'
+    | 'photosynthesis'
+    | 'mitosis_phases'
+    | 'crispr_mechanism'
+    | 'cell_cycle'
+    | 'gene_expression';
   title?: string;
   annotations?: string[];
   highlight?: string[];
+}
+
+/**
+ * BioRender Tool Input
+ *
+ * Shared structure for searching icons or retrieving full figures.
+ */
+export interface BioRenderToolInput {
+  query?: string;
+  category?: string;
+  figure_id?: string;
+  format?: 'png' | 'svg';
+}
+
+/**
+ * Mermaid Diagram Tool Input
+ */
+export interface MermaidDiagramInput {
+  code: string;
+  type: 'flowchart' | 'sequence' | 'state' | 'class' | 'er' | 'mindmap';
+  theme?: 'default' | 'neutral' | 'forest' | 'dark';
+}
+
+/**
+ * ChatMol Tool Input
+ *
+ * Supports either direct visualization by PDB identifier or
+ * fetching protein metadata before rendering.
+ */
+export interface ChatMolToolInput {
+  pdb_id?: string;
+  style?: 'cartoon' | 'surface' | 'sticks' | 'spheres' | 'electrostatic';
+  highlight_residues?: string[];
+  orientation?: string;
+  format?: 'png' | 'gif';
+  name?: string;
+  organism?: string;
 }
 
 /**
@@ -170,6 +214,9 @@ export interface MCPServerRegistry {
   'sequential-thinking': MCPServerConfig;
   'manim': MCPServerConfig;
   'python': MCPServerConfig;
+  'biorender': MCPServerConfig;
+  'mermaid': MCPServerConfig;
+  'chatmol': MCPServerConfig;
   'github': MCPServerConfig;
   'figma': MCPServerConfig;
 }
@@ -181,6 +228,9 @@ export const MCP_SERVER_IDS = {
   SEQUENTIAL_THINKING: 'sequential-thinking',
   MANIM: 'manim',
   PYTHON: 'python',
+  BIORENDER: 'biorender',
+  MERMAID: 'mermaid',
+  CHATMOL: 'chatmol',
   GITHUB: 'github',
   FIGMA: 'figma',
 } as const;

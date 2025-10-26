@@ -18,6 +18,20 @@ function renderObjectContent(object: CanvasObject) {
 
   switch (object.type) {
     case 'text':
+    case 'note':
+      // Check if content is a JSON string and extract it
+      let contentToRender = object.data.content;
+      if (typeof contentToRender === 'string') {
+        try {
+          const parsed = JSON.parse(contentToRender);
+          if (typeof parsed === 'object' && parsed !== null && 'content' in parsed) {
+            contentToRender = parsed.content;
+          }
+        } catch (e) {
+          // Not JSON, use as-is
+        }
+      }
+      
       return (
         <div className="prose prose-sm max-w-none text-slate-800 leading-relaxed">
           <ReactMarkdown
@@ -45,7 +59,7 @@ function renderObjectContent(object: CanvasObject) {
               },
             }}
           >
-            {object.data.content || ''}
+            {contentToRender || ''}
           </ReactMarkdown>
         </div>
       );
@@ -125,26 +139,34 @@ function renderObjectContent(object: CanvasObject) {
       );
 
     case 'video':
+      const videoUrl = object.data.url;
+      const isGif = videoUrl?.endsWith('.gif');
+      
       return (
         <div className="bg-white rounded-lg p-4 shadow-lg h-full overflow-auto flex items-center justify-center">
-          <video
-            src={object.data.url}
-            controls
-            loop
-            className="max-w-full max-h-full rounded"
-            style={{ maxHeight: '100%', maxWidth: '100%' }}
-            onPointerDown={(e) => {
-              // Prevent drag start when clicking on video controls
-              e.stopPropagation();
-            }}
-            onPointerMove={(e) => {
-              // Prevent drag move when hovering over video
-              e.stopPropagation();
-            }}
-          >
-            <track kind="captions" />
-            Your browser does not support the video tag.
-          </video>
+          {isGif ? (
+            <img
+              src={videoUrl}
+              alt={object.data.alt || 'Animation'}
+              className="max-w-full max-h-full rounded"
+              style={{ maxHeight: '100%', maxWidth: '100%' }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerMove={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <video
+              src={videoUrl}
+              controls
+              loop
+              className="max-w-full max-h-full rounded"
+              style={{ maxHeight: '100%', maxWidth: '100%' }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerMove={(e) => e.stopPropagation()}
+            >
+              <track kind="captions" />
+              Your browser does not support the video tag.
+            </video>
+          )}
         </div>
       );
 
@@ -207,23 +229,13 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
             ? `translate(${dragState.currentDelta.x}px, ${dragState.currentDelta.y}px)`
             : undefined;
 
-          // Check if this object is being resized
-          const isBeingResized = resizeState?.objectId === object.id;
-          const objectX = isBeingResized && resizeState ? resizeState.currentDimensions.x : object.x;
-          const objectY = isBeingResized && resizeState ? resizeState.currentDimensions.y : object.y;
+          // Objects now auto-fit their content with no manual resizing
+          const objectX = object.x;
+          const objectY = object.y;
 
-          // For LaTeX objects, use auto dimensions to fit content
-          const objectWidth = isBeingResized && resizeState
-            ? resizeState.currentDimensions.width
-            : (object.type === 'latex' ? 'auto' : (object.width || 'auto'));
-          const objectHeight = isBeingResized && resizeState
-            ? resizeState.currentDimensions.height
-            : (object.type === 'latex' ? 'auto' : (object.height || 'auto'));
-
-          // Get text scale from metadata (persisted after resize) or from current resize state
-          const textScale = isBeingResized && resizeState
-            ? (resizeState.textScale || 1.0)
-            : (object.metadata?.textScale as number || 1.0);
+          // All objects use auto dimensions to fit content snugly
+          const objectWidth = 'auto';
+          const objectHeight = 'auto';
 
           return (
           <div
@@ -231,26 +243,18 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
             data-canvas-object="true"
             className={cn(
               "pointer-events-auto absolute rounded-lg shadow-lg transition-colors",
-              resizeState ? "cursor-default" : (isDragging ? "cursor-grabbing" : "cursor-grab"),
-              !isBeingDragged && !isBeingResized && "transition-all"
+              isDragging ? "cursor-grabbing" : "cursor-grab"
             )}
             style={{
               left: objectX,
               top: objectY,
               width: objectWidth,
               height: objectHeight,
-              minWidth: '150px',
-              minHeight: '100px',
-              maxWidth: 'none',
               background: `${object.color}20`,
               zIndex: object.zIndex || 0,
               transform: dragTransform
             }}
             onPointerDown={(event) => {
-              // Don't handle if we're currently resizing
-              if (resizeState) {
-                return;
-              }
               event.stopPropagation();
               event.preventDefault();
               if (onDragStart) {
@@ -258,10 +262,6 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               }
             }}
             onPointerMove={(event) => {
-              // Don't handle if we're currently resizing
-              if (resizeState) {
-                return;
-              }
               // Only call drag move if we're actually dragging
               if (isDragging && onDragMove) {
                 event.stopPropagation();
@@ -270,10 +270,6 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
               }
             }}
             onPointerUp={(event) => {
-              // Don't handle if we're currently resizing
-              if (resizeState) {
-                return;
-              }
               event.stopPropagation();
               event.preventDefault();
               if (onDragEnd) {
@@ -306,13 +302,7 @@ export function ObjectLayer({ objects, transform, onSelect, onDragStart, onDragM
                 </div>
                 <div className="w-3 h-3 rounded-full" style={{ backgroundColor: object.color }}></div>
               </div>
-              <div
-                className="px-4 pb-4"
-                style={{
-                  fontSize: `${textScale * 100}%`,
-                  transformOrigin: 'top left'
-                }}
-              >
+              <div className="px-4 pb-4">
                 {object.generationState === 'generating' || object.placeholder ? (
                   <ObjectLoadingState type={object.type} />
                 ) : (

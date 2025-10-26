@@ -41,6 +41,49 @@ export const MCP_SERVERS: MCPServerRegistry = {
     timeout: 60000, // 1 minute
   },
 
+  biorender: {
+    id: 'biorender',
+    name: 'BioRender Illustrations',
+    description: 'Search and retrieve BioRender scientific illustration assets via remote MCP server',
+    transport: 'http',
+    url: process.env.BIORENDER_MCP_URL || 'https://mcp.services.biorender.com/mcp',
+    env: {
+      BIORENDER_OAUTH_CLIENT_ID: process.env.BIORENDER_OAUTH_CLIENT_ID || '',
+      BIORENDER_OAUTH_CLIENT_SECRET: process.env.BIORENDER_OAUTH_CLIENT_SECRET || '',
+    },
+    // Note: BioRender uses OAuth authentication which requires user login flow
+    // Full support requires implementing OAuth authorization code flow
+    enabled: process.env.ENABLE_BIORENDER === 'true',
+    timeout: 45000,
+  },
+
+  mermaid: {
+    id: 'mermaid',
+    name: 'Mermaid Diagramming',
+    description: 'Generate process and pathway diagrams using Mermaid syntax',
+    transport: 'stdio',
+    command: process.env.MERMAID_MCP_COMMAND || 'npx',
+    args: process.env.MERMAID_MCP_COMMAND
+      ? process.env.MERMAID_MCP_ARGS?.split(' ').filter(Boolean)
+      : ['-y', '@modelcontextprotocol/server-mermaid'],
+    enabled: process.env.ENABLE_MERMAID === 'true',
+    timeout: 40000,
+  },
+
+  chatmol: {
+    id: 'chatmol',
+    name: 'ChatMol Molecular Visualization',
+    description: 'Render 3D molecular structures via PyMOL/ChimeraX integration',
+    transport: 'http',
+    url: process.env.CHATMOL_MCP_URL || 'http://chatmol-mcp:8000',
+    env: {
+      PYMOL_PATH: process.env.PYMOL_PATH || '',
+      CHATMOL_API_KEY: process.env.CHATMOL_API_KEY || '',
+    },
+    enabled: process.env.ENABLE_CHATMOL === 'true' && !!process.env.PYMOL_PATH,
+    timeout: 90000,
+  },
+
   github: {
     id: 'github',
     name: 'GitHub Integration',
